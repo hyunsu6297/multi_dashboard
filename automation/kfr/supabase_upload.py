@@ -124,6 +124,11 @@ def upload_file(
 ) -> tuple[int, int, bool]:
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     sheets, rows = parse_workbook(path)
+    if source_key == "fund_trades":
+        expected_date = business_date.isoformat()
+        rows = [row for row in rows if row["payload"].get("기준일") == expected_date]
+        if not rows:
+            raise RuntimeError(f"No fund trade rows found for {expected_date}")
     query = urllib.parse.urlencode(
         {
             "source_key": f"eq.{source_key}",
