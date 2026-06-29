@@ -1,0 +1,13 @@
+dist/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+
+# Restored database inputs and generated dashboards
+apps/stock/*.xlsx
+apps/stock/*.json
+apps/stock/*.html
+apps/bond/*.xlsx
+apps/bond/*.html
+
