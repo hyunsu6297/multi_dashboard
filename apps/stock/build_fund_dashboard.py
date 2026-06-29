@@ -419,7 +419,388 @@ def daily_trade_svg(df: pd.DataFrame, width: int = 1120, height: int = 520) -> s
         sell_h = plot_h * sells.loc[date] / max_v
         parts.append(f'<rect x="{x:.1f}" y="{top + plot_h - buy_h:.1f}" width="{bar_w:.1f}" height="{buy_h:.1f}" rx="3" fill="#008485"></rect>')
         parts.append(f'<rect x="{x:.1f}" y="{top + plot_h - buy_h - sell_h:.1f}" width="{bar_w:.1f}" height="{sell_h:.1f}" rx="3" fill="#e7663f"></rect>')
-        parts.append(f'<text x="{…5766 tokens truncated…e_sum(investment_stocks["평가액"])
+        parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{height - 14}" text-anchor="middle" class="axis daily-axis">{date.strftime("%m-%d")}</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def trade_category_svg(rows: list[tuple[object, float]], all_labels: list[str] | None = None, width: int = 1180, height: int = 390, max_rows: int = 28) -> str:
+    values = {str(k) if str(k) != "nan" else "미분류": float(v or 0) for k, v in rows if pd.notna(k)}
+    if all_labels:
+        rows = sorted(((label, values.get(label, 0.0)) for label in all_labels), key=lambda x: x[1], reverse=True)[:max_rows]
+    else:
+        rows = sorted(values.items(), key=lambda x: x[1], reverse=True)[:max_rows]
+    if not rows:
+        return empty("업종별 매매 데이터가 없습니다.")
+    left, right, top, bottom = 54, 32, 26, 76
+    plot_w, plot_h = width - left - right, height - top - bottom
+    max_abs = max(abs(v) for _, v in rows) or 1
+    zero_y = top + plot_h / 2
+    scale = (plot_h / 2 - 10) / max_abs
+    step = plot_w / max(len(rows), 1)
+    bar_w = max(12, min(36, step * 0.52))
+    tick_count = 4
+    parts = [f'<svg viewBox="0 0 {width} {height}" class="trade-category-chart">']
+    for i in range(-tick_count, tick_count + 1):
+        value = max_abs * i / tick_count
+        y = zero_y - value * scale
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}" class="gridline"></line>')
+        if i != 0:
+            parts.append(f'<text x="6" y="{y + 4:.1f}" class="axis trade-axis">{fmt_money(value)}</text>')
+    parts.append(f'<line x1="{left}" y1="{zero_y:.1f}" x2="{width - right}" y2="{zero_y:.1f}" class="zero"></line>')
+    for i, (label, value) in enumerate(rows):
+        cx = left + step * (i + 0.5)
+        h = max(1.0, abs(value) * scale) if value else 0.0
+        y = zero_y - h if value >= 0 else zero_y
+        parts.append(f'<rect x="{cx - bar_w / 2:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" fill="#005344"></rect>')
+        label_text = esc(label[:12])
+        label_y = height - 58
+        parts.append(f'<text x="{cx:.1f}" y="{label_y}" text-anchor="end" transform="rotate(-42 {cx:.1f} {label_y})" class="trade-label">{label_text}</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def table_html(headers: list[str], rows: list[list[str]], css_class: str = "table-wrap") -> str:
+    if not rows:
+        return empty()
+    head = "".join(f"<th>{esc(h)}</th>" for h in headers)
+    body = "".join("<tr>" + "".join(cell for cell in row) + "</tr>" for row in rows)
+    return f"<div class='{css_class}'><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+
+
+def signed_position(row: pd.Series) -> float:
+    return -1.0 if row.get("포지션") == "매도" else 1.0
+
+
+def safe_sum(series: pd.Series) -> float | None:
+    values = pd.to_numeric(series, errors="coerce").dropna()
+    if values.empty:
+        return None
+    return float(values.sum())
+
+
+def holding_breakdowns(df: pd.DataFrame, amount_col: str) -> dict[str, str]:
+    breakdowns = {}
+    for key, rows in df.groupby(["종목코드정규", "종목명", "포지션"], dropna=False):
+        total = rows[amount_col].sum()
+        lines = []
+        for fund, amount in rows.groupby("보유펀드명")[amount_col].sum().sort_values(ascending=False).items():
+            lines.append(f"{fund}: {fmt_money(amount)} ({fmt_pct(amount / total if total else 0)})")
+        breakdowns["|".join(map(str, key))] = "\n".join(lines)
+    return breakdowns
+
+
+def net_trade_breakdowns(df: pd.DataFrame) -> dict[str, str]:
+    breakdowns = {}
+    for key, rows in df.groupby(["종목코드정규", "종목명"], dropna=False):
+        signed = rows.assign(순매수금액=rows["우리결제금액"] * rows["거래구분"].map({"매수": 1, "매도": -1}).fillna(0))
+        by_fund = signed.groupby("보유펀드명")["순매수금액"].sum()
+        total_abs = by_fund.abs().sum()
+        lines = []
+        for fund, amount in by_fund.sort_values(key=lambda s: s.abs(), ascending=False).items():
+            if amount:
+                lines.append(f"{fund}: {fmt_money(amount)} ({fmt_pct(abs(amount) / total_abs if total_abs else 0)})")
+        breakdowns["|".join(map(str, key))] = "\n".join(lines)
+    return breakdowns
+
+
+def holding_table(df: pd.DataFrame, position: str, denominator: float, limit: int = 20) -> str:
+    rows = df[df["포지션"] == position].copy()
+    if rows.empty:
+        return empty(f"{position} 포지션 보유내역이 없습니다.")
+    tips = holding_breakdowns(rows, "우리평가금")
+    summary = (
+        rows.groupby(["종목코드정규", "종목명", "업종", "포지션"], dropna=False)
+        .agg(평가금=("우리평가금", "sum"), 취득가액=("우리취득가액", "sum"), 시장PL=("시장PL", "sum"), PL=("PL", "sum"), 보유펀드수=("보유펀드명", "nunique"))
+        .reset_index()
+    )
+    summary["평가손익"] = summary["PL"]
+    summary["수익률"] = summary["평가손익"] / summary["평가금"].replace({0: pd.NA})
+    summary["등락율"] = summary["시장PL"] / summary["평가금"].replace({0: pd.NA})
+    summary["비중"] = summary["평가금"] / denominator if denominator else pd.NA
+    summary = summary.sort_values("평가금", ascending=False).head(limit)
+    body = []
+    for _, row in summary.iterrows():
+        key = "|".join(map(str, [row["종목코드정규"], row["종목명"], row["포지션"]]))
+        body.append([
+            f"<td class='name-cell has-tip' title='{esc(tips.get(key, ''))}'>{esc(row['종목명'])}</td>",
+            f"<td>{fmt_pct(row['비중'])}</td>",
+            f"<td>{esc(row['업종'])}</td>",
+            f"<td>{int(row['보유펀드수']):,}</td>",
+            f"<td>{fmt_money(row['평가금'])}</td>",
+            rate_bar(row["등락율"] * 100 if pd.notna(row["등락율"]) else None, 5),
+            f"<td>{fmt_money(row['평가손익'])}</td>",
+            f"<td>{fmt_pct(row['수익률'])}</td>",
+        ])
+    return table_html(["종목명", "비중", "업종", "펀드", "평가금", "등락율", "손익", "수익률"], body)
+
+
+def trade_table(df: pd.DataFrame, limit: int = 24) -> str:
+    rows = df[df["우리결제금액"].abs() >= 50_000_000].copy()
+    if rows.empty:
+        return empty("주식/주식관련 매매내역이 없습니다.")
+    rows = rows.sort_values(["기준일", "우리결제금액"], ascending=[False, False]).head(limit)
+    body = []
+    for _, row in rows.iterrows():
+        side_class = "profit-cell" if row["거래구분"] == "매수" else "loss-cell" if row["거래구분"] == "매도" else ""
+        body.append([
+            f"<td>{esc(row['기준일'])}</td>",
+            f"<td>{esc(row['보유펀드명'])}</td>",
+            f"<td class='name-cell'>{esc(row['종목명'])}</td>",
+            f"<td>{esc(row['업종'])}</td>",
+            f"<td class='{side_class}'>{esc(row['거래구분'])}</td>",
+            f"<td class='{side_class}'>{fmt_money(row['우리결제금액'])}</td>",
+        ])
+    return table_html(["기준일", "펀드명", "종목명", "업종", "구분", "결제금액"], body, "table-wrap tall")
+
+
+def net_trade_table(df: pd.DataFrame, direction: str, limit: int = 24) -> str:
+    if df.empty:
+        return empty()
+    tips = net_trade_breakdowns(df)
+    signed = df.assign(순매수금액=df["우리결제금액"] * df["거래구분"].map({"매수": 1, "매도": -1}).fillna(0))
+    summary = (
+        signed.groupby(["종목코드정규", "종목명", "업종"], dropna=False)
+        .agg(순매수금액=("순매수금액", "sum"), 펀드수=("보유펀드명", "nunique"))
+        .reset_index()
+    )
+    if direction == "buy":
+        summary = summary[summary["순매수금액"] > 0].sort_values("순매수금액", ascending=False)
+    else:
+        summary = summary[summary["순매수금액"] < 0].sort_values("순매수금액")
+    summary = summary.head(limit)
+    if summary.empty:
+        return empty("해당 순매매 종목이 없습니다.")
+    body = []
+    for _, row in summary.iterrows():
+        key = "|".join(map(str, [row["종목코드정규"], row["종목명"]]))
+        body.append([
+            f"<td class='name-cell has-tip' title='{esc(tips.get(key, ''))}'>{esc(row['종목명'])}</td>",
+            f"<td>{esc(row['업종'])}</td>",
+            f"<td>{int(row['펀드수']):,}</td>",
+            f"<td>{fmt_money(row['순매수금액'])}</td>",
+        ])
+    return table_html(["종목명", "업종", "펀드", "순매수금액"], body)
+
+
+def direct_stock_table(df: pd.DataFrame, title: str, panel_class: str = "") -> str:
+    if df.empty:
+        return empty(f"{title} 데이터가 없습니다.")
+    rows = df.sort_values("평가액", ascending=False, na_position="last")
+    body = []
+    for _, row in rows.iterrows():
+        body.append([
+            f"<td class='name-cell'>{esc(row['종목명'])}</td>",
+            f"<td>{esc(row['종목코드정규'])}</td>",
+            f"<td>{fmt_price(row['보유수량'])}</td>",
+            f"<td>{fmt_price(row.get('현재가'))}</td>",
+            f"<td>{fmt_money(row.get('평가액'))}</td>",
+            rate_bar(row.get("등락율"), 10),
+            pnl_cell(row.get("PL")),
+        ])
+    for _ in range(max(0, 8 - len(body))):
+        body.append(["<td>&nbsp;</td>", "<td></td>", "<td></td>", "<td></td>", "<td></td>", "<td></td>", "<td></td>"])
+    total_eval = safe_sum(rows["평가액"])
+    total_pl = safe_sum(rows["PL"])
+    body.append([
+        "<td class='total-label'>합계</td>",
+        "<td></td>",
+        f"<td>{fmt_price(safe_sum(rows['보유수량']))}</td>",
+        "<td></td>",
+        f"<td>{fmt_money(total_eval)}</td>",
+        "<td></td>",
+        pnl_cell(total_pl),
+    ])
+    cls = f"panel {panel_class}".strip()
+    return f"<article class='{cls}'><div class='panel-title'><h4>{esc(title)}</h4><span>8행 슬롯 + 합계</span></div>" + table_html(["종목명", "코드", "수량", "주가", "평가액", "등락율", "PL"], body, "table-wrap direct") + "</article>"
+
+
+def fund_pl_table(df: pd.DataFrame, all_holdings: pd.DataFrame, highlight_fund: str | None = None) -> str:
+    if df.empty or "PL" not in df:
+        return empty("시세 캐시가 없어 펀드별 PL을 계산할 수 없습니다.")
+    summary = (
+        df.groupby("보유펀드명", dropna=False)
+        .agg(Exposure=("우리평가금", "sum"), PL=("PL", "sum"), 종목수=("종목코드정규", "nunique"))
+        .reset_index()
+    )
+    fund_value_denominator = (
+        df.groupby("보유펀드명", dropna=False)["펀드평가액원"].first()
+        if not df.empty and "펀드평가액원" in df
+        else pd.Series(dtype=float)
+    )
+    summary["펀드평가액원"] = summary["보유펀드명"].map(fund_value_denominator).fillna(summary["Exposure"])
+    summary["등락율"] = summary["PL"] / summary["펀드평가액원"].replace({0: pd.NA})
+    summary = summary.sort_values("등락율", ascending=False, na_position="last")
+    body = []
+    for _, row in summary.iterrows():
+        tr_class = " class='highlight-row'" if highlight_fund and row["보유펀드명"] == highlight_fund else ""
+        body.append([
+            f"<td{tr_class}>{esc(row['보유펀드명'])}</td>",
+            f"<td>{int(row['종목수']):,}</td>",
+            f"<td>{fmt_money(row['Exposure'])}</td>",
+            rate_bar(row["등락율"] * 100 if pd.notna(row["등락율"]) else None, 5),
+            pnl_cell(row["PL"]),
+        ])
+    total_exposure = summary["Exposure"].sum()
+    total_pl = summary["PL"].sum()
+    total_fund_value = fund_value_denominator.sum() if not fund_value_denominator.empty else total_exposure
+    total_rate = total_pl / total_fund_value if total_fund_value else pd.NA
+    body.append([
+        "<td class='total-label'>합계</td>",
+        f"<td>{int(summary['종목수'].sum()):,}</td>",
+        f"<td>{fmt_money(total_exposure)}</td>",
+        rate_bar(total_rate * 100 if pd.notna(total_rate) else None, 5),
+        pnl_cell(total_pl),
+    ])
+    return table_html(["펀드명", "종목", "주식Exposure", "등락율", "주식PL"], body, "table-wrap fund-pl")
+
+
+def prepare_direct_stock_sheet(sheet_name: str, quotes: dict[str, dict[str, float | None]]) -> pd.DataFrame:
+    if not INPUTS["direct_stocks"].exists():
+        return pd.DataFrame(columns=["종목명", "종목코드정규", "보유수량", "현재가", "평가액", "등락율", "PL"])
+    df = pd.read_excel(INPUTS["direct_stocks"], sheet_name=sheet_name).dropna(how="all")
+    df["종목명"] = df["종목명"].astype(str).str.strip()
+    df["종목코드정규"] = df["종목코드"].map(normalize_code)
+    df["보유수량"] = pd.to_numeric(df["보유수량"], errors="coerce").fillna(0)
+    quote_values = df.apply(lambda row: quote_for(row, quotes), axis=1)
+    df = pd.concat([df, quote_values], axis=1)
+    df["평가액"] = df["보유수량"] * df["현재가"]
+    df["PL"] = df["평가액"] * df["등락율"] / 100.0
+    return df
+
+
+def make_view(
+    label: str,
+    all_holdings: pd.DataFrame,
+    stock_holdings: pd.DataFrame,
+    all_stock_holdings_for_pl: pd.DataFrame,
+    stock_trades: pd.DataFrame,
+    global_pl: dict[str, float | None],
+    investment_table_html: str,
+    product_table_html: str,
+    sector_large_labels: list[str],
+    sector_mid_labels: list[str],
+) -> str:
+    total_fund_amount = all_holdings["우리평가금"].sum()
+    long_amount = stock_holdings.loc[stock_holdings["포지션"] == "매수", "우리평가금"].sum()
+    short_amount = stock_holdings.loc[stock_holdings["포지션"] == "매도", "우리평가금"].sum()
+    net_exposure = long_amount - short_amount
+    investment_exposure = global_pl.get("투자주식Exposure")
+    product_exposure = global_pl.get("상품주식Exposure")
+    total_exposure = (net_exposure or 0) + (investment_exposure or 0) + (product_exposure or 0)
+    buy_amount = stock_trades.loc[stock_trades["거래구분"] == "매수", "우리결제금액"].sum()
+    sell_amount = stock_trades.loc[stock_trades["거래구분"] == "매도", "우리결제금액"].sum()
+    trade_dates = stock_trades["기준일"].dropna()
+    period = "-" if trade_dates.empty else f"{trade_dates.min():%Y-%m-%d} ~ {trade_dates.max():%Y-%m-%d}"
+    fund_meta = ""
+    count_meta = ""
+    if not all_holdings.empty:
+        rate = all_holdings["지분율"].dropna()
+        count_meta = f"지분율 {fmt_pct(rate.iloc[0])} · 보유 {len(stock_holdings):,}건 · 매매 {len(stock_trades):,}건" if label != "전체 펀드 통합" and not rate.empty else f"펀드 {all_holdings['보유펀드명'].nunique():,}개 · 보유 {len(stock_holdings):,}건 · 매매 {len(stock_trades):,}건"
+    sector_large_hold = stock_holdings.groupby("업종대분류")["우리평가금"].sum().sort_values(ascending=False).reset_index()
+    sector_mid_hold = stock_holdings.groupby("업종중분류")["우리평가금"].sum().sort_values(ascending=False).reset_index()
+    sector_trade_large = (
+        stock_trades.assign(순매수금액=stock_trades["우리결제금액"] * stock_trades["거래구분"].map({"매수": 1, "매도": -1}).fillna(0))
+        .groupby("업종대분류")["순매수금액"].sum().reset_index()
+    )
+    sector_trade_mid = (
+        stock_trades.assign(순매수금액=stock_trades["우리결제금액"] * stock_trades["거래구분"].map({"매수": 1, "매도": -1}).fillna(0))
+        .groupby("업종중분류")["순매수금액"].sum().reset_index()
+    )
+    sector_large_rank = stock_holdings.groupby("업종대분류")["우리평가금"].sum().to_dict() if not stock_holdings.empty else {}
+    sector_large_view_labels = sorted(sector_large_labels, key=lambda label: sector_large_rank.get(label, 0.0), reverse=True)
+    sector_mid_rank = stock_holdings.groupby("업종중분류")["우리평가금"].sum().to_dict() if not stock_holdings.empty else {}
+    sector_mid_view_labels = sorted(sector_mid_labels, key=lambda label: sector_mid_rank.get(label, 0.0), reverse=True)
+    return f"""
+      <div class="summary-strip">
+        <span class="period-data" data-period="{esc(period)}"></span>
+        <div class="selected-block"><span class="eyebrow">선택 펀드</span><h2>{esc(label)}</h2><small>{esc(count_meta)}</small></div>
+        <div class="metric-groups">
+          <div class="metric-group pl-group">
+            {kpi("전체 PL", fmt_money(global_pl.get("전체PL")), "합산")}
+            {kpi("수익증권 PL", fmt_money(global_pl.get("수익증권PL")), "펀드")}
+            {kpi("투자주식 PL", fmt_money(global_pl.get("투자주식PL")), "직접")}
+            {kpi("상품주식 PL", fmt_money(global_pl.get("상품주식PL")), "직접")}
+          </div>
+          <div class="metric-group exposure-group">
+            {kpi("전체 Exposure", fmt_money(total_exposure), "합산")}
+            {kpi("수익증권 Net", fmt_money(net_exposure), f"전체 중 {fmt_pct(net_exposure / total_fund_amount if total_fund_amount else pd.NA)}")}
+            {kpi("투자주식 Exposure", fmt_money(investment_exposure), "직접")}
+            {kpi("상품주식 Exposure", fmt_money(product_exposure), "직접")}
+          </div>
+        </div>
+      </div>
+      <section id="holdingSection" class="section-block">
+        <div class="section-title"><h3>보유분석</h3></div>
+        <div class="hold-grid">
+          {investment_table_html}
+          <article class="panel fund-pl-panel"><div class="panel-title"><h4>펀드별 등락율/손익</h4><span>등락율 내림차순</span></div>{fund_pl_table(all_stock_holdings_for_pl, all_holdings, None if label == "전체 펀드 통합" else label)}</article>
+          <article class="panel long-panel"><div class="panel-title"><h4>Long 보유내역</h4><span>hover: 펀드별 금액/비율</span></div>{holding_table(stock_holdings, "매수", total_fund_amount)}</article>
+          {product_table_html}
+          <article class="panel sector-large-panel"><div class="mini-title"><span class="mini-icon"></span>업종별(대)</div>{sector_large_pie_svg(list(zip(sector_large_hold["업종대분류"], sector_large_hold["우리평가금"])))}</article>
+          <article class="panel sector-mid-panel"><div class="mini-title"><span class="mini-icon"></span>업종별(중)</div>{sector_mid_bar_svg(list(zip(sector_mid_hold["업종중분류"], sector_mid_hold["우리평가금"])), sector_mid_view_labels)}</article>
+          <article class="panel short-panel"><div class="panel-title"><h4>Short 보유내역</h4><span>hover: 펀드별 금액/비율</span></div>{holding_table(stock_holdings, "매도", total_fund_amount)}</article>
+        </div>
+      </section>
+      <section id="tradeSection" class="section-block">
+        <div class="section-title"><h3>매매분석</h3><span>현금성자산 제외, 주식/주식관련 포지션만 표시</span></div>
+        <div class="kpis compact">
+          {kpi("총 매수", fmt_money(buy_amount), f"{int((stock_trades['거래구분'] == '매수').sum()):,}건")}
+          {kpi("총 매도", fmt_money(sell_amount), f"{int((stock_trades['거래구분'] == '매도').sum()):,}건")}
+          {kpi("순매수", fmt_money(buy_amount - sell_amount), "전체 기간")}
+          {kpi("매매 종목", f"{stock_trades['종목코드정규'].nunique():,}개", f"거래 {len(stock_trades):,}건")}
+        </div>
+        <div class="trade-grid">
+          <article class="panel"><div class="panel-title"><h4>상위 순매수</h4><span>hover: 펀드별 순금액/비율</span></div>{net_trade_table(stock_trades, "buy")}</article>
+          <article class="panel"><div class="panel-title"><h4>상위 순매도</h4><span>hover: 펀드별 순금액/비율</span></div>{net_trade_table(stock_trades, "sell")}</article>
+          <article class="panel trade-recent"><div class="panel-title"><h4>최근 매매내역</h4><span>5천만원 이상</span></div>{trade_table(stock_trades)}</article>
+          <article class="panel trade-sector-panel"><div class="panel-title"><h4>업종별 매매내역(대)</h4><span>매수 + / 매도 -</span></div>{trade_category_svg(list(zip(sector_trade_large["업종대분류"], sector_trade_large["순매수금액"])), sector_large_view_labels)}</article>
+          <article class="panel trade-sector-panel"><div class="panel-title"><h4>업종별 매매내역(중)</h4><span>매수 + / 매도 -</span></div>{trade_category_svg(list(zip(sector_trade_mid["업종중분류"], sector_trade_mid["순매수금액"])), sector_mid_view_labels)}</article>
+        </div>
+      </section>
+    """
+
+
+def build_dashboard() -> Path:
+    funds, trades_raw, holdings_raw = read_inputs()
+    quotes, quote_source = load_quote_cache()
+    industry_large_by_code, industry_mid_by_code = read_industry_map()
+    codes = set(funds["펀드코드"])
+    info = funds.set_index("펀드코드")
+
+    holdings = holdings_raw[holdings_raw["협회펀드코드"].isin(codes)].copy()
+    trades = trades_raw[trades_raw["협회펀드코드"].isin(codes)].copy()
+    for df in (holdings, trades):
+        df["보유펀드명"] = df["협회펀드코드"].map(info["펀드명"]).fillna(df["펀드명"])
+        df["지분율"] = df["협회펀드코드"].map(info["지분율"]).fillna(1)
+        df["펀드평가액원"] = df["협회펀드코드"].map(info["평가액원"])
+
+    holdings["우리평가금"] = holdings["평가금"].fillna(0) * holdings["지분율"]
+    holdings["우리취득가액"] = holdings["취득가액"].fillna(0) * holdings["지분율"]
+    trades["우리결제금액"] = trades["결제금액"].fillna(0) * trades["지분율"]
+
+    quote_values = holdings.apply(lambda row: quote_for(row, quotes), axis=1)
+    holdings = pd.concat([holdings, quote_values], axis=1)
+    holdings["업종대분류"] = holdings["종목코드정규"].map(industry_large_by_code).fillna("미분류")
+    holdings["업종중분류"] = holdings["종목코드정규"].map(industry_mid_by_code).fillna("미분류")
+    holdings["업종"] = holdings["업종중분류"]
+    holdings["포지션부호"] = holdings.apply(signed_position, axis=1)
+    holdings["시장PL"] = holdings["우리평가금"] * holdings["등락율"] / 100.0
+    holdings["PL"] = holdings["우리평가금"] * holdings["포지션부호"] * holdings["등락율"] / 100.0
+
+    trades["업종대분류"] = trades["종목코드정규"].map(industry_large_by_code).fillna("미분류")
+    trades["업종중분류"] = trades["종목코드정규"].map(industry_mid_by_code).fillna("미분류")
+    trades["업종"] = trades["업종중분류"]
+
+    stock_holdings = holdings[is_equity_related(holdings, "자산군")].copy()
+    stock_trades = trades[is_equity_related(trades, "자산구분") & trades["거래구분"].isin(["매수", "매도"])].copy()
+
+    investment_stocks = prepare_direct_stock_sheet("투자주식", quotes)
+    product_stocks = prepare_direct_stock_sheet("상품주식", quotes)
+    fund_pl = safe_sum(stock_holdings["PL"])
+    investment_pl = safe_sum(investment_stocks["PL"])
+    product_pl = safe_sum(product_stocks["PL"])
+    investment_exposure = safe_sum(investment_stocks["평가액"])
     product_exposure = safe_sum(product_stocks["평가액"])
     total_pl = None if all(v is None for v in [fund_pl, investment_pl, product_pl]) else sum(v or 0 for v in [fund_pl, investment_pl, product_pl])
     global_pl = {
@@ -697,4 +1078,3 @@ def daily_trade_svg(df: pd.DataFrame, width: int = 1120, height: int = 520) -> s
 
 if __name__ == "__main__":
     print(build_dashboard())
-
