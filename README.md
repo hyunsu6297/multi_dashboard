@@ -34,6 +34,7 @@ python .\kfr_download.py --holding-date 2026-06-26 --trade-start-date 2026-06-19
 ## Supabase upload
 
 `supabase_upload.py`는 세 파일의 `Data` 시트를 읽어 기준일별 불변 스냅샷과 JSONB 행으로 저장합니다. 같은 파일을 다시 실행하면 SHA-256 중복 검사를 통해 재적재하지 않습니다.
+매매현황은 KFR 파일에 더 긴 기간이 포함되더라도 `business_date`와 `기준일`이 일치하는 하루치 행만 적재합니다.
 
 필요한 환경변수:
 
