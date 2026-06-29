@@ -386,6 +386,33 @@
     const app = document.getElementById("app");
 
     let currentUser = null;
+    let currentPageKey = "stock-dashboard";
+    let stockLiveVersion = "";
+
+    async function loadStockLive(force = false) {
+      if (currentPageKey !== "stock-dashboard" || !currentUser) return;
+      const { data: live, error } = await supabase.from("dashboard_live_versions")
+        .select("storage_bucket,storage_path,version,quote_count,available_count,updated_at")
+        .eq("dashboard_key", "stock")
+        .maybeSingle();
+      if (error || !live) {
+        if (force) {
+          frame.src = pages["stock-dashboard"].src;
+          openButton.href = pages["stock-dashboard"].src;
+        }
+        return;
+      }
+      if (!force && live.version === stockLiveVersion) return;
+      const { data: signed, error: signedError } = await supabase.storage
+        .from(live.storage_bucket)
+        .createSignedUrl(live.storage_path, 3600);
+      if (signedError || !signed?.signedUrl) return;
+      stockLiveVersion = live.version;
+      frame.src = `${signed.signedUrl}&v=${encodeURIComponent(live.version)}`;
+      openButton.href = signed.signedUrl;
+      const updated = new Date(live.updated_at).toLocaleString("ko-KR");
+      pageNote.textContent = `Supabase 실시간 시세 · ${updated} · ${live.available_count}/${live.quote_count}종목`;
+    }
 
     async function handleAuthenticatedUser(user) {
       currentUser = user;
@@ -411,6 +438,7 @@
       document.getElementById("passwordForm").hidden = true;
       loginScreen.hidden = true;
       app.hidden = false;
+      await loadStockLive(true);
     }
 
     function showLogin() {
@@ -484,9 +512,10 @@
       showLogin();
     });
 
-    function showPage(key) {
+    async function showPage(key) {
       const page = pages[key];
       if (!page) return;
+      currentPageKey = key;
       document.querySelectorAll("[data-page]").forEach((button) => {
         button.classList.toggle("active", button.dataset.page === key);
       });
@@ -496,6 +525,7 @@
       frame.title = page.title;
       openButton.href = page.src;
       location.hash = key;
+      if (key === "stock-dashboard") await loadStockLive(true);
     }
 
     document.querySelectorAll("[data-page]").forEach((button) => {
@@ -503,8 +533,11 @@
     });
 
     reloadButton.addEventListener("click", () => {
-      frame.contentWindow.location.reload();
+      if (currentPageKey === "stock-dashboard") loadStockLive(true);
+      else frame.contentWindow.location.reload();
     });
+
+    setInterval(() => loadStockLive(false), 20000);
 
     const initial = location.hash.replace("#", "");
     showPage(pages[initial] ? initial : "stock-dashboard");
