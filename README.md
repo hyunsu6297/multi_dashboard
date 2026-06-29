@@ -1,6 +1,6 @@
-# KFR source data downloader
+# Multi dashboard data pipeline
 
-K-FROMS에서 통합 대시보드 원천 파일 3개를 내려받는 Playwright 자동화입니다.
+K-FROMS에서 통합 대시보드 원천 파일 3개를 내려받아 Supabase에 저장하고, DB 원천 데이터로 주식·채권 대시보드를 생성합니다.
 
 - `메자닌 기준가.xlsx`
 - `전체펀드 매매현황.xlsx`
@@ -47,12 +47,27 @@ python .\supabase_upload.py --input-dir . --business-date 2026-06-26
 
 ## Daily GitHub Actions
 
-`.github/workflows/kfr-daily.yml`은 평일 오전 7시 30분(KST)에 실행됩니다. 저장소 Actions secrets에 다음 값을 등록해야 합니다.
+`.github/workflows/kfr-daily.yml`은 평일 오전 7시 30분(KST)에 실행됩니다. KFR 다운로드, Supabase 적재, DB 입력 복원, 키움 시세 조회, 주식·채권 HTML 생성, Cloudflare Pages 배포를 순서대로 수행합니다.
 
 - `KFROM_ID`
 - `KFROM_PASSWORD`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `KIWOOM_APPKEY`
+- `KIWOOM_SECRETKEY`
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
 
 Secret key는 GitHub Actions에서만 사용하며 브라우저 코드나 일반 환경변수에 노출하면 안 됩니다.
+
+Cloudflare Pages 프로젝트 이름은 `multi-dashboard`입니다. 최초 배포 전에 Cloudflare에서 같은 이름의 Pages 프로젝트를 만들고 API 토큰에 Pages 편집 권한을 부여합니다. Cloudflare Secret이 비어 있으면 HTML 생성과 artifact 업로드까지만 실행합니다.
+
+## Repository layout
+
+- `automation/kfr`: KFR 다운로드 및 Supabase 적재
+- `apps/stock`: 주식 대시보드 빌더와 키움 REST 시세 수집기
+- `apps/bond`: 채권형 대시보드 빌더
+- `scripts/restore_dashboard_inputs.py`: Supabase 원천·수기 데이터를 빌드 입력으로 복원
+- `scripts/assemble_site.py`: 로그인 셸과 생성된 HTML을 `dist`로 조립
+- `web`: Cloudflare Pages 정적 웹 셸
 
