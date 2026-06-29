@@ -607,7 +607,7 @@ def run(
 
 def main() -> None:
     default_trade_end = previous_business_day()
-    default_trade_start = business_days_before(default_trade_end, 5)
+    default_trade_start = default_trade_end
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--holding-date", default=default_trade_end.strftime("%Y-%m-%d"))
