@@ -1,4 +1,4 @@
-name: KFR daily source import
+name: Daily data and dashboard deployment
 
 on:
   workflow_dispatch:
@@ -18,14 +18,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  download-and-upload:
+  download-build-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       KFROM_ID: ${{ secrets.KFROM_ID }}
       KFROM_PASSWORD: ${{ secrets.KFROM_PASSWORD }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      KIWOOM_APPKEY: ${{ secrets.KIWOOM_APPKEY }}
+      KIWOOM_SECRETKEY: ${{ secrets.KIWOOM_SECRETKEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -59,4 +63,31 @@ jobs:
             args+=(--business-date "${{ inputs.business_date }}")
           fi
           python automation/kfr/supabase_upload.py "${args[@]}"
+
+      - name: Restore dashboard inputs from Supabase
+        run: python scripts/restore_dashboard_inputs.py
+
+      - name: Refresh Kiwoom quotes and build stock dashboard
+        run: python apps/stock/fetch_kiwoom_quotes.py --once --build-dashboard
+
+      - name: Build bond dashboard
+        run: python apps/bond/build_dashboard.py
+
+      - name: Assemble Cloudflare Pages site
+        run: python scripts/assemble_site.py
+
+      - name: Upload dashboard build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: multi-dashboard-site
+          path: dist
+          retention-days: 7
+
+      - name: Deploy to Cloudflare Pages
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=multi-dashboard --branch=main
 
