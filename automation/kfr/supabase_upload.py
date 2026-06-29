@@ -133,13 +133,14 @@ def upload_file(
         {
             "source_key": f"eq.{source_key}",
             "business_date": f"eq.{business_date.isoformat()}",
-            "sha256": f"eq.{digest}",
-            "select": "id,row_count",
+            "select": "id,row_count,sha256",
+            "order": "downloaded_at.desc",
         }
     )
     existing = client.request("GET", f"kfr_source_snapshots?{query}")
-    if existing:
-        return int(existing[0]["id"]), int(existing[0]["row_count"]), False
+    duplicate = next((item for item in existing if item["sha256"] == digest), None)
+    if duplicate:
+        return int(duplicate["id"]), int(duplicate["row_count"]), False
 
     snapshot = client.request(
         "POST",
@@ -164,6 +165,8 @@ def upload_file(
                 payload[start : start + 500],
                 prefer="return=minimal",
             )
+        for old_snapshot in existing:
+            client.request("DELETE", f"kfr_source_snapshots?id=eq.{int(old_snapshot['id'])}")
     except Exception:
         client.request("DELETE", f"kfr_source_snapshots?id=eq.{snapshot_id}")
         raise
