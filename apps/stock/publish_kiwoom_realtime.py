@@ -96,7 +96,7 @@ class SupabasePublisher:
             f"{self.url}/storage/v1/object/{STORAGE_BUCKET}/{object_path}",
             method="POST",
             body=html_path.read_bytes(),
-            content_type="text/html; charset=utf-8",
+            content_type="text/html",
             headers={"x-upsert": "true", "cache-control": "no-cache"},
         )
 
