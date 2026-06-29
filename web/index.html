@@ -388,6 +388,13 @@
     let currentUser = null;
     let currentPageKey = "stock-dashboard";
     let stockLiveVersion = "";
+    let stockLiveObjectUrl = "";
+
+    function clearStockLiveDocument() {
+      frame.removeAttribute("srcdoc");
+      if (stockLiveObjectUrl) URL.revokeObjectURL(stockLiveObjectUrl);
+      stockLiveObjectUrl = "";
+    }
 
     async function loadStockLive(force = false) {
       if (currentPageKey !== "stock-dashboard" || !currentUser) return;
@@ -397,19 +404,26 @@
         .maybeSingle();
       if (error || !live) {
         if (force) {
+          clearStockLiveDocument();
           frame.src = pages["stock-dashboard"].src;
           openButton.href = pages["stock-dashboard"].src;
         }
         return;
       }
       if (!force && live.version === stockLiveVersion) return;
-      const { data: signed, error: signedError } = await supabase.storage
+      const { data: file, error: downloadError } = await supabase.storage
         .from(live.storage_bucket)
-        .createSignedUrl(live.storage_path, 3600);
-      if (signedError || !signed?.signedUrl) return;
+        .download(live.storage_path);
+      if (downloadError || !file) return;
+      const html = await file.text();
+      const nextObjectUrl = URL.createObjectURL(
+        new Blob([html], { type: "text/html;charset=utf-8" })
+      );
+      if (stockLiveObjectUrl) URL.revokeObjectURL(stockLiveObjectUrl);
+      stockLiveObjectUrl = nextObjectUrl;
       stockLiveVersion = live.version;
-      frame.src = `${signed.signedUrl}&v=${encodeURIComponent(live.version)}`;
-      openButton.href = signed.signedUrl;
+      frame.srcdoc = html;
+      openButton.href = stockLiveObjectUrl;
       const updated = new Date(live.updated_at).toLocaleString("ko-KR");
       pageNote.textContent = `Supabase 실시간 시세 · ${updated} · ${live.available_count}/${live.quote_count}종목`;
     }
@@ -526,6 +540,7 @@
       });
       pageTitle.textContent = page.title;
       pageNote.textContent = page.note;
+      clearStockLiveDocument();
       frame.src = page.src;
       frame.title = page.title;
       openButton.href = page.src;
