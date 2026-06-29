@@ -1,0 +1,20 @@
+.venv*/
+__pycache__/
+*.py[cod]
+
+# Credentials and local configuration
+.env
+.env.*
+run_kfr_download.cmd
+
+# Downloaded source data
+*.xlsx
+*.xls
+*.csv
+
+# Debug and runtime artifacts
+*_debug.html
+*_debug_screen.png
+*_debug_text.txt
+*.log
+
