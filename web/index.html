@@ -414,6 +414,11 @@
       pageNote.textContent = `Supabase 실시간 시세 · ${updated} · ${live.available_count}/${live.quote_count}종목`;
     }
 
+    async function reloadCurrentPage() {
+      if (currentPageKey === "stock-dashboard") await loadStockLive(true);
+      else frame.src = frame.src;
+    }
+
     async function handleAuthenticatedUser(user) {
       currentUser = user;
       const { data: profile, error } = await supabase.from("user_profiles")
@@ -468,7 +473,7 @@
       }
       status.textContent = "";
       await handleAuthenticatedUser(data.user);
-      frame.contentWindow?.location.reload();
+      await reloadCurrentPage();
     });
 
     document.getElementById("passwordForm").addEventListener("submit", async (event) => {
@@ -504,7 +509,7 @@
       document.getElementById("newPassword").value = "";
       document.getElementById("confirmPassword").value = "";
       await handleAuthenticatedUser(currentUser);
-      frame.contentWindow?.location.reload();
+      await reloadCurrentPage();
     });
 
     document.getElementById("logoutButton").addEventListener("click", async () => {
@@ -532,10 +537,7 @@
       button.addEventListener("click", () => showPage(button.dataset.page));
     });
 
-    reloadButton.addEventListener("click", () => {
-      if (currentPageKey === "stock-dashboard") loadStockLive(true);
-      else frame.contentWindow.location.reload();
-    });
+    reloadButton.addEventListener("click", reloadCurrentPage);
 
     setInterval(() => loadStockLive(false), 20000);
 
