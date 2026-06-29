@@ -6,6 +6,7 @@ __pycache__/
 .env
 .env.*
 run_kfr_download.cmd
+supabase/.temp/
 
 # Downloaded source data
 *.xlsx
