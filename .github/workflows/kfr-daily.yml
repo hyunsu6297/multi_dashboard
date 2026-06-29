@@ -3,6 +3,11 @@ name: Daily data and dashboard deployment
 on:
   workflow_dispatch:
     inputs:
+      refresh_sources:
+        description: Download KFR data and upload it to Supabase before building
+        required: false
+        default: false
+        type: boolean
       business_date:
         description: Business date (YYYY-MM-DD). Leave empty for previous weekday.
         required: false
@@ -39,12 +44,15 @@ jobs:
           cache: pip
           cache-dependency-path: automation/kfr/requirements.txt
 
-      - name: Install dependencies
-        run: |
-          pip install -r automation/kfr/requirements.txt
-          python -m playwright install --with-deps chromium
+      - name: Install Python dependencies
+        run: pip install -r automation/kfr/requirements.txt
+
+      - name: Install browser for KFR download
+        if: github.event_name == 'schedule' || inputs.refresh_sources == true
+        run: python -m playwright install --with-deps chromium
 
       - name: Download previous business day from KFR
+        if: github.event_name == 'schedule' || inputs.refresh_sources == true
         shell: bash
         run: |
           args=(--output-dir "$RUNNER_TEMP/kfr")
@@ -56,6 +64,7 @@ jobs:
           python automation/kfr/kfr_download.py "${args[@]}"
 
       - name: Upload rows to Supabase
+        if: github.event_name == 'schedule' || inputs.refresh_sources == true
         shell: bash
         run: |
           args=(--input-dir "$RUNNER_TEMP/kfr")
