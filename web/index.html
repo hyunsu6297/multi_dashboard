@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>멀티에셋운용팀 대시보드</title>
+  <style>
+    :root {
+      --sidebar: #0f172a;
+      --sidebar-2: #111827;
+      --ink: #172026;
+      --muted: #6b7280;
+      --line: #d8dee8;
+      --panel: #ffffff;
+      --wash: #f3f6f9;
+      --accent: #0f766e;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
+      color: var(--ink);
+      background: var(--wash);
+    }
+
+    .app {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: 272px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      min-width: 0;
+      background: linear-gradient(180deg, var(--sidebar), var(--sidebar-2));
+      color: white;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .brand {
+      padding: 21px 18px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .brand strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .nav {
+      padding: 14px 12px 20px;
+      overflow: auto;
+    }
+
+    .group {
+      margin: 0 0 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .group-title {
+      margin: 0 8px 8px;
+      color: #e5edf5;
+      font-size: 14px;
+      font-weight: 850;
+    }
+
+    .nav button {
+      width: 100%;
+      height: 38px;
+      border: 0;
+      border-radius: 7px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      color: #cbd5e1;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 750;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .nav button:hover,
+    .nav button.active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+
+    .nav .sub {
+      margin-left: 12px;
+      width: calc(100% - 12px);
+    }
+
+    .content {
+      min-width: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: 58px minmax(0, 1fr);
+    }
+
+    .topbar {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .title {
+      min-width: 0;
+    }
+
+    .title h1 {
+      margin: 0 0 3px;
+      font-size: 17px;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+
+    .actions a,
+    .actions button {
+      height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: #26323d;
+      padding: 0 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .actions a.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .frame-wrap {
+      min-width: 0;
+      min-height: 0;
+      padding: 10px;
+      background: #e9eef3;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      display: block;
+    }
+
+    .login-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: #e9eef3;
+    }
+
+    .login-screen[hidden],
+    .app[hidden] { display: none; }
+
+    .login-panel {
+      width: min(400px, 100%);
+      padding: 30px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+    }
+
+    .login-panel h1 { margin: 0 0 8px; font-size: 24px; }
+    .login-panel p { margin: 0 0 24px; color: var(--muted); font-size: 13px; }
+    .login-panel label { display: block; margin: 14px 0 6px; font-size: 13px; font-weight: 800; }
+    .login-panel input {
+      width: 100%;
+      height: 42px;
+      padding: 0 11px;
+      border: 1px solid #c8d1dc;
+      border-radius: 6px;
+      font: inherit;
+    }
+    .login-panel button {
+      width: 100%;
+      height: 42px;
+      margin-top: 20px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .login-panel button:disabled { opacity: .55; cursor: default; }
+    .login-status { min-height: 18px; margin-top: 12px; color: #b42318; font-size: 12px; }
+    .password-form[hidden], .login-form-fields[hidden] { display: none; }
+    .user-label { color: var(--muted); font-size: 12px; font-weight: 700; }
+
+    @media (max-width: 920px) {
+      body { overflow: auto; }
+      .app {
+        min-height: 100vh;
+        height: auto;
+        grid-template-columns: 1fr;
+      }
+      .content {
+        height: calc(100vh - 360px);
+        min-height: 680px;
+      }
+      .topbar {
+        min-height: 72px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="login-screen" id="loginScreen">
+    <div class="login-panel">
+      <h1>멀티에셋운용팀 대시보드</h1>
+      <form id="loginForm" class="login-form-fields">
+        <p>발급받은 아이디와 비밀번호로 로그인하세요.</p>
+        <label for="loginId">아이디</label>
+        <input id="loginId" autocomplete="username" required autofocus>
+        <label for="loginPassword">비밀번호</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required>
+        <button id="loginButton" type="submit">로그인</button>
+      </form>
+      <form id="passwordForm" class="password-form" hidden>
+        <p><strong id="passwordUser"></strong> 계정은 최초 비밀번호 변경이 필요합니다.</p>
+        <label for="newPassword">새 비밀번호</label>
+        <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+        <label for="confirmPassword">새 비밀번호 확인</label>
+        <input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+        <button id="changePasswordButton" type="submit">비밀번호 변경</button>
+      </form>
+      <div class="login-status" id="loginStatus" role="alert"></div>
+    </div>
+  </section>
+
+  <div class="app" id="app" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <strong>멀티에셋운용팀 대시보드</strong>
+      </div>
+      <nav class="nav" aria-label="멀티에셋운용팀 대시보드 메뉴">
+        <section class="group">
+          <div class="group-title">1. 주식 대시보드</div>
+          <button type="button" class="sub active" data-page="stock-dashboard">대시보드</button>
+          <button type="button" class="sub" data-page="stock-edit">정보수정</button>
+        </section>
+        <section class="group">
+          <div class="group-title">2. 채권대시보드</div>
+          <button type="button" class="sub" data-page="bond-dashboard">대시보드</button>
+          <button type="button" class="sub" data-page="bond-edit">정보수정</button>
+        </section>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div class="title">
+          <h1 id="pageTitle">주식 & 수익증권 대시보드</h1>
+          <p id="pageNote">기존 주식 대시보드 결과물</p>
+        </div>
+        <div class="actions">
+          <span class="user-label" id="userLabel"></span>
+          <button type="button" id="reloadButton">새로고침</button>
+          <a id="openButton" class="primary" href="pages/stock/index.html" target="_blank" rel="noopener">새 탭 열기</a>
+          <button type="button" id="logoutButton">로그아웃</button>
+        </div>
+      </header>
+      <section class="frame-wrap">
+        <iframe id="dashboardFrame" src="pages/stock/index.html" title="주식 & 수익증권 대시보드"></iframe>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    const SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_T0q_8mB9yzcitTL7HH0SuA_W4DUcVtP";
+    const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true }
+    });
+    window.dashboardSupabase = supabase;
+    const pages = {
+      "stock-dashboard": {
+        title: "주식 & 수익증권 대시보드",
+        note: "기존 주식 대시보드 결과물",
+        src: "pages/stock/index.html"
+      },
+      "stock-edit": {
+        title: "주식 대시보드 정보수정",
+        note: "주식 대시보드에서 엑셀로 관리하던 수기 입력 항목",
+        src: "pages/manual-edit/index.html?domain=stock"
+      },
+      "bond-dashboard": {
+        title: "채권형수익증권 대시보드",
+        note: "기존 채권대시보드 결과물",
+        src: "pages/bond/index.html"
+      },
+      "bond-edit": {
+        title: "채권대시보드 정보수정",
+        note: "채권대시보드에서 엑셀로 관리하던 수기 입력 항목",
+        src: "pages/manual-edit/index.html?domain=bond"
+      }
+    };
+
+    const frame = document.getElementById("dashboardFrame");
+    const pageTitle = document.getElementById("pageTitle");
+    const pageNote = document.getElementById("pageNote");
+    const openButton = document.getElementById("openButton");
+    const reloadButton = document.getElementById("reloadButton");
+    const loginScreen = document.getElementById("loginScreen");
+    const app = document.getElementById("app");
+
+    let currentUser = null;
+
+    async function handleAuthenticatedUser(user) {
+      currentUser = user;
+      const { data: profile, error } = await supabase.from("user_profiles")
+        .select("username,role,must_change_password").eq("user_id", user.id).maybeSingle();
+      if (error || !profile) {
+        document.getElementById("loginStatus").textContent = "사용자 권한 정보를 확인할 수 없습니다.";
+        return;
+      }
+      if (profile.must_change_password) {
+        app.hidden = true;
+        loginScreen.hidden = false;
+        document.getElementById("loginForm").hidden = true;
+        document.getElementById("passwordForm").hidden = false;
+        document.getElementById("passwordUser").textContent = profile.username;
+        document.getElementById("loginStatus").textContent = "";
+        return;
+      }
+      document.getElementById("userLabel").textContent = profile
+        ? `${profile.username} · ${profile.role}`
+        : user.email;
+      document.getElementById("loginForm").hidden = false;
+      document.getElementById("passwordForm").hidden = true;
+      loginScreen.hidden = true;
+      app.hidden = false;
+    }
+
+    function showLogin() {
+      app.hidden = true;
+      loginScreen.hidden = false;
+      document.getElementById("loginForm").hidden = false;
+      document.getElementById("passwordForm").hidden = true;
+      document.getElementById("loginPassword").value = "";
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.getElementById("loginButton");
+      const status = document.getElementById("loginStatus");
+      const loginId = document.getElementById("loginId").value.trim();
+      const email = loginId.includes("@") ? loginId : `${loginId}@multiasset.local`;
+      button.disabled = true;
+      status.textContent = "로그인 중입니다.";
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: document.getElementById("loginPassword").value
+      });
+      button.disabled = false;
+      if (error) {
+        status.textContent = "아이디 또는 비밀번호를 확인하세요.";
+        return;
+      }
+      status.textContent = "";
+      await handleAuthenticatedUser(data.user);
+      frame.contentWindow?.location.reload();
+    });
+
+    document.getElementById("passwordForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const password = document.getElementById("newPassword").value;
+      const confirmation = document.getElementById("confirmPassword").value;
+      const status = document.getElementById("loginStatus");
+      if (password.length < 8) {
+        status.textContent = "새 비밀번호는 8자 이상이어야 합니다.";
+        return;
+      }
+      if (password !== confirmation) {
+        status.textContent = "새 비밀번호 확인이 일치하지 않습니다.";
+        return;
+      }
+      const button = document.getElementById("changePasswordButton");
+      button.disabled = true;
+      status.textContent = "비밀번호를 변경하는 중입니다.";
+      const { error: passwordError } = await supabase.auth.updateUser({ password });
+      if (passwordError) {
+        button.disabled = false;
+        status.textContent = `비밀번호 변경 실패: ${passwordError.message}`;
+        return;
+      }
+      const { error: profileError } = await supabase.from("user_profiles")
+        .update({ must_change_password: false, updated_at: new Date().toISOString() })
+        .eq("user_id", currentUser.id);
+      button.disabled = false;
+      if (profileError) {
+        status.textContent = `계정 상태 변경 실패: ${profileError.message}`;
+        return;
+      }
+      document.getElementById("newPassword").value = "";
+      document.getElementById("confirmPassword").value = "";
+      await handleAuthenticatedUser(currentUser);
+      frame.contentWindow?.location.reload();
+    });
+
+    document.getElementById("logoutButton").addEventListener("click", async () => {
+      await supabase.auth.signOut();
+      showLogin();
+    });
+
+    function showPage(key) {
+      const page = pages[key];
+      if (!page) return;
+      document.querySelectorAll("[data-page]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.page === key);
+      });
+      pageTitle.textContent = page.title;
+      pageNote.textContent = page.note;
+      frame.src = page.src;
+      frame.title = page.title;
+      openButton.href = page.src;
+      location.hash = key;
+    }
+
+    document.querySelectorAll("[data-page]").forEach((button) => {
+      button.addEventListener("click", () => showPage(button.dataset.page));
+    });
+
+    reloadButton.addEventListener("click", () => {
+      frame.contentWindow.location.reload();
+    });
+
+    const initial = location.hash.replace("#", "");
+    showPage(pages[initial] ? initial : "stock-dashboard");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) await handleAuthenticatedUser(session.user);
+    else showLogin();
+  </script>
+</body>
+</html>
+
