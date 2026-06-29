@@ -85,6 +85,9 @@ jobs:
       - name: Assemble Cloudflare Pages site
         run: python scripts/assemble_site.py
 
+      - name: Include fund and active ETF dashboards
+        run: python scripts/fetch_external_dashboards.py
+
       - name: Upload dashboard build artifact
         uses: actions/upload-artifact@v4
         with:
