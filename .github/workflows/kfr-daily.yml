@@ -1,0 +1,62 @@
+name: KFR daily source import
+
+on:
+  workflow_dispatch:
+    inputs:
+      business_date:
+        description: Business date (YYYY-MM-DD). Leave empty for previous weekday.
+        required: false
+        type: string
+  schedule:
+    - cron: "30 23 * * 0-4"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kfr-daily-source-import
+  cancel-in-progress: false
+
+jobs:
+  download-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KFROM_ID: ${{ secrets.KFROM_ID }}
+      KFROM_PASSWORD: ${{ secrets.KFROM_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: automation/kfr/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r automation/kfr/requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Download previous business day from KFR
+        shell: bash
+        run: |
+          args=(--output-dir "$RUNNER_TEMP/kfr")
+          if [[ -n "${{ inputs.business_date }}" ]]; then
+            args+=(--holding-date "${{ inputs.business_date }}")
+            args+=(--trade-start-date "${{ inputs.business_date }}")
+            args+=(--trade-end-date "${{ inputs.business_date }}")
+          fi
+          python automation/kfr/kfr_download.py "${args[@]}"
+
+      - name: Upload rows to Supabase
+        shell: bash
+        run: |
+          args=(--input-dir "$RUNNER_TEMP/kfr")
+          if [[ -n "${{ inputs.business_date }}" ]]; then
+            args+=(--business-date "${{ inputs.business_date }}")
+          fi
+          python automation/kfr/supabase_upload.py "${args[@]}"
+
