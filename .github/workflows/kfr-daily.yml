@@ -67,8 +67,17 @@ jobs:
       - name: Restore dashboard inputs from Supabase
         run: python scripts/restore_dashboard_inputs.py
 
-      - name: Refresh Kiwoom quotes and build stock dashboard
-        run: python apps/stock/fetch_kiwoom_quotes.py --once --build-dashboard
+      - name: Refresh Kiwoom quotes when available
+        id: kiwoom_quotes
+        continue-on-error: true
+        run: python apps/stock/fetch_kiwoom_quotes.py --once
+
+      - name: Warn when Kiwoom blocks the hosted runner
+        if: steps.kiwoom_quotes.outcome == 'failure'
+        run: echo "Kiwoom quote refresh was blocked; building with the latest Supabase source data."
+
+      - name: Build stock dashboard
+        run: python apps/stock/build_fund_dashboard.py
 
       - name: Build bond dashboard
         run: python apps/bond/build_dashboard.py
