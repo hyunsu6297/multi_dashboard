@@ -38,7 +38,7 @@ python .\kfr_download.py --holding-date 2026-06-26 --trade-start-date 2026-06-19
 필요한 환경변수:
 
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`: `sb_secret_...` 형식의 Secret key를 권장하며, 기존 JWT `service_role` 키도 지원합니다.
 
 ```powershell
 python .\supabase_upload.py --input-dir . --business-date 2026-06-26
@@ -53,5 +53,5 @@ python .\supabase_upload.py --input-dir . --business-date 2026-06-26
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-서비스 역할 키는 GitHub Actions에서만 사용하며 브라우저 코드나 일반 환경변수에 노출하면 안 됩니다.
+Secret key는 GitHub Actions에서만 사용하며 브라우저 코드나 일반 환경변수에 노출하면 안 됩니다.
 
