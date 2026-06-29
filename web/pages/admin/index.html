@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>회원 관리</title>
+  <style>
+    :root { --navy:#12372d; --green:#008a83; --ink:#17211f; --muted:#697872; --line:#dce5e1; --soft:#f3f7f5; --danger:#a83232; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#fff; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; padding:22px 26px 16px; border-bottom:1px solid var(--line); }
+    h1 { margin:0; font-size:22px; letter-spacing:0; color:var(--navy); }
+    header p { margin:5px 0 0; font-size:13px; color:var(--muted); }
+    button { border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); padding:8px 12px; font-weight:700; cursor:pointer; }
+    button.primary { border-color:var(--green); background:var(--green); color:#fff; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    main { padding:18px 26px 28px; overflow:auto; }
+    .summary { display:grid; grid-template-columns:repeat(4,minmax(120px,1fr)); gap:10px; margin-bottom:18px; }
+    .metric { border-top:3px solid var(--green); background:var(--soft); padding:12px 14px; min-height:68px; }
+    .metric span { display:block; color:var(--muted); font-size:12px; }
+    .metric strong { display:block; margin-top:5px; font-size:22px; color:var(--navy); }
+    .table-wrap { overflow:auto; border:1px solid var(--line); }
+    table { width:100%; min-width:940px; border-collapse:collapse; font-size:13px; }
+    th { position:sticky; top:0; z-index:1; padding:10px; background:var(--soft); color:var(--navy); text-align:left; white-space:nowrap; border-bottom:1px solid var(--line); }
+    td { padding:10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+    tr:last-child td { border-bottom:0; }
+    select { min-width:105px; border:1px solid #bccac4; border-radius:5px; background:#fff; padding:7px 8px; color:var(--ink); }
+    .email { font-weight:700; }
+    .date { color:var(--muted); white-space:nowrap; }
+    .status { min-height:20px; margin:0 0 10px; color:var(--muted); font-size:13px; }
+    .status.error { color:var(--danger); }
+    .empty { padding:36px; text-align:center; color:var(--muted); }
+    @media (max-width:720px) { header, main { padding-left:14px; padding-right:14px; } .summary { grid-template-columns:1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>회원 관리</h1>
+      <p>가입 신청 상태와 대시보드 권한을 관리합니다.</p>
+    </div>
+    <button id="refreshButton" type="button">새로고침</button>
+  </header>
+  <main>
+    <section class="summary" aria-label="회원 현황">
+      <div class="metric"><span>승인 대기</span><strong id="pendingCount">0</strong></div>
+      <div class="metric"><span>승인 완료</span><strong id="approvedCount">0</strong></div>
+      <div class="metric"><span>이용 중지</span><strong id="suspendedCount">0</strong></div>
+      <div class="metric"><span>반려</span><strong id="rejectedCount">0</strong></div>
+    </section>
+    <p class="status" id="status" role="status"></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>이메일</th><th>가입일</th><th>가입 상태</th><th>권한</th><th>승인일</th><th>저장</th></tr></thead>
+        <tbody id="memberRows"><tr><td class="empty" colspan="6">회원 정보를 불러오는 중입니다.</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+  <script type="module">
+    const parentClient = window.parent !== window ? window.parent.dashboardSupabase : null;
+    const SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_T0q_8mB9yzcitTL7HH0SuA_W4DUcVtP";
+    const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
+    const supabase = parentClient || createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true }
+    });
+    const rows = document.getElementById("memberRows");
+    const status = document.getElementById("status");
+    let currentUserId = "";
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>'"]/g, (char) => ({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;"
+      })[char]);
+    }
+
+    function formatDate(value) {
+      return value ? new Date(value).toLocaleString("ko-KR") : "-";
+    }
+
+    function option(value, selected, label) {
+      return `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`;
+    }
+
+    function render(members) {
+      for (const key of ["pending", "approved", "suspended", "rejected"]) {
+        document.getElementById(`${key}Count`).textContent = members.filter((member) => member.status === key).length;
+      }
+      if (!members.length) {
+        rows.innerHTML = '<tr><td class="empty" colspan="6">가입한 회원이 없습니다.</td></tr>';
+        return;
+      }
+      rows.innerHTML = members.map((member) => {
+        const isSelf = member.user_id === currentUserId;
+        return `<tr data-user-id="${escapeHtml(member.user_id)}">
+          <td class="email">${escapeHtml(member.email || member.username)}</td>
+          <td class="date">${formatDate(member.created_at)}</td>
+          <td><select data-field="status"${isSelf ? " disabled" : ""}>
+            ${option("pending", member.status, "승인 대기")}${option("approved", member.status, "승인")}
+            ${option("suspended", member.status, "이용 중지")}${option("rejected", member.status, "반려")}
+          </select></td>
+          <td><select data-field="role"${isSelf ? " disabled" : ""}>
+            ${option("viewer", member.role, "조회")}${option("editor", member.role, "편집")}${option("admin", member.role, "관리자")}
+          </select></td>
+          <td class="date">${formatDate(member.approved_at)}</td>
+          <td><button class="primary" data-action="save" type="button"${isSelf ? " disabled title=\"현재 관리자 계정은 변경할 수 없습니다.\"" : ""}>저장</button></td>
+        </tr>`;
+      }).join("");
+    }
+
+    async function loadMembers() {
+      status.className = "status";
+      status.textContent = "회원 정보를 불러오는 중입니다.";
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        status.className = "status error";
+        status.textContent = "로그인 세션이 없습니다.";
+        return;
+      }
+      currentUserId = session.user.id;
+      const { data: ownProfile, error: profileError } = await supabase.from("user_profiles")
+        .select("role,status").eq("user_id", currentUserId).maybeSingle();
+      if (profileError || ownProfile?.role !== "admin" || ownProfile?.status !== "approved") {
+        status.className = "status error";
+        status.textContent = "관리자 권한이 필요합니다.";
+        rows.innerHTML = '<tr><td class="empty" colspan="6">접근 권한이 없습니다.</td></tr>';
+        return;
+      }
+      const { data, error } = await supabase.from("user_profiles")
+        .select("user_id,email,username,role,status,created_at,approved_at,updated_at")
+        .order("created_at", { ascending: false });
+      if (error) {
+        status.className = "status error";
+        status.textContent = `회원 정보 조회 실패: ${error.message}`;
+        return;
+      }
+      render(data || []);
+      status.textContent = `총 ${(data || []).length}명`;
+    }
+
+    rows.addEventListener("click", async (event) => {
+      const button = event.target.closest('[data-action="save"]');
+      if (!button) return;
+      const row = button.closest("tr");
+      const userId = row.dataset.userId;
+      const nextStatus = row.querySelector('[data-field="status"]').value;
+      const role = row.querySelector('[data-field="role"]').value;
+      const now = new Date().toISOString();
+      button.disabled = true;
+      status.className = "status";
+      status.textContent = "회원 권한을 저장하고 있습니다.";
+      const profileChanges = { role, status: nextStatus, updated_at: now };
+      if (nextStatus === "approved") {
+        profileChanges.approved_at = now;
+        profileChanges.approved_by = currentUserId;
+      } else {
+        profileChanges.approved_at = null;
+        profileChanges.approved_by = null;
+      }
+      const { error: profileError } = await supabase.from("user_profiles")
+        .update(profileChanges).eq("user_id", userId);
+      const { error: roleError } = profileError ? { error: null } : await supabase.from("app_admins")
+        .upsert({ user_id: userId, role }, { onConflict: "user_id" });
+      if (profileError || roleError) {
+        button.disabled = false;
+        status.className = "status error";
+        status.textContent = `저장 실패: ${(profileError || roleError).message}`;
+        return;
+      }
+      status.textContent = "회원 권한을 저장했습니다.";
+      await loadMembers();
+    });
+
+    document.getElementById("refreshButton").addEventListener("click", loadMembers);
+    await loadMembers();
+  </script>
+</body>
+</html>
