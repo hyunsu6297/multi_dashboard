@@ -1,6 +1,14 @@
 name: Daily data and dashboard deployment
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "web/**"
+      - "apps/**"
+      - "scripts/**"
+      - ".github/workflows/kfr-daily.yml"
   workflow_dispatch:
     inputs:
       refresh_sources:
