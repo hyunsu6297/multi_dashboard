@@ -1,0 +1,267 @@
+[
+  {
+    "domain": "stock",
+    "file_key": "fund_info",
+    "file_label": "펀드 정보.xlsx",
+    "sheets": [
+      {
+        "name": "Sheet1",
+        "columns": [
+          "펀드코드",
+          "펀드명",
+          "지분율",
+          "유형",
+          "평가액"
+        ],
+        "row_count": 20
+      }
+    ]
+  },
+  {
+    "domain": "stock",
+    "file_key": "stock_holding",
+    "file_label": "주식보유현황.xlsx",
+    "sheets": [
+      {
+        "name": "투자주식",
+        "columns": [
+          "종목명",
+          "종목코드",
+          "보유수량"
+        ],
+        "row_count": 2
+      },
+      {
+        "name": "상품주식",
+        "columns": [
+          "종목명",
+          "종목코드",
+          "보유수량"
+        ],
+        "row_count": 2
+      }
+    ]
+  },
+  {
+    "domain": "stock",
+    "file_key": "sector",
+    "file_label": "업종.xlsx",
+    "sheets": [
+      {
+        "name": "Sheet1",
+        "columns": [
+          "Code",
+          "코드",
+          "Name",
+          "업종RAW",
+          "업종(대)",
+          "업종(중)",
+          "대분류",
+          "중분류Raw",
+          "중분류"
+        ],
+        "row_count": 2554
+      }
+    ]
+  },
+  {
+    "domain": "stock",
+    "file_key": "mezzanine_nav",
+    "file_label": "메자닌 기준가.xlsx",
+    "sheets": [
+      {
+        "name": "Data",
+        "columns": [
+          "거래일",
+          "예탁원펀드코드",
+          "펀드명",
+          "유형코드(대)",
+          "유형코드(소)",
+          "상품코드",
+          "종목명",
+          "기준가",
+          "수량",
+          "등락율",
+          "평가금액",
+          "자산대분류코드"
+        ],
+        "row_count": 253
+      }
+    ]
+  },
+  {
+    "domain": "bond",
+    "file_key": "fund_info",
+    "file_label": "펀드정보.xlsx",
+    "sheets": [
+      {
+        "name": "펀드정보",
+        "columns": [
+          "구분",
+          "전략",
+          "운용사",
+          "펀드명",
+          "펀드코드",
+          "협회코드",
+          "지분율",
+          "장부가",
+          "평가금액",
+          "REF",
+          "평가금액(원본)",
+          "스왑만기",
+          "판매사",
+          "신규일",
+          "결산일",
+          "펀드AUM",
+          "LP1",
+          "LP1비중",
+          "LP2",
+          "lp2비중",
+          "메모"
+        ],
+        "row_count": 76
+      }
+    ]
+  },
+  {
+    "domain": "bond",
+    "file_key": "issuer",
+    "file_label": "발행사.xlsx",
+    "sheets": [
+      {
+        "name": "발행사",
+        "columns": [
+          "발행사",
+          "발행사(변경후)",
+          "중분류"
+        ],
+        "row_count": 160
+      }
+    ]
+  },
+  {
+    "domain": "fund",
+    "file_key": "hana_emp",
+    "file_label": "Hana_EMP.xlsx",
+    "sheets": [
+      {
+        "name": "일별",
+        "columns": [
+          "Date",
+          "EMP1",
+          "EMP2",
+          "EMP3",
+          "EMP4"
+        ],
+        "row_count": 357
+      }
+    ]
+  },
+  {
+    "domain": "fund",
+    "file_key": "bm_definition",
+    "file_label": "bm_definition_template.xlsx",
+    "sheets": [
+      {
+        "name": "bm_def",
+        "columns": [
+          "BM_ID",
+          "BM_Name",
+          "UseYN",
+          "SortOrder",
+          "Category",
+          "Component",
+          "SourceSheet",
+          "CalcType",
+          "Weight",
+          "Spread",
+          "DayCount",
+          "Rebalance",
+          "Currency",
+          "Description"
+        ],
+        "row_count": 24
+      },
+      {
+        "name": "source_columns",
+        "columns": [
+          "SourceSheet",
+          "HeaderRow",
+          "ColumnName",
+          "CalcType",
+          "Ticker_or_Source"
+        ],
+        "row_count": 13
+      },
+      {
+        "name": "examples",
+        "columns": [
+          "BM_ID",
+          "BM_Name",
+          "UseYN",
+          "SortOrder",
+          "Category",
+          "Component",
+          "SourceSheet",
+          "CalcType",
+          "Weight",
+          "Spread",
+          "DayCount",
+          "Rebalance",
+          "Currency",
+          "Description"
+        ],
+        "row_count": 3
+      }
+    ]
+  },
+  {
+    "domain": "fund",
+    "file_key": "mapping",
+    "file_label": "mapping.xlsx",
+    "sheets": [
+      {
+        "name": "Data",
+        "columns": [
+          "Code",
+          "Fund",
+          "Group",
+          "Manager",
+          "LaunchDate",
+          "Team"
+        ],
+        "row_count": 184
+      }
+    ]
+  },
+  {
+    "domain": "fund",
+    "file_key": "fund_nav",
+    "file_label": "펀드 기준가.xlsx",
+    "sheets": [
+      {
+        "name": "Data",
+        "columns": [
+          "기준일",
+          "유형",
+          "예탁원펀드코드",
+          "투자일",
+          "펀드명",
+          "일수익률",
+          "기준가(당일)",
+          "기준가(전일)",
+          "결산분배율",
+          "누적수익률",
+          "KOSPI",
+          "KOSDAQ",
+          "S&P500",
+          "NASDAQ",
+          "KOBI30",
+          "KOBI120",
+          "기준금리"
+        ],
+        "row_count": 38382
+      }
+    ]
+  }
+]
