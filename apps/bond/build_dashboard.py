@@ -363,7 +363,161 @@ HTML_TEMPLATE = r"""<!doctype html>
 .side{grid-column:1;grid-row:2;background:white;border-right:2px solid var(--line);padding:8px 8px 16px;position:sticky;top:0;height:calc(100vh - 76px);overflow:auto}
 .asof{display:grid;grid-template-columns:52px 1fr;gap:6px 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 2px;font-size:12px}.resetAll{grid-column:1/-1;border:1px solid var(--line);background:#eef7f4;color:var(--ink);border-radius:4px;padding:4px 8px;cursor:pointer;font-weight:700}.filter{border:1.5px solid var(--line);border-radius:5px;padding:6px;margin:8px 0;background:#fcfffe}.filterHead{display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;gap:4px}.filter h3{margin:0;color:var(--ink);font-size:12px;flex:1}.miniAll,.multiBtn{border:1px solid #b6d1ca;background:#e9f2ef;color:var(--ink);border-radius:3px;padding:2px 6px;font-size:10px;cursor:pointer}.multiBtn.active{background:var(--deep);border-color:var(--line);color:white}.chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.chip{border:0;background:#2a7569;color:white;border-radius:3px;padding:4px 6px;text-align:left;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.chip.active{background:#092f2a;color:#fff;box-shadow:inset 0 0 0 2px #9ad0c1}.chip.disabled{background:#d9e1de;color:#7b8f8a;cursor:not-allowed}.main{grid-column:2;grid-row:2;padding:6px 10px 18px;overflow:hidden}.memo,.filterInfo{border:1.5px solid var(--line);background:white;border-radius:0 0 6px 6px;min-height:54px}.filterInfo{padding:7px 9px;font-size:11px;line-height:1.45;width:max-content;max-width:560px}.filterInfo b{display:block;color:var(--ink);font-size:12px;margin-bottom:3px}.filterInfo span{display:block;white-space:nowrap}.memo table{width:100%;border-collapse:collapse;font-size:11px}.memo th{background:var(--deep);color:white;border:1px solid #111;padding:2px 5px}.memo td{border:1px solid #222;height:17px;text-align:center}.memoNote{border-top:1px solid #222;padding:5px 7px;font-size:11px;min-height:24px;text-align:left}
 .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:8px 0}.kpi{border:1.5px solid var(--line);border-radius:6px;background:white;padding:9px 12px;min-height:62px}.kpi span{display:block;color:var(--ink);font-weight:800;font-size:12px}.kpi b{display:block;text-align:right;color:#005042;font-size:21px;margin-top:10px}.tradeRange{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 8px;font-size:12px;color:var(--ink);font-weight:800}.dateInput{border:1px solid #9abeb6;border-radius:4px;padding:3px 7px;font-size:12px;color:#102b28;background:white}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}.detailGrid{grid-template-columns:1fr 1fr}.tabPane:not(.active){display:none}.tabPane.active.grid{display:grid}.panel{border:1.5px solid var(--line);border-radius:16px;background:white;padding:10px;min-width:0;overflow:hidden}.panel h2{margin:0 0 7px;color:var(--ink);font-size:13px;display:flex;align-items:center;gap:5px}.panel h2:before{content:"";width:18px;height:12px;background:linear-gradient(90deg,#458c7b,#b7d8cf);border:1px solid var(--line);border-radius:8px;display:inline-block}.wide{grid-column:1 / -1}.tablewrap{overflow:auto;max-height:310px}.topPanel{min-height:468px}.topPanel .tablewrap{overflow-x:auto;overflow-y:visible;max-height:none}.summaryTall{height:331px}.detailPanel{height:calc(100vh - 188px);min-height:720px;display:flex;flex-direction:column}.detailPanel .tablewrap{flex:1;min-height:0;max-height:none}.side .filter:nth-last-child(1) .chips{grid-template-columns:repeat(2,minmax(0,1fr))}
-table.data{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}.data th{position:sticky;top:0;background:var(--teal);color:white;padding:3px 5px;border-right:1px solid #d8eee8;cursor:pointer;user-select:none}.data th.sortAsc:after{content:" ▲";font-size:9px}.data th.sortDesc:after{content:" ▼";font-size:9px}.data td{padding:2px 5px;border-bottom:1px solid #e6efec}.data tr:nth-child(even){background:#f7fbfa}.num{text-align:right}.neg{color:var(--red)}.tag{background:#064e43;color:white;border-radius:2px;padding:1px 4px}.chart{height:300px}.comboSvg{width:100%;height:360px}.kpiChart{width:100%;height:430px}.analysisPanel{min-height:560px}.analysisControls{display:flex;align-items:center;gap:10px;margin:4px 0 12px;font-weight:800;color:var(--ink)}.analysisControls label{display:flex;align-items:center;gap:6px}.bar{height:18px;margin:6px 0;position:relative}.bar i{display:block;height:100%;background:var(--deep)}.bar b{position:absolute;left:calc(var(--w,0%) + 6px);top:2px;background:transparent;color:var(--deep);font-size:10px;padding:1px 3px;white-space:nowrap}.ratingRow{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:8px;margin:9px 0;font-weight:700}.svgbox{width:100%;height:260px}.sectorPanel .svgbox{height:282px}.controls{display…3230 tokens truncated…eof bv==="number") cmp=av-bv;
+table.data{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}.data th{position:sticky;top:0;background:var(--teal);color:white;padding:3px 5px;border-right:1px solid #d8eee8;cursor:pointer;user-select:none}.data th.sortAsc:after{content:" ▲";font-size:9px}.data th.sortDesc:after{content:" ▼";font-size:9px}.data td{padding:2px 5px;border-bottom:1px solid #e6efec}.data tr:nth-child(even){background:#f7fbfa}.num{text-align:right}.neg{color:var(--red)}.tag{background:#064e43;color:white;border-radius:2px;padding:1px 4px}.chart{height:300px}.comboSvg{width:100%;height:360px}.kpiChart{width:100%;height:430px}.analysisPanel{min-height:560px}.analysisControls{display:flex;align-items:center;gap:10px;margin:4px 0 12px;font-weight:800;color:var(--ink)}.analysisControls label{display:flex;align-items:center;gap:6px}.bar{height:18px;margin:6px 0;position:relative}.bar i{display:block;height:100%;background:var(--deep)}.bar b{position:absolute;left:calc(var(--w,0%) + 6px);top:2px;background:transparent;color:var(--deep);font-size:10px;padding:1px 3px;white-space:nowrap}.ratingRow{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:8px;margin:9px 0;font-weight:700}.svgbox{width:100%;height:260px}.sectorPanel .svgbox{height:282px}.controls{display:flex;align-items:center;gap:8px;margin-bottom:6px;position:relative}.search{border:1px solid #9abeb6;border-radius:4px;padding:4px 7px;min-width:220px}.btn{border:1px solid var(--line);background:#eef7f4;color:var(--ink);border-radius:4px;padding:4px 8px;cursor:pointer}.suggestions{position:absolute;top:28px;left:0;right:70px;z-index:5;background:white;border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 10px rgba(0,0,0,.08);max-height:150px;overflow:auto}.suggestion{padding:5px 8px;font-size:11px;cursor:pointer}.suggestion.active,.suggestion:hover{background:var(--deep);color:white}.foot{margin-top:8px;color:#5a706c;font-size:11px;text-align:right}
+.panelTitleRow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px}.panelTitleRow h2{margin:0}.tradeRange.compact{margin:0;justify-content:flex-end;gap:6px;white-space:nowrap}.tradeRange.compact .dateInput{width:122px}.analysisGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}.analysisPanel{min-height:360px}.analysisPanel .kpiChart{height:310px}.analysisControls{margin:0;gap:6px;white-space:nowrap}.analysisControls .dateInput{width:122px}
+@media(max-width:1200px){.app{grid-template-columns:1fr;grid-template-rows:auto auto auto}.topbar{grid-template-columns:1fr}.tabNav{padding:0 0 6px 10px}.side{grid-column:1;grid-row:2;position:relative;height:auto;border-right:0;border-bottom:2px solid var(--line)}.main{grid-column:1;grid-row:3}.grid,.detailGrid{grid-template-columns:1fr}.wide{grid-column:auto;grid-row:auto}.kpis{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="pageTitle">채권형수익증권 대시보드</div>
+    <nav class="tabNav" aria-label="화면 선택">
+      <button class="tabBtn active" data-tab="summary" type="button">요약</button>
+      <button class="tabBtn" data-tab="detail" type="button">상세</button>
+      <button class="tabBtn" data-tab="analysis" type="button">시계열분석</button>
+    </nav>
+    <div class="memo"><table><thead><tr><th>펀드명</th><th>전략</th><th>AUM(억)</th><th>지분율</th><th>신규일</th><th>결산일</th><th>스왑만기</th><th>판매사</th><th>LP1</th><th>LP1비중</th><th>LP2</th><th>LP2비중</th></tr></thead><tbody id="fundMini"></tbody></table><div id="fundMemo" class="memoNote"></div></div>
+    <div class="filterInfo"><b>패널별 편입자산 기준</b><span>보유: 해외상품/선물옵션/채권차입/채권매도, FX스왑/국채선물/레포/해외파생, 국고채 제외</span><span>듀레이션·YTM: 어음/채권/현금성자산, CD/기업어음/일반/정기예금/현금 및 예금</span><span>중분류·신용등급·거래내역은 원본 기준별 별도 필터 적용</span></div>
+  </header>
+  <aside class="side">
+    <div class="asof"><b>기준일</b><span id="asOf"></span><button id="resetAll" class="resetAll">전체 초기화</button></div>
+    <div id="filters"></div>
+  </aside>
+  <main class="main">
+    <section class="kpis">
+      <div class="kpi"><span>총 익스포저</span><b id="kTotal"></b></div>
+      <div class="kpi"><span>당행 평가액</span><b id="kEval"></b></div>
+      <div class="kpi"><span>레버리지</span><b id="kLev"></b></div>
+      <div class="kpi"><span>듀레이션</span><b id="kDur"></b></div>
+      <div class="kpi"><span>델타</span><b id="kDelta"></b></div>
+      <div class="kpi"><span>YTM</span><b id="kYtm"></b></div>
+    </section>
+    <section id="summaryTab" class="grid tabPane active">
+      <div class="panel topPanel"><h2>주요보유내역(TOP20)</h2><div class="tablewrap"><table class="data" id="topHold"></table></div></div>
+      <div class="panel topPanel"><div class="panelTitleRow"><h2>주요매매내역</h2><div class="tradeRange compact"><span>매매기간</span><input class="dateInput tradeStartInput" type="date" /><span>~</span><input class="dateInput tradeEndInput" type="date" /></div></div><div class="tablewrap"><table class="data" id="tradeTbl"></table></div></div>
+      <div class="panel sectorPanel summaryTall"><h2>중분류(섹터)</h2><svg id="pie" class="svgbox" viewBox="0 0 360 250"></svg></div>
+      <div class="panel summaryTall"><h2>신용등급</h2><div id="rating" class="chart"></div></div>
+      <div class="panel"><h2>만기 구조</h2><svg id="maturity" class="comboSvg" viewBox="0 0 820 360"></svg></div>
+      <div class="panel"><h2>발행사별 보유현황</h2><div class="controls"><input id="issuerSearch" class="search" placeholder="발행사 검색" autocomplete="off" /><button id="issuerRun" class="btn">검색</button><div id="issuerChoices" class="suggestions"></div></div><div class="tablewrap"><table class="data" id="issuerTbl"></table></div></div>
+    </section>
+    <section id="detailTab" class="grid detailGrid tabPane">
+      <div class="panel detailPanel"><div class="panelTitleRow"><h2>전체매매내역</h2><div class="tradeRange compact"><span>매매기간</span><input class="dateInput tradeStartInput" type="date" /><span>~</span><input class="dateInput tradeEndInput" type="date" /></div></div><div class="tablewrap"><table class="data" id="allTrade"></table></div></div>
+      <div class="panel detailPanel"><h2>전체보유내역</h2><div class="controls"><input id="search" class="search" placeholder="검색" /><button id="reset" class="btn">초기화</button></div><div class="tablewrap"><table class="data" id="allHold"></table></div></div>
+    </section>
+    <section id="analysisTab" class="analysisGrid tabPane">
+      <div class="panel analysisPanel" data-metric="total"><div class="panelTitleRow"><h2>총 익스포저</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="total" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="total" type="date" /></div></div><svg id="kpiChart_total" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
+      <div class="panel analysisPanel" data-metric="eval"><div class="panelTitleRow"><h2>당행 평가액</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="eval" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="eval" type="date" /></div></div><svg id="kpiChart_eval" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
+      <div class="panel analysisPanel" data-metric="lev"><div class="panelTitleRow"><h2>레버리지</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="lev" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="lev" type="date" /></div></div><svg id="kpiChart_lev" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
+      <div class="panel analysisPanel" data-metric="duration"><div class="panelTitleRow"><h2>듀레이션</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="duration" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="duration" type="date" /></div></div><svg id="kpiChart_duration" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
+      <div class="panel analysisPanel" data-metric="delta"><div class="panelTitleRow"><h2>델타</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="delta" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="delta" type="date" /></div></div><svg id="kpiChart_delta" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
+      <div class="panel analysisPanel" data-metric="ytm"><div class="panelTitleRow"><h2>YTM</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="ytm" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="ytm" type="date" /></div></div><svg id="kpiChart_ytm" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
+    </section>
+    <div class="foot" id="foot"></div>
+  </main>
+</div>
+<script>
+const DATA = __DATA__;
+const state = {type:[],strategy:[],mid:[],manager:[],fund:[],multi:{type:false,strategy:false,mid:false,manager:false,fund:false},search:"",issuerSearch:"롯데카드",selectedIssuer:"롯데카드",issuerIndex:0,activeTab:"summary",sorts:{}};
+function defaultTradeStart(end){
+  if(!end) return "";
+  const d=new Date(`${end}T00:00:00`);
+  d.setMonth(d.getMonth()-1);
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+state.tradeEnd=DATA.tradeMax || DATA.asOf;
+state.tradeStart=defaultTradeStart(state.tradeEnd);
+const kpiMetrics=["total","eval","lev","duration","delta","ytm"];
+state.kpiRanges=Object.fromEntries(kpiMetrics.map(k=>[k,{start:defaultTradeStart(DATA.kpiMax||DATA.asOf),end:DATA.kpiMax||DATA.asOf}]));
+const filterDefs = [
+  ["type","구분", d=>d.type],
+  ["strategy","전략", d=>d.strategy],
+  ["mid","중분류", d=>d.mid],
+  ["manager","운용사", d=>d.manager],
+  ["fund","펀드명", d=>d.fund]
+];
+const KRW = v => (v/100000000).toLocaleString("ko-KR",{maximumFractionDigits:0});
+const KRWLong = v => {
+  const uk = Math.round((v||0)/100000000);
+  if (Math.abs(uk) >= 10000) {
+    const jo = Math.trunc(uk/10000), rest = Math.abs(uk%10000);
+    return `${jo.toLocaleString("ko-KR")}조 ${rest.toLocaleString("ko-KR")}억원`;
+  }
+  return `${uk.toLocaleString("ko-KR")} 억원`;
+};
+const KRW2 = v => `${((v||0)/100000000).toLocaleString("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2})} 억원`;
+const one = v => Number(v||0).toLocaleString("ko-KR",{maximumFractionDigits:2});
+const fmtPct = v => `${Number(v||0).toLocaleString("ko-KR",{maximumFractionDigits:2})}%`;
+const chartDefs = {
+  total:["총 익스포저",v=>KRWLong(v),v=>KRW(v)],
+  eval:["당행 평가액",v=>KRWLong(v),v=>KRW(v)],
+  lev:["레버리지",v=>fmtPct(v),v=>fmtPct(v)],
+  duration:["듀레이션",v=>`${one(v)} 년`,v=>one(v)],
+  delta:["델타",v=>KRW2(v),v=>KRW(v)],
+  ytm:["YTM",v=>fmtPct(v),v=>fmtPct(v)]
+};
+const by = (arr,key) => arr.reduce((m,d)=>((m[key(d)||"미분류"]=(m[key(d)||"미분류"]||0)+d.real),m),{});
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function filtered(arr){
+  return arr.filter(d => (!state.type.length||state.type.includes(d.type))&&(!state.strategy.length||state.strategy.includes(d.strategy))&&(!state.mid.length||state.mid.includes(d.mid))&&(!state.manager.length||state.manager.includes(d.manager))&&(!state.fund.length||state.fund.includes(d.fund)));
+}
+function tradeDateBase(d){
+  return (!state.tradeStart || d.date >= state.tradeStart) && (!state.tradeEnd || d.date <= state.tradeEnd);
+}
+const inSet = (v, items) => items.includes(v);
+const hasAny = (v, items) => items.some(x => String(v||"").includes(x));
+function holdingBase(d){
+  return !inSet(d.asset,["해외상품","선물옵션","선물옵션파생","채권차입","채권매도"]) &&
+    !inSet(d.market,["FX스왑","FX SWAP","국채선물","레포","해외파생"]) &&
+    !hasAny(d.mid,["국고채"]);
+}
+function dyBase(d){
+  return inSet(d.asset,["어음","채권","현금성자산"]) &&
+    inSet(d.market,["CD","기업어음","일반","정기예금","현금 및 예금"]);
+}
+function sectorBase(d){
+  return inSet(d.asset,["어음","채권","현금성자산"]) &&
+    inSet(d.market,["기업어음","일반"]) &&
+    !hasAny(d.mid,["국고","국고채","통안"]);
+}
+function ratingBase(d){
+  return inSet(d.asset,["어음","채권"]) &&
+    inSet(d.market,["CD","기업어음","일반"]);
+}
+function tradeBase(d){
+  return inSet(d.asset,["채권","어음","펀드","기타","해외상품","현금성자산"]) &&
+    d.market !== "레포";
+}
+function matchesExcept(d, skipKey){
+  return (skipKey==="type"||!state.type.length||state.type.includes(d.type))&&(skipKey==="strategy"||!state.strategy.length||state.strategy.includes(d.strategy))&&(skipKey==="mid"||!state.mid.length||state.mid.includes(d.mid))&&(skipKey==="manager"||!state.manager.length||state.manager.includes(d.manager))&&(skipKey==="fund"||!state.fund.length||state.fund.includes(d.fund));
+}
+function toggleFilter(key,value){
+  const list=state[key];
+  const idx=list.indexOf(value);
+  if(state.multi[key]){
+    if(idx>=0) list.splice(idx,1); else list.push(value);
+  }else{
+    state[key]=idx>=0 ? [] : [value];
+  }
+}
+function sortValue(v){
+  if(v == null || v === "") return "";
+  if(typeof v === "number") return v;
+  const s=String(v).replace(/<[^>]*>/g,"").trim();
+  const n=Number(s.replace(/[,%억원조\s]/g,""));
+  if(s && !Number.isNaN(n) && /[0-9]/.test(s)) return n;
+  return s.toLowerCase();
+}
+function sortedRows(tableId, cols, rows){
+  const sort=state.sorts[tableId];
+  if(!sort) return rows;
+  const col=cols[sort.idx];
+  const getter=col[3] || col[1];
+  return [...rows].sort((a,b)=>{
+    const av=sortValue(getter(a)), bv=sortValue(getter(b));
+    let cmp=0;
+    if(typeof av==="number" && typeof bv==="number") cmp=av-bv;
     else cmp=String(av).localeCompare(String(bv),"ko",{numeric:true});
     return sort.dir==="asc" ? cmp : -cmp;
   });
@@ -568,4 +722,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
