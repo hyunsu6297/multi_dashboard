@@ -300,6 +300,15 @@
           <button type="button" class="sub" data-page="bond-dashboard">대시보드</button>
           <button type="button" class="sub" data-page="bond-edit">정보수정</button>
         </section>
+        <section class="group">
+          <div class="group-title">3. 펀드차트</div>
+          <button type="button" class="sub" data-page="fund-dashboard">대시보드</button>
+          <button type="button" class="sub" data-page="fund-edit">정보수정</button>
+        </section>
+        <section class="group">
+          <div class="group-title">4. 액티브ETF 분석</div>
+          <button type="button" data-page="etf-dashboard">대시보드</button>
+        </section>
       </nav>
     </aside>
 
@@ -350,6 +359,21 @@
         title: "채권대시보드 정보수정",
         note: "채권대시보드에서 엑셀로 관리하던 수기 입력 항목",
         src: "pages/manual-edit/index.html?domain=bond"
+      },
+      "fund-dashboard": {
+        title: "펀드 일별 수익률 대시보드",
+        note: "기존 펀드차트 결과물",
+        src: "pages/fund/index.html"
+      },
+      "fund-edit": {
+        title: "펀드차트 정보수정",
+        note: "펀드차트에서 관리하는 기준가, BM, 매핑 정보",
+        src: "pages/manual-edit/index.html?domain=fund"
+      },
+      "etf-dashboard": {
+        title: "액티브ETF 분석",
+        note: "기존 ETF Weight Dashboard 결과물",
+        src: "pages/etf/index.html"
       }
     };
 
