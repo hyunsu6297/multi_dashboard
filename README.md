@@ -25,9 +25,33 @@ $env:KFROM_PASSWORD = "<your password>"
 python .\kfr_download.py
 ```
 
-기본 기준일은 직전 영업일이며 명령행 인자로 변경할 수 있습니다.
+기본 기준일은 직전 영업일입니다. 거래내역도 시작일과 종료일을 같은 직전 영업일로 지정해 하루치만 내려받습니다. 명령행 인자로 기준일을 변경할 수 있습니다.
 
 ```powershell
 python .\kfr_download.py --holding-date 2026-06-26 --trade-start-date 2026-06-19 --trade-end-date 2026-06-26
 ```
+
+## Supabase upload
+
+`supabase_upload.py`는 세 파일의 `Data` 시트를 읽어 기준일별 불변 스냅샷과 JSONB 행으로 저장합니다. 같은 파일을 다시 실행하면 SHA-256 중복 검사를 통해 재적재하지 않습니다.
+
+필요한 환경변수:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+```powershell
+python .\supabase_upload.py --input-dir . --business-date 2026-06-26
+```
+
+## Daily GitHub Actions
+
+`.github/workflows/kfr-daily.yml`은 평일 오전 8시 30분(KST)에 실행됩니다. 저장소 Actions secrets에 다음 값을 등록해야 합니다.
+
+- `KFROM_ID`
+- `KFROM_PASSWORD`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+서비스 역할 키는 GitHub Actions에서만 사용하며 브라우저 코드나 일반 환경변수에 노출하면 안 됩니다.
 
