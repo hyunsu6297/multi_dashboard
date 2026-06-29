@@ -88,9 +88,10 @@ class SupabaseRest:
         self.base_url = f"{url.rstrip('/')}/rest/v1"
         self.headers = {
             "apikey": service_role_key,
-            "Authorization": f"Bearer {service_role_key}",
             "Content-Type": "application/json",
         }
+        if service_role_key.count(".") == 2:
+            self.headers["Authorization"] = f"Bearer {service_role_key}"
 
     def request(
         self,
