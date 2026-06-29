@@ -47,7 +47,7 @@ python .\supabase_upload.py --input-dir . --business-date 2026-06-26
 
 ## Daily GitHub Actions
 
-`.github/workflows/kfr-daily.yml`은 평일 오전 8시 30분(KST)에 실행됩니다. 저장소 Actions secrets에 다음 값을 등록해야 합니다.
+`.github/workflows/kfr-daily.yml`은 평일 오전 7시 30분(KST)에 실행됩니다. 저장소 Actions secrets에 다음 값을 등록해야 합니다.
 
 - `KFROM_ID`
 - `KFROM_PASSWORD`
