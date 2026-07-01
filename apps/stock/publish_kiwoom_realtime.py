@@ -152,39 +152,30 @@ def quote_rows(quotes: dict[str, Any], collected_at: str) -> list[dict[str, Any]
     return rows
 
 
-def publish_cycle(
+def load_cached_quotes(path: Path) -> dict[str, Any]:
+    output = path if path.is_absolute() else BASE_DIR / path
+    if not output.is_file():
+        return {}
+    try:
+        payload = json.loads(output.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def publish_dashboard(
     publisher: SupabasePublisher,
-    args: argparse.Namespace,
-    token: str,
-    codes: dict[str, str],
+    quotes: dict[str, Any],
+    *,
+    publish_quote_rows: bool,
 ) -> None:
-    quotes = run_refresh(args, token, codes)
     rows = quote_rows(quotes, datetime.now(timezone.utc).isoformat())
     available = sum(1 for row in rows if row["price"] not in (None, 0, 0.0))
     if not rows or available == 0:
-        raise RuntimeError("No usable Kiwoom quotes were returned; previous live dashboard was retained")
-
-    manual_version = publisher.manual_version()
-    if manual_version != getattr(args, "manual_version", None):
-        restore_client = SupabaseRest(publisher.url, required_secret())
-        restore_manual(
-            restore_client,
-            REPOSITORY_ROOT / "apps" / "stock",
-            REPOSITORY_ROOT / "apps" / "bond",
-        )
-        args.manual_version = manual_version
-    delta_run_date = datetime.now().astimezone().date().isoformat()
-    if delta_run_date != getattr(args, "delta_run_date", None):
-        run_update(
-            host=args.host,
-            token=token,
-            history_days=30,
-            request_delay=0.7,
-            timeout=args.timeout,
-        )
-        args.delta_run_date = delta_run_date
+        raise RuntimeError("No usable cached Kiwoom quotes are available")
     html_path = build_dashboard()
-    publisher.upsert_rows("kiwoom_realtime_quotes", rows, "code")
+    if publish_quote_rows:
+        publisher.upsert_rows("kiwoom_realtime_quotes", rows, "code")
     publisher.upload_dashboard(html_path)
     publisher.upsert_rows(
         "dashboard_live_versions",
@@ -201,7 +192,59 @@ def publish_cycle(
         ],
         "dashboard_key",
     )
-    print(f"published to Supabase: quotes={len(rows)}, available={available}")
+    source = "live" if publish_quote_rows else "cached"
+    print(f"published to Supabase: source={source}, quotes={len(rows)}, available={available}")
+
+
+def publish_cycle(
+    publisher: SupabasePublisher,
+    args: argparse.Namespace,
+    token: str,
+    codes: dict[str, str],
+) -> None:
+    manual_version = publisher.manual_version()
+    manual_changed = manual_version != getattr(args, "manual_version", None)
+    if manual_changed:
+        restore_client = SupabaseRest(publisher.url, required_secret())
+        restore_manual(
+            restore_client,
+            REPOSITORY_ROOT / "apps" / "stock",
+            REPOSITORY_ROOT / "apps" / "bond",
+        )
+        args.manual_version = manual_version
+        cached_quotes = load_cached_quotes(args.output)
+        publish_dashboard(publisher, cached_quotes, publish_quote_rows=False)
+
+    try:
+        quotes = run_refresh(args, token, codes)
+    except Exception as exc:
+        if manual_changed:
+            print(f"Kiwoom refresh failed after cached dashboard publish: {exc}")
+            return
+        raise
+
+    rows = quote_rows(quotes, datetime.now(timezone.utc).isoformat())
+    available = sum(1 for row in rows if row["price"] not in (None, 0, 0.0))
+    if not rows or available == 0:
+        if manual_changed:
+            print("Kiwoom returned no usable quotes after cached dashboard publish")
+            return
+        raise RuntimeError("No usable Kiwoom quotes were returned; previous live dashboard was retained")
+
+    delta_run_date = datetime.now().astimezone().date().isoformat()
+    if delta_run_date != getattr(args, "delta_run_date", None):
+        try:
+            run_update(
+                host=args.host,
+                token=token,
+                history_days=30,
+                request_delay=0.7,
+                timeout=args.timeout,
+            )
+            args.delta_run_date = delta_run_date
+        except Exception as exc:
+            print(f"delta update failed; publishing stock dashboard anyway: {exc}")
+    publish_dashboard(publisher, quotes, publish_quote_rows=True)
 
 
 def main() -> None:
