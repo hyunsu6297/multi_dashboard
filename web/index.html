@@ -371,9 +371,9 @@
         src: "pages/mezzanine/index.html"
       },
       "mezzanine-edit": {
-        title: "메자닌대시보드 정보수정",
-        note: "종목정보·별칭·추가종목·수기수정·OpenDART 조건",
-        src: "pages/manual-edit/index.html?domain=mezzanine"
+        title: "메자닌 종목정보 관리",
+        note: "메자닌 종목정보·동일종목 연결·델타 계산 상세",
+        src: "pages/mezzanine-admin/"
       },
       "fund-dashboard": {
         title: "펀드 일별 수익률 대시보드",
@@ -401,6 +401,33 @@
     const app = document.getElementById("app");
 
     let currentUser = null;
+    let currentPageKey = "stock-dashboard";
+    let liveStockVersion = "";
+    let liveStockObjectUrl = "";
+
+    async function refreshLiveStock(force = false) {
+      if (!currentUser || currentPageKey !== "stock-dashboard") return;
+      try {
+        const { data: versionRow, error: versionError } = await supabase
+          .from("dashboard_live_versions")
+          .select("version,storage_bucket,storage_path")
+          .eq("dashboard_key", "stock")
+          .maybeSingle();
+        if (versionError || !versionRow) return;
+        if (!force && versionRow.version === liveStockVersion) return;
+        const { data: blob, error: downloadError } = await supabase.storage
+          .from(versionRow.storage_bucket)
+          .download(versionRow.storage_path);
+        if (downloadError || !blob) return;
+        const nextUrl = URL.createObjectURL(blob);
+        frame.src = nextUrl;
+        if (liveStockObjectUrl) URL.revokeObjectURL(liveStockObjectUrl);
+        liveStockObjectUrl = nextUrl;
+        liveStockVersion = versionRow.version;
+      } catch (error) {
+        console.warn("주식 실시간 대시보드 갱신 실패, 배포 스냅샷을 유지합니다.", error.message);
+      }
+    }
 
     async function handleAuthenticatedUser(user) {
       currentUser = user;
@@ -426,6 +453,7 @@
       document.getElementById("passwordForm").hidden = true;
       loginScreen.hidden = true;
       app.hidden = false;
+      refreshLiveStock(true);
     }
 
     function showLogin() {
@@ -502,6 +530,7 @@
     function showPage(key) {
       const page = pages[key];
       if (!page) return;
+      currentPageKey = key;
       document.querySelectorAll("[data-page]").forEach((button) => {
         button.classList.toggle("active", button.dataset.page === key);
       });
@@ -511,6 +540,7 @@
       frame.title = page.title;
       openButton.href = page.src;
       location.hash = key;
+      if (key === "stock-dashboard") refreshLiveStock(true);
     }
 
     document.querySelectorAll("[data-page]").forEach((button) => {
@@ -526,6 +556,7 @@
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) await handleAuthenticatedUser(session.user);
     else showLogin();
+    setInterval(() => refreshLiveStock(), 20000);
   </script>
 </body>
 </html>
