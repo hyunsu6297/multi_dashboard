@@ -239,21 +239,21 @@ def recalculate_deltas(client: SupabaseRest, underlying_by_security: dict[str, s
     return len(output)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default=os.getenv("KIWOOM_HOST", DEFAULT_HOST))
-    parser.add_argument("--history-days", type=int, default=30)
-    parser.add_argument("--request-delay", type=float, default=0.7)
-    parser.add_argument("--timeout", type=float, default=20.0)
-    parser.add_argument("--skip-backfill", action="store_true")
-    args = parser.parse_args()
-
+def run_update(
+    *,
+    host: str,
+    token: str | None = None,
+    history_days: int = 30,
+    request_delay: float = 0.7,
+    timeout: float = 20.0,
+    skip_backfill: bool = False,
+) -> None:
     client = SupabaseRest()
     underlying_by_security, names = load_instrument_map()
     business_date, current_nav = read_current_nav()
 
-    if not args.skip_backfill:
-        cutoff = (date.fromisoformat(business_date) - timedelta(days=args.history_days * 2)).isoformat()
+    if not skip_backfill:
+        cutoff = (date.fromisoformat(business_date) - timedelta(days=history_days * 2)).isoformat()
         existing = client.get_all("kiwoom_daily_prices", {
             "select": "code,business_date",
             "business_date": f"gte.{cutoff}",
@@ -263,21 +263,39 @@ def main() -> None:
             counts[row["code"]] = counts.get(row["code"], 0) + 1
         missing = [code for code in sorted(names) if counts.get(code, 0) < 10]
         if missing:
-            appkey, secretkey = load_credentials()
-            if not appkey or not secretkey:
-                raise RuntimeError("KIWOOM_APPKEY and KIWOOM_SECRETKEY are required for backfill")
-            token = request_token(args.host, appkey, secretkey, args.timeout)
+            if not token:
+                appkey, secretkey = load_credentials()
+                if not appkey or not secretkey:
+                    raise RuntimeError("KIWOOM_APPKEY and KIWOOM_SECRETKEY are required for backfill")
+                token = request_token(host, appkey, secretkey, timeout)
             for index, code_value in enumerate(missing, start=1):
-                rows = fetch_daily_prices(args.host, token, code_value, date.fromisoformat(business_date), args.timeout)
-                normalized = normalize_daily_prices(code_value, names[code_value], rows, args.history_days)
+                rows = fetch_daily_prices(host, token, code_value, date.fromisoformat(business_date), timeout)
+                normalized = normalize_daily_prices(code_value, names[code_value], rows, history_days)
                 client.upsert("kiwoom_daily_prices", normalized, "business_date,code")
                 print(f"ka10081 {index}/{len(missing)}: {code_value}, rows={len(normalized)}")
                 if index < len(missing):
-                    time.sleep(max(0.2, args.request_delay))
+                    time.sleep(max(0.2, request_delay))
 
     quote_rows = upsert_current_quotes(client, business_date, names)
     delta_rows = recalculate_deltas(client, underlying_by_security, current_nav)
     print(f"delta update complete: quote_rows={quote_rows}, delta_rows={delta_rows}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default=os.getenv("KIWOOM_HOST", DEFAULT_HOST))
+    parser.add_argument("--history-days", type=int, default=30)
+    parser.add_argument("--request-delay", type=float, default=0.7)
+    parser.add_argument("--timeout", type=float, default=20.0)
+    parser.add_argument("--skip-backfill", action="store_true")
+    args = parser.parse_args()
+    run_update(
+        host=args.host,
+        history_days=args.history_days,
+        request_delay=args.request_delay,
+        timeout=args.timeout,
+        skip_backfill=args.skip_backfill,
+    )
 
 
 if __name__ == "__main__":

@@ -34,6 +34,11 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 from scripts.restore_dashboard_inputs import SupabaseRest, restore_manual  # noqa: E402
 
+MEZZANINE_DIR = REPOSITORY_ROOT / "apps" / "mezzanine"
+if str(MEZZANINE_DIR) not in sys.path:
+    sys.path.insert(0, str(MEZZANINE_DIR))
+from update_delta_history import run_update  # noqa: E402
+
 
 DEFAULT_SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co"
 STORAGE_BUCKET = "dashboard-live"
@@ -168,6 +173,16 @@ def publish_cycle(
             REPOSITORY_ROOT / "apps" / "bond",
         )
         args.manual_version = manual_version
+    delta_run_date = datetime.now().astimezone().date().isoformat()
+    if delta_run_date != getattr(args, "delta_run_date", None):
+        run_update(
+            host=args.host,
+            token=token,
+            history_days=30,
+            request_delay=0.7,
+            timeout=args.timeout,
+        )
+        args.delta_run_date = delta_run_date
     html_path = build_dashboard()
     publisher.upsert_rows("kiwoom_realtime_quotes", rows, "code")
     publisher.upload_dashboard(html_path)
