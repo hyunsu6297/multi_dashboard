@@ -1,7 +1,7 @@
 import { unzipSync } from "npm:fflate@0.8.2";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 
-const BASE = "https://opendart.fss.or.kr/api";
+const BASES = ["https://opendart.fss.or.kr/api", "https://engopendart.fss.or.kr/engapi"];
 const APIS = [["CB", "cvbdIsDecsn.json"], ["EB", "exbdIsDecsn.json"], ["BW", "bdwtIsDecsn.json"]] as const;
 let corpCache: { byStock: Record<string, any>; byCorp: Record<string, any> } | null = null;
 
@@ -24,10 +24,18 @@ const round = (value: unknown) => String(value ?? "").replace(/[^0-9]/g, "");
 const targetName = (value: unknown, issuer: string) => { let text = String(value ?? "").trim(); if (issuer && text.includes(issuer)) return issuer; for (const token of ["회사가 보유한","(자기주식)","자기주식","주식회사","(주)","기명식","보통주식","보통주","발행"]) text = text.replaceAll(token, ""); return text.replace(/[\[\]()“”"]/g, "").replace(/\s+/g, " ").trim() || issuer; };
 
 async function dart(endpoint: string, params: Record<string,string>, binary = false) {
-  const url = `${BASE}/${endpoint}?${new URLSearchParams(params)}`;
-  const res = await fetch(url, { headers: { "User-Agent": "MezzanineDashboard/3.0" } });
-  if (!res.ok) throw new Error(`OpenDART HTTP ${res.status}`);
-  return binary ? new Uint8Array(await res.arrayBuffer()) : await res.json();
+  let lastError: unknown;
+  for (const base of BASES) {
+    try {
+      const url = `${base}/${endpoint}?${new URLSearchParams(params)}`;
+      const res = await fetch(url, { headers: { "User-Agent": "MezzanineDashboard/3.0" } });
+      if (!res.ok) throw new Error(`OpenDART HTTP ${res.status}`);
+      return binary ? new Uint8Array(await res.arrayBuffer()) : await res.json();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("OpenDART 연결에 실패했습니다.");
 }
 
 async function corpMaps(key: string) {
