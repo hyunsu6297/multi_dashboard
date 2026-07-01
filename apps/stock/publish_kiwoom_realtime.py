@@ -22,6 +22,7 @@ from fetch_kiwoom_quotes import (
     DEFAULT_HOST,
     OUTPUT,
     collect_codes,
+    collect_mezzanine_codes,
     load_credentials,
     request_token,
     run_refresh,
@@ -175,9 +176,15 @@ def main() -> None:
     if not appkey or not secretkey:
         raise SystemExit("KIWOOM_APPKEY and KIWOOM_SECRETKEY are required")
     token = request_token(args.host, appkey, secretkey, args.timeout)
-    codes = collect_codes()
+    stock_codes = collect_codes()
+    mezzanine_codes = collect_mezzanine_codes()
+    codes = {**stock_codes, **mezzanine_codes}
     if not codes:
         raise SystemExit("No quote codes found")
+    print(
+        "quote universe: "
+        f"stock={len(stock_codes)}, mezzanine_underlyings={len(mezzanine_codes)}, merged={len(codes)}"
+    )
 
     publisher = SupabasePublisher(
         os.getenv("SUPABASE_URL", DEFAULT_SUPABASE_URL),
@@ -199,4 +206,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
