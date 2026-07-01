@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -87,7 +88,7 @@ def write_workbook(
     workbook.save(path)
 
 
-def restore_kfr(client: SupabaseRest, stock_dir: Path, bond_dir: Path) -> None:
+def restore_kfr(client: SupabaseRest, stock_dir: Path, bond_dir: Path, mezzanine_dir: Path) -> None:
     snapshots = client.get_all(
         "kfr_source_snapshots",
         {"select": "id,source_key,business_date,downloaded_at", "order": "business_date.desc,downloaded_at.desc"},
@@ -111,7 +112,7 @@ def restore_kfr(client: SupabaseRest, stock_dir: Path, bond_dir: Path) -> None:
         sheets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
             sheets[row["sheet_name"]].append(row)
-        for target_dir in (stock_dir, bond_dir):
+        for target_dir in (stock_dir, bond_dir, mezzanine_dir):
             write_workbook(target_dir / file_name, sheets, header_row=2)
         print(f"restored {source_key}: snapshot={snapshot['id']}, rows={len(rows)}")
 
@@ -137,16 +138,68 @@ def restore_manual(client: SupabaseRest, stock_dir: Path, bond_dir: Path) -> Non
         print(f"restored {domain}/{file_key}: rows={len(rows)}")
 
 
+def restore_mezzanine_manual(client: SupabaseRest, mezzanine_dir: Path) -> None:
+    mezzanine_dir.mkdir(parents=True, exist_ok=True)
+    rows = client.get_all("manual_file_rows", {
+        "select": "sheet_name,row_no,payload", "domain": "eq.mezzanine",
+        "file_key": "eq.instrument_info", "order": "row_no.asc",
+    })
+    if not rows:
+        raise RuntimeError("No manual rows found for mezzanine/instrument_info")
+    write_workbook(mezzanine_dir / "종목정보.xlsx", {"Sheet1": rows}, header_row=1)
+    fund_rows = client.get_all("manual_file_rows", {
+        "select": "sheet_name,row_no,payload", "domain": "eq.mezzanine",
+        "file_key": "eq.fund_info", "order": "row_no.asc",
+    })
+    if not fund_rows:
+        raise RuntimeError("No manual rows found for mezzanine/fund_info")
+    write_workbook(mezzanine_dir / "펀드정보.xlsx", {"Sheet1": fund_rows}, header_row=1)
+
+    additions = client.get_all("manual_file_rows", {
+        "select": "row_no,payload", "domain": "eq.mezzanine",
+        "file_key": "eq.instrument_additions", "order": "row_no.asc",
+    })
+    addition_payload = []
+    for row in additions:
+        payload = dict(row["payload"])
+        addition_payload.append({
+            "addition_id": payload.pop("addition_id", ""),
+            "linked_instrument_id": payload.pop("linked_instrument_id", ""),
+            "fields": payload,
+        })
+    (mezzanine_dir / "instrument_additions.json").write_text(
+        json.dumps(addition_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    overrides = client.get_all("manual_file_rows", {
+        "select": "row_no,payload", "domain": "eq.mezzanine",
+        "file_key": "eq.instrument_overrides", "order": "row_no.asc",
+    })
+    override_payload = {}
+    for row in overrides:
+        payload = dict(row["payload"])
+        instrument_id = str(payload.pop("instrument_id", ""))
+        if instrument_id:
+            override_payload[instrument_id] = payload
+    (mezzanine_dir / "instrument_overrides.json").write_text(
+        json.dumps(override_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"restored mezzanine manual data: instruments={len(rows)}, additions={len(addition_payload)}, overrides={len(override_payload)}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stock-dir", default="apps/stock")
     parser.add_argument("--bond-dir", default="apps/bond")
+    parser.add_argument("--mezzanine-dir", default="apps/mezzanine")
     args = parser.parse_args()
     client = SupabaseRest(required_env("SUPABASE_URL"), required_env("SUPABASE_SERVICE_ROLE_KEY"))
-    restore_kfr(client, Path(args.stock_dir), Path(args.bond_dir))
+    restore_kfr(client, Path(args.stock_dir), Path(args.bond_dir), Path(args.mezzanine_dir))
     restore_manual(client, Path(args.stock_dir), Path(args.bond_dir))
+    restore_mezzanine_manual(client, Path(args.mezzanine_dir))
 
 
 if __name__ == "__main__":
     main()
+
 
