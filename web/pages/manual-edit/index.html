@@ -72,6 +72,9 @@
       <div class="toolbar">
         <div class="tabs" id="fileTabs"></div>
         <div class="tabs">
+          <button id="downloadExcelButton" type="button">엑셀 다운로드</button>
+          <button id="uploadExcelButton" type="button">엑셀 업로드</button>
+          <input id="excelFileInput" type="file" accept=".xlsx" hidden>
           <button id="addRowButton" type="button">행 추가</button>
           <button id="deleteRowButton" type="button" class="danger">마지막 행 삭제</button>
           <button id="saveButton" type="button" class="primary" disabled>변경 저장</button>
@@ -100,6 +103,7 @@
     const domainNames = { stock: "주식 대시보드", bond: "채권대시보드", mezzanine: "메자닌대시보드", fund: "펀드차트" };
     const params = new URLSearchParams(location.search);
     const domain = ["stock", "bond", "mezzanine", "fund"].includes(params.get("domain")) ? params.get("domain") : "stock";
+    const requestedFileKey = params.get("file") || "";
 
     let indexData = [];
     let files = [];
@@ -114,6 +118,8 @@
     let mustChangePassword = false;
     const dirtyRows = new Set();
     const deletedRows = new Set();
+    let realtimeChannel = null;
+    let realtimeRefreshTimer = null;
 
     const $ = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value ?? "")
@@ -170,6 +176,126 @@
       source = "database";
     }
 
+    async function loadAllDatabaseSheets(file) {
+      const result = {};
+      for (const sheet of file.sheets) {
+        await loadDatabase(file, sheet.name);
+        result[sheet.name] = rows.map((row) => ({ ...row.payload }));
+      }
+      return result;
+    }
+
+    function workbookError(code, message) {
+      const error = new Error(`${code}: ${message}`);
+      error.code = code;
+      return error;
+    }
+
+    function assertWorkbookStructure(workbook, file) {
+      const expectedSheets = file.sheets.map((sheet) => sheet.name);
+      const actualSheets = workbook.SheetNames;
+      if (JSON.stringify(actualSheets) !== JSON.stringify(expectedSheets)) {
+        throw workbookError("XLSX_STRUCTURE_SHEETS", `시트 구조가 다릅니다. 기대값: ${expectedSheets.join(", ")}`);
+      }
+      const parsed = {};
+      for (const sheetMeta of file.sheets) {
+        const worksheet = workbook.Sheets[sheetMeta.name];
+        if (Object.values(worksheet).some((cell) => cell && typeof cell === "object" && cell.f)) {
+          throw workbookError("XLSX_STRUCTURE_FORMULA", `${sheetMeta.name} 시트에는 수식을 사용할 수 없습니다.`);
+        }
+        const matrix = window.XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: true });
+        const headers = (matrix[0] || []).map((value) => String(value ?? "").trim());
+        if (new Set(headers).size !== headers.length) {
+          throw workbookError("XLSX_STRUCTURE_DUPLICATE_COLUMNS", `${sheetMeta.name} 시트에 중복 컬럼이 있습니다.`);
+        }
+        if (JSON.stringify(headers) !== JSON.stringify(sheetMeta.columns)) {
+          throw workbookError("XLSX_STRUCTURE_COLUMNS", `${sheetMeta.name} 시트의 컬럼 추가·삭제·이름·순서 변경은 허용되지 않습니다.`);
+        }
+        parsed[sheetMeta.name] = matrix.slice(1)
+          .filter((values) => values.some((value) => value !== null && value !== ""))
+          .map((values) => Object.fromEntries(sheetMeta.columns.map((column, index) => {
+            const value = values[index];
+            return [column, value instanceof Date ? value.toISOString().slice(0, 10) : value ?? ""];
+          })));
+      }
+      return parsed;
+    }
+
+    async function ensureXlsx() {
+      if (!window.XLSX) window.XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+      return window.XLSX;
+    }
+
+    async function downloadExcel() {
+      if (!currentUser) throw new Error("Supabase 로그인이 필요합니다.");
+      $("status").textContent = "현재 DB 데이터를 엑셀로 생성하고 있습니다.";
+      const XLSX = await ensureXlsx();
+      const originalFile = activeFile;
+      const originalSheet = activeSheet;
+      const allSheets = await loadAllDatabaseSheets(activeFile);
+      const workbook = XLSX.utils.book_new();
+      for (const sheetMeta of originalFile.sheets) {
+        const worksheet = XLSX.utils.json_to_sheet(allSheets[sheetMeta.name], { header: sheetMeta.columns });
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetMeta.name);
+      }
+      XLSX.writeFile(workbook, originalFile.file_label.endsWith(".xlsx") ? originalFile.file_label : `${originalFile.file_label}.xlsx`);
+      await switchData(originalFile, originalSheet.name);
+      $("status").textContent = "현재 DB 데이터를 엑셀로 내려받았습니다.";
+    }
+
+    async function uploadExcel(fileBlob) {
+      if (!currentUser || mustChangePassword) throw new Error("편집 권한이 필요합니다.");
+      const XLSX = await ensureXlsx();
+      const workbook = XLSX.read(await fileBlob.arrayBuffer(), { type: "array", cellDates: true });
+      const imported = assertWorkbookStructure(workbook, activeFile);
+      const client = await getSupabase();
+      $("status").textContent = "검증된 엑셀 데이터를 Supabase에 반영하고 있습니다.";
+      for (const sheetMeta of activeFile.sheets) {
+        const payloads = imported[sheetMeta.name];
+        const records = payloads.map((payload, index) => ({
+          domain,
+          file_key: activeFile.file_key,
+          file_label: activeFile.file_label,
+          sheet_name: sheetMeta.name,
+          row_no: index + 1,
+          payload,
+          created_by: currentUser.id,
+          updated_at: new Date().toISOString()
+        }));
+        for (let start = 0; start < records.length; start += 500) {
+          const { error } = await client.from("manual_file_rows")
+            .upsert(records.slice(start, start + 500), { onConflict: "domain,file_key,sheet_name,row_no" });
+          if (error) throw error;
+        }
+        const { error: deleteError } = await client.from("manual_file_rows").delete()
+          .eq("domain", domain).eq("file_key", activeFile.file_key)
+          .eq("sheet_name", sheetMeta.name).gt("row_no", records.length);
+        if (deleteError) throw deleteError;
+      }
+      await switchData(activeFile, activeFile.sheets[0].name);
+      $("status").textContent = "엑셀 업로드와 Supabase 반영을 완료했습니다.";
+    }
+
+    async function subscribeRealtime() {
+      if (!currentUser || realtimeChannel) return;
+      const client = await getSupabase();
+      realtimeChannel = client.channel(`manual-${domain}-${crypto.randomUUID()}`)
+        .on("postgres_changes", {
+          event: "*", schema: "public", table: "manual_file_rows", filter: `domain=eq.${domain}`
+        }, (payload) => {
+          const changed = payload.new?.file_key || payload.old?.file_key;
+          if (changed !== activeFile?.file_key) return;
+          clearTimeout(realtimeRefreshTimer);
+          realtimeRefreshTimer = setTimeout(() => {
+            if (dirtyRows.size || deletedRows.size) {
+              $("status").textContent = "다른 사용자의 변경이 감지됐습니다. 현재 편집을 저장하거나 DB를 다시 불러오세요.";
+              return;
+            }
+            switchData().catch((error) => { $("status").textContent = `실시간 갱신 실패: ${error.message}`; });
+          }, 350);
+        }).subscribe();
+    }
+
     async function switchData(file = activeFile, sheetName = activeSheet?.name) {
       activeFile = file;
       activeSheet = file.sheets.find((item) => item.name === sheetName) || file.sheets[0];
@@ -181,8 +307,17 @@
         if (currentUser) await loadDatabase(file, activeSheet.name);
         else await loadLocal(file, activeSheet.name);
       } catch (error) {
-        await loadLocal(file, activeSheet.name);
-        $("status").textContent = `DB 조회 실패로 로컬 원본을 표시합니다: ${error.message}`;
+        try {
+          await loadLocal(file, activeSheet.name);
+          $("status").textContent = `DB 조회 실패로 로컬 원본을 표시합니다: ${error.message}`;
+        } catch (localError) {
+          rows = [];
+          columns = activeSheet.columns;
+          source = "local";
+          $("status").textContent = currentUser
+            ? `데이터 조회 실패: ${error.message}`
+            : "메인 화면에서 로그인하면 Supabase DB 데이터를 불러옵니다.";
+        }
       }
       render();
     }
@@ -231,6 +366,8 @@
       $("saveButton").disabled = !currentUser || mustChangePassword || (dirtyRows.size === 0 && deletedRows.size === 0);
       $("addRowButton").disabled = !currentUser || mustChangePassword;
       $("deleteRowButton").disabled = !currentUser || mustChangePassword || rows.length === 0;
+      $("downloadExcelButton").disabled = !currentUser || mustChangePassword;
+      $("uploadExcelButton").disabled = !currentUser || mustChangePassword;
       $("sourceBadge").textContent = source === "database" ? "Supabase DB" : "로컬 원본";
     }
 
@@ -238,7 +375,7 @@
       renderTabs();
       renderTable();
       updateControls();
-      if (!$("status").textContent.includes("실패")) {
+      if (currentUser && !$("status").textContent.includes("실패")) {
         $("status").textContent = `${activeFile.file_label} / ${activeSheet.name} · ${rows.length.toLocaleString()}행을 표시 중입니다.`;
       }
     }
@@ -276,6 +413,15 @@
     }
 
     $("loadDbButton").addEventListener("click", () => switchData());
+    $("downloadExcelButton").addEventListener("click", () => downloadExcel().catch((error) => {
+      $("status").textContent = `엑셀 다운로드 실패: ${error.message}`;
+    }));
+    $("uploadExcelButton").addEventListener("click", () => $("excelFileInput").click());
+    $("excelFileInput").addEventListener("change", () => {
+      const file = $("excelFileInput").files[0];
+      if (file) uploadExcel(file).catch((error) => { $("status").textContent = `엑셀 업로드 실패: ${error.message}`; });
+      $("excelFileInput").value = "";
+    });
     $("saveButton").addEventListener("click", () => saveChanges().catch((error) => {
       $("status").textContent = `Supabase 저장 실패: ${error.message}`;
     }));
@@ -305,8 +451,11 @@
       const response = await fetch("../../data/manual/index.json");
       indexData = await response.json();
       files = indexData.filter((item) => item.domain === domain);
-      activeFile = files[0];
+      activeFile = files.find((file) => file.file_key === requestedFileKey) || files[0];
       activeSheet = activeFile.sheets[0];
+      if (domain === "mezzanine" && activeFile.file_key === "fund_info") {
+        $("title").textContent = "메자닌 펀드정보수정";
+      }
       try {
         const client = await getSupabase();
         const { data: sessionData, error: sessionError } = await client.auth.getSession();
@@ -328,6 +477,7 @@
         $("authStatus").textContent = `세션 확인 실패: ${error.message}`;
       }
       await switchData();
+      await subscribeRealtime();
     }
 
     init().catch((error) => { $("status").textContent = `초기화 실패: ${error.message}`; });

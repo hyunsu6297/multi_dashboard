@@ -53,6 +53,12 @@ async function hydrateFromSupabase(){
         if(error)throw error; instrumentRows.push(...data.map(x=>x.payload)); if(data.length<1000)break;
       }
     }
+    const fundRows=[];
+    for(let start=0;;start+=1000){
+      const {data,error}=await client.from('manual_file_rows').select('payload').eq('domain','mezzanine').eq('file_key','fund_info').order('row_no').range(start,start+999);
+      if(error)throw error; fundRows.push(...data.map(x=>x.payload)); if(data.length<1000)break;
+    }
+    if(fundRows.length)window.MEZZ_DATA.funds=fundRows;
     const byCode=new Map(instrumentRows.map(x=>[String(x['KR코드']||'').trim(),x]));
     for(const h of window.MEZZ_DATA.holdings){
       const m=byCode.get(String(h.code||'').trim()); if(!m)continue;
@@ -68,10 +74,19 @@ async function hydrateFromSupabase(){
       if(error)throw error; const quotes=new Map(data.map(x=>[x.code,x]));
       for(const h of window.MEZZ_DATA.holdings){const q=quotes.get(h.underlyingCode);if(!q)continue;h.underlyingPrice=Number(q.price);h.underlyingChange=q.change_rate==null?null:Number(q.change_rate)/100;h.parity=h._conversionPrice?h.underlyingPrice/h._conversionPrice:h.parity;h.estimatedPnl=h.lookthrough*(h.underlyingChange||0)*h.delta;}
     }
+    const securityCodes=[...new Set(window.MEZZ_DATA.holdings.map(x=>String(x.code||'').trim()).filter(Boolean))];
+    for(let start=0;start<securityCodes.length;start+=100){
+      const {data,error}=await client.from('mezzanine_delta_history').select('business_date,security_code,daily_delta,is_valid').in('security_code',securityCodes.slice(start,start+100)).order('business_date',{ascending:false}).limit(1000);
+      if(error)throw error; const grouped=new Map();
+      for(const x of data){if(!grouped.has(x.security_code))grouped.set(x.security_code,new Map());const dates=grouped.get(x.security_code);if(!dates.has(x.business_date))dates.set(x.business_date,[]);if(x.is_valid&&x.daily_delta!=null)dates.get(x.business_date).push(Number(x.daily_delta));}
+      for(const h of window.MEZZ_DATA.holdings){const dates=grouped.get(String(h.code||'').trim());if(!dates)continue;const recent=[...dates.entries()].slice(0,10),values=recent.flatMap(([,v])=>v);if(!values.length)continue;h.delta=values.reduce((a,b)=>a+b,0)/values.length;h.deltaExposure=h.lookthrough*h.delta;h.estimatedPnl=h.lookthrough*(h.underlyingChange||0)*h.delta;}
+    }
     render();
   }catch(error){console.warn('Supabase 메자닌 동기화 실패, 내장 스냅샷을 사용합니다.',error.message)}
 }
 hydrateFromSupabase();
 setInterval(hydrateFromSupabase,20000);
+let realtimeTimer;
+(async()=>{let client=window.parent!==window&&window.parent.dashboardSupabase;if(!client)return;client.channel(`mezzanine-dashboard-${crypto.randomUUID()}`).on('postgres_changes',{event:'*',schema:'public',table:'manual_file_rows',filter:'domain=eq.mezzanine'},()=>{clearTimeout(realtimeTimer);realtimeTimer=setTimeout(hydrateFromSupabase,350)}).on('postgres_changes',{event:'*',schema:'public',table:'mezzanine_delta_history'},()=>{clearTimeout(realtimeTimer);realtimeTimer=setTimeout(hydrateFromSupabase,350)}).subscribe()})();
 </script></body></html>
 

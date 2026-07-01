@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "메자닌_대시보드.html"
 ALIAS_FILE = ROOT / "instrument_aliases.csv"
 ADDITIONS_FILE = ROOT / "instrument_additions.json"
+DELTA_HISTORY_FILE = ROOT / "delta_history.json"
 CORP_CODES_FILE = ROOT / "opendart_corp_codes.json"
 QUOTE_CANDIDATES = [ROOT / "kiwoom_quotes.json", ROOT.parent / "stock" / "kiwoom_quotes.json"]
 NAMESPACE = uuid.UUID("63ed6f6f-a40b-42da-bab7-835798a8f6be")
@@ -155,6 +156,49 @@ def shared_deltas(master: pd.DataFrame, aliases: pd.DataFrame) -> dict[str, tupl
     return result
 
 
+def database_deltas(aliases: pd.DataFrame) -> dict[str, tuple[float, int, list[dict]]]:
+    """Calculate the latest 10-day valid-delta average from persisted daily observations."""
+    if not DELTA_HISTORY_FILE.exists():
+        return {}
+    try:
+        raw = json.loads(DELTA_HISTORY_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    id_by_code = dict(zip(aliases["security_code"].map(code), aliases["instrument_id"]))
+    grouped: dict[tuple[str, str], list[float]] = {}
+    invalid: set[tuple[str, str]] = set()
+    for row in raw:
+        security_code = code(row.get("security_code"))
+        business_date = str(row.get("business_date") or "")[:10]
+        value = row.get("daily_delta")
+        if not security_code or not business_date or value in (None, ""):
+            continue
+        key = (security_code, business_date)
+        numeric = number(value)
+        if bool(row.get("is_valid")) and 0 <= numeric <= 1:
+            grouped.setdefault(key, []).append(numeric)
+        else:
+            invalid.add(key)
+    by_code: dict[str, list[dict]] = {}
+    keys = set(grouped) | invalid
+    for security_code, business_date in keys:
+        values = grouped.get((security_code, business_date), [])
+        by_code.setdefault(security_code, []).append({
+            "date": business_date,
+            "dailyDelta": sum(values) / len(values) if values else None,
+            "valid": bool(values),
+        })
+    result: dict[str, tuple[float, int, list[dict]]] = {}
+    for security_code, observations in by_code.items():
+        latest = sorted(observations, key=lambda item: item["date"], reverse=True)[:10]
+        valid_values = [item["dailyDelta"] for item in latest if item["valid"]]
+        delta = sum(valid_values) / len(valid_values) if valid_values else 0.40
+        instrument_id = id_by_code.get(security_code, "")
+        if instrument_id and (instrument_id not in result or len(latest) > len(result[instrument_id][2])):
+            result[instrument_id] = (delta, len(valid_values), latest)
+    return result
+
+
 def load_quotes() -> tuple[dict[str, dict], str]:
     for path in QUOTE_CANDIDATES:
         if not path.exists():
@@ -238,7 +282,7 @@ def build_data() -> dict:
         if clean(r.get("발행사명")) and code(r.get("발행코드"))
     }
     id_by_code = dict(zip(aliases["security_code"].map(code), aliases["instrument_id"]))
-    delta_by_instrument = shared_deltas(master, aliases)
+    delta_by_instrument = database_deltas(aliases) or shared_deltas(master, aliases)
 
     security_rows = []
     delta_by_code: dict[str, float] = {}

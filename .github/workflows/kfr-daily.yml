@@ -93,6 +93,15 @@ jobs:
         if: steps.kiwoom_quotes.outcome == 'failure'
         run: echo "Kiwoom quote refresh was blocked; building with the latest Supabase source data."
 
+      - name: Update mezzanine delta history
+        id: mezzanine_delta
+        continue-on-error: true
+        run: python apps/mezzanine/update_delta_history.py --history-days 30 --request-delay 0.7
+
+      - name: Warn when mezzanine delta refresh is unavailable
+        if: steps.mezzanine_delta.outcome == 'failure'
+        run: echo "Mezzanine delta refresh was unavailable; the last valid delta history will be used."
+
       - name: Build stock dashboard
         run: python apps/stock/build_fund_dashboard.py
 

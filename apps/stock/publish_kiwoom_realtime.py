@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -27,6 +28,11 @@ from fetch_kiwoom_quotes import (
     request_token,
     run_refresh,
 )
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+from scripts.restore_dashboard_inputs import SupabaseRest, restore_manual  # noqa: E402
 
 
 DEFAULT_SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co"
@@ -58,7 +64,7 @@ class SupabasePublisher:
         url: str,
         *,
         method: str,
-        body: bytes,
+        body: bytes | None = None,
         content_type: str,
         headers: dict[str, str] | None = None,
     ) -> bytes:
@@ -78,6 +84,21 @@ class SupabasePublisher:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Supabase HTTP {exc.code}: {detail[:1000]}") from exc
+
+    def manual_version(self) -> str:
+        query = urllib.parse.urlencode({
+            "select": "updated_at",
+            "domain": "in.(stock,bond)",
+            "order": "updated_at.desc",
+            "limit": "1",
+        }, safe=".,()")
+        payload = self.request(
+            f"{self.url}/rest/v1/manual_file_rows?{query}",
+            method="GET",
+            content_type="application/json",
+        )
+        rows = json.loads(payload or b"[]")
+        return str(rows[0]["updated_at"]) if rows else ""
 
     def upsert_rows(self, table: str, rows: list[dict[str, Any]], conflict: str) -> None:
         endpoint = f"{self.url}/rest/v1/{table}?on_conflict={urllib.parse.quote(conflict)}"
@@ -138,6 +159,15 @@ def publish_cycle(
     if not rows or available == 0:
         raise RuntimeError("No usable Kiwoom quotes were returned; previous live dashboard was retained")
 
+    manual_version = publisher.manual_version()
+    if manual_version != getattr(args, "manual_version", None):
+        restore_client = SupabaseRest(publisher.url, required_secret())
+        restore_manual(
+            restore_client,
+            REPOSITORY_ROOT / "apps" / "stock",
+            REPOSITORY_ROOT / "apps" / "bond",
+        )
+        args.manual_version = manual_version
     html_path = build_dashboard()
     publisher.upsert_rows("kiwoom_realtime_quotes", rows, "code")
     publisher.upload_dashboard(html_path)

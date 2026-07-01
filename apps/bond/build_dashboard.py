@@ -704,6 +704,18 @@ document.getElementById("issuerSearch").onkeydown=e=>{
 };
 document.getElementById("issuerRun").onclick=runIssuerSearch;
 document.getElementById("resetAll").onclick=()=>{state.type=[];state.strategy=[];state.mid=[];state.manager=[];state.fund=[];state.multi={type:false,strategy:false,mid:false,manager:false,fund:false};state.search="";state.tradeEnd=DATA.tradeMax||DATA.asOf;state.tradeStart=defaultTradeStart(state.tradeEnd);state.kpiRanges=Object.fromEntries(kpiMetrics.map(k=>[k,{start:defaultTradeStart(DATA.kpiMax||DATA.asOf),end:DATA.kpiMax||DATA.asOf}]));state.issuerSearch="롯데카드";state.selectedIssuer="롯데카드";state.issuerIndex=0;document.getElementById("search").value="";syncTradeInputs();document.querySelectorAll(".kpiStartInput").forEach(el=>{const m=el.dataset.metric;el.value=state.kpiRanges[m].start;});document.querySelectorAll(".kpiEndInput").forEach(el=>{const m=el.dataset.metric;el.value=state.kpiRanges[m].end;});document.getElementById("issuerSearch").value=state.issuerSearch;render();};
+async function hydrateManualData(){
+  const client=window.parent!==window&&window.parent.dashboardSupabase;if(!client)return;
+  const load=async key=>{let out=[];for(let start=0;;start+=1000){const {data,error}=await client.from("manual_file_rows").select("payload").eq("domain","bond").eq("file_key",key).order("row_no").range(start,start+999);if(error)throw error;out.push(...data.map(x=>x.payload));if(data.length<1000)return out;}};
+  try{
+    const [fundRows,issuerRows]=await Promise.all([load("fund_info"),load("issuer")]);
+    if(fundRows.length){const oldFunds=[...DATA.funds],next=fundRows.map(x=>({type:x["구분"]||"",strategy:x["전략"]||"",manager:x["운용사"]||"",fund:x["펀드명"]||"",code:String(x["펀드코드"]||""),assoc:String(x["협회코드"]||""),share:Number(x["지분율"]||0),book:Number(x["장부가"]||0),eval:Number(x["평가금액"]||0),aum:Number(x["펀드AUM"]||0),seller:x["판매사"]||"",newDate:String(x["신규일"]||"").slice(0,10),closeDate:String(x["결산일"]||"").slice(0,10),swapDate:String(x["스왑만기"]||"").slice(0,10),lp1:x["LP1"]||"",lp1w:Number(x["LP1비중"]||0),lp2:x["LP2"]||"",lp2w:Number(x["lp2비중"]||0),memo:x["메모"]||""}));for(const nf of next){const old=oldFunds.find(x=>x.code===nf.code)||oldFunds.find(x=>x.assoc===nf.assoc);if(!old)continue;for(const h of DATA.holdings.filter(x=>x.fund===old.fund)){Object.assign(h,{fund:nf.fund,type:nf.type,strategy:nf.strategy,manager:nf.manager,book:nf.book,fundEval:nf.eval,real:h.eval*nf.share,weight:nf.eval?h.eval*nf.share/nf.eval:0});}for(const t of DATA.trades.filter(x=>x.fund===old.fund))Object.assign(t,{fund:nf.fund,type:nf.type,strategy:nf.strategy,manager:nf.manager});}DATA.funds=next;DATA.summary.funds=next.length;}
+    if(issuerRows.length){const rules=issuerRows.map(x=>[String(x["발행사"]||""),x["발행사(변경후)"]||"",x["중분류"]||""]).filter(x=>x[0]).sort((a,b)=>b[0].length-a[0].length);for(const row of [...DATA.holdings,...DATA.trades]){const rule=rules.find(x=>String(row.name||"").includes(x[0]));if(rule){row.issuer=rule[1];row.mid=rule[2];}}}
+    render();
+  }catch(error){console.warn("채권 수기정보 실시간 동기화 실패",error.message)}
+}
+let manualRealtimeTimer;
+(async()=>{const client=window.parent!==window&&window.parent.dashboardSupabase;if(!client)return;client.channel(`bond-dashboard-${crypto.randomUUID()}`).on("postgres_changes",{event:"*",schema:"public",table:"manual_file_rows",filter:"domain=eq.bond"},()=>{clearTimeout(manualRealtimeTimer);manualRealtimeTimer=setTimeout(hydrateManualData,350)}).subscribe();await hydrateManualData();})();
 render();
 </script>
 </body>

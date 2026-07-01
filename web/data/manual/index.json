@@ -1,5 +1,28 @@
 [
   {
+    "domain": "mezzanine",
+    "file_key": "fund_info",
+    "file_label": "펀드정보.xlsx",
+    "sheets": [
+      {
+        "name": "Sheet1",
+        "columns": [
+          "운용사",
+          "펀드명",
+          "펀드코드",
+          "협회코드",
+          "레퍼번호",
+          "신규일자",
+          "만기일자",
+          "지분율",
+          "장부가",
+          "평가금액"
+        ],
+        "row_count": 31
+      }
+    ]
+  },
+  {
     "domain": "stock",
     "file_key": "fund_info",
     "file_label": "펀드 정보.xlsx",

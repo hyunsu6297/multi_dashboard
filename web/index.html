@@ -319,7 +319,8 @@
         <section class="group">
           <div class="group-title">3. 메자닌대시보드</div>
           <button type="button" class="sub" data-page="mezzanine-dashboard">대시보드</button>
-          <button type="button" class="sub" data-page="mezzanine-edit">정보수정</button>
+          <button type="button" class="sub" data-page="mezzanine-edit">종목정보수정</button>
+          <button type="button" class="sub" data-page="mezzanine-fund-edit">펀드정보수정</button>
         </section>
         <section class="group">
           <div class="group-title">4. 펀드차트</div>
@@ -391,9 +392,14 @@
         src: "pages/mezzanine/index.html"
       },
       "mezzanine-edit": {
-        title: "메자닌 종목정보 관리",
+        title: "메자닌 종목정보수정",
         note: "메자닌 종목정보·동일종목 연결·델타 계산 상세",
         src: "pages/mezzanine-admin/"
+      },
+      "mezzanine-fund-edit": {
+        title: "메자닌 펀드정보수정",
+        note: "메자닌 펀드의 운용사·지분율·장부가·평가금액 관리",
+        src: "pages/manual-edit/index.html?domain=mezzanine&file=fund_info"
       },
       "fund-dashboard": {
         title: "펀드 일별 수익률 대시보드",

@@ -184,7 +184,14 @@ def restore_mezzanine_manual(client: SupabaseRest, mezzanine_dir: Path) -> None:
     (mezzanine_dir / "instrument_overrides.json").write_text(
         json.dumps(override_payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    print(f"restored mezzanine manual data: instruments={len(rows)}, additions={len(addition_payload)}, overrides={len(override_payload)}")
+    delta_rows = client.get_all("mezzanine_delta_history", {
+        "select": "business_date,security_code,security_name,fund_name,nav,nav_return,underlying_change_rate,daily_delta,is_valid,source",
+        "order": "business_date.asc,security_code.asc,fund_name.asc",
+    })
+    (mezzanine_dir / "delta_history.json").write_text(
+        json.dumps(delta_rows, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"restored mezzanine manual data: instruments={len(rows)}, additions={len(addition_payload)}, overrides={len(override_payload)}, delta_history={len(delta_rows)}")
 
 
 def main() -> None:
