@@ -1,4 +1,5 @@
 import { unzipSync } from "npm:fflate@0.8.2";
+import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 
 const BASE = "https://opendart.fss.or.kr/api";
 const APIS = [["CB", "cvbdIsDecsn.json"], ["EB", "exbdIsDecsn.json"], ["BW", "bdwtIsDecsn.json"]] as const;
@@ -6,6 +7,16 @@ let corpCache: { byStock: Record<string, any>; byCorp: Record<string, any> } | n
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Content-Type": "application/json" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
+async function authorized(req: Request) {
+  const suppliedKey = req.headers.get("apikey") || "";
+  const secretKeys = Object.values(JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"));
+  if (secretKeys.includes(suppliedKey)) return true;
+  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token) return false;
+  const publishable = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}").default || Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const client = createClient(Deno.env.get("SUPABASE_URL") || "", publishable);
+  return Boolean((await client.auth.getUser(token)).data.user);
+}
 const num = (value: unknown) => { const text = String(value ?? "").replace(/[^\d.\-]/g, ""); return text ? Number(text) : null; };
 const pct = (value: unknown) => { const n = num(value); return n == null ? null : n / 100; };
 const date = (value: unknown) => { const m = String(value ?? "").match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` : ""; };
@@ -43,6 +54,7 @@ function enrich(raw:any, kind:string, corp:any, maps:any) {
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return new Response("ok", { headers:cors });
   try {
+    if (!await authorized(req)) return json({ ok:false, message:"로그인 세션이 유효하지 않습니다." }, 401);
     const key = Deno.env.get("OPENDART_API_KEY") || "__DART_KEY__";
     if (!/^[A-Za-z0-9]{40}$/.test(key)) throw new Error("OpenDART 인증키가 설정되지 않았습니다.");
     const { identifier, begin, end } = await req.json();
