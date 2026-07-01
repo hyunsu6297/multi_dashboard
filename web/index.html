@@ -237,7 +237,13 @@
     }
     .login-panel button:disabled { opacity: .55; cursor: default; }
     .login-status { min-height: 18px; margin-top: 12px; color: #b42318; font-size: 12px; }
-    .password-form[hidden], .login-form-fields[hidden] { display: none; }
+    .login-panel [hidden] { display: none; }
+    .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 18px 0; padding: 4px; background: var(--wash); border-radius: 6px; }
+    .auth-tabs button { height: 34px; margin: 0; background: transparent; color: var(--muted); }
+    .auth-tabs button.active { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .login-panel button.secondary { margin-top: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+    .approval-panel { text-align: center; }
+    .approval-panel strong { display: block; margin: 12px 0 8px; font-size: 18px; }
     .user-label { color: var(--muted); font-size: 12px; font-weight: 700; }
 
     @media (max-width: 920px) {
@@ -264,22 +270,32 @@
   <section class="login-screen" id="loginScreen">
     <div class="login-panel">
       <h1>멀티에셋운용팀 대시보드</h1>
+      <div class="auth-tabs" id="authTabs">
+        <button type="button" data-auth-mode="login" class="active">로그인</button>
+        <button type="button" data-auth-mode="signup">회원가입</button>
+      </div>
       <form id="loginForm" class="login-form-fields">
-        <p>발급받은 아이디와 비밀번호로 로그인하세요.</p>
-        <label for="loginId">아이디</label>
-        <input id="loginId" autocomplete="username" required autofocus>
+        <label for="loginId">이메일</label>
+        <input id="loginId" autocomplete="username" placeholder="name@gmail.com" required autofocus>
         <label for="loginPassword">비밀번호</label>
         <input id="loginPassword" type="password" autocomplete="current-password" required>
         <button id="loginButton" type="submit">로그인</button>
+        <button id="googleLoginButton" class="secondary" type="button">Google로 계속</button>
       </form>
-      <form id="passwordForm" class="password-form" hidden>
-        <p><strong id="passwordUser"></strong> 계정은 최초 비밀번호 변경이 필요합니다.</p>
-        <label for="newPassword">새 비밀번호</label>
-        <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required>
-        <label for="confirmPassword">새 비밀번호 확인</label>
-        <input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
-        <button id="changePasswordButton" type="submit">비밀번호 변경</button>
+      <form id="signupForm" hidden>
+        <label for="signupEmail">이메일</label>
+        <input id="signupEmail" type="email" autocomplete="email" placeholder="name@gmail.com" required>
+        <label for="signupPassword">비밀번호</label>
+        <input id="signupPassword" type="password" autocomplete="new-password" minlength="8" required>
+        <label for="signupPasswordConfirm">비밀번호 확인</label>
+        <input id="signupPasswordConfirm" type="password" autocomplete="new-password" minlength="8" required>
+        <button id="signupButton" type="submit">가입 신청</button>
       </form>
+      <div id="approvalPanel" class="approval-panel" hidden>
+        <strong id="approvalTitle">관리자 승인 대기 중</strong>
+        <p id="approvalMessage"></p>
+        <button id="approvalLogoutButton" class="secondary" type="button">로그아웃</button>
+      </div>
       <div class="login-status" id="loginStatus" role="alert"></div>
     </div>
   </section>
@@ -313,6 +329,10 @@
         <section class="group">
           <div class="group-title">5. 액티브ETF 분석</div>
           <button type="button" data-page="etf-dashboard">대시보드</button>
+        </section>
+        <section class="group" id="adminMenu" hidden>
+          <div class="group-title">6. Admin</div>
+          <button type="button" data-page="admin-members">회원 관리</button>
         </section>
       </nav>
     </aside>
@@ -389,6 +409,11 @@
         title: "액티브ETF 분석",
         note: "기존 ETF Weight Dashboard 결과물",
         src: "pages/etf/index.html"
+      },
+      "admin-members": {
+        title: "회원 관리",
+        note: "가입 승인 및 회원별 권한 관리",
+        src: "pages/admin/index.html"
       }
     };
 
@@ -401,6 +426,7 @@
     const app = document.getElementById("app");
 
     let currentUser = null;
+    let currentProfile = null;
     let currentPageKey = "stock-dashboard";
     let liveStockVersion = "";
     let liveStockObjectUrl = "";
@@ -433,44 +459,79 @@
     async function handleAuthenticatedUser(user) {
       currentUser = user;
       const { data: profile, error } = await supabase.from("user_profiles")
-        .select("username,role,must_change_password").eq("user_id", user.id).maybeSingle();
+        .select("username,email,role,must_change_password,status").eq("user_id", user.id).maybeSingle();
       if (error || !profile) {
+        showLogin();
         document.getElementById("loginStatus").textContent = "사용자 권한 정보를 확인할 수 없습니다.";
         return;
       }
-      if (profile.must_change_password) {
-        app.hidden = true;
-        loginScreen.hidden = false;
-        document.getElementById("loginForm").hidden = true;
-        document.getElementById("passwordForm").hidden = false;
-        document.getElementById("passwordUser").textContent = profile.username;
-        document.getElementById("loginStatus").textContent = "";
+      currentProfile = profile;
+      if (profile.status !== "approved" || profile.must_change_password) {
+        showApproval(profile);
         return;
       }
-      document.getElementById("userLabel").textContent = profile
-        ? `${profile.username} · ${profile.role}`
-        : user.email;
-      document.getElementById("loginForm").hidden = false;
-      document.getElementById("passwordForm").hidden = true;
+      document.getElementById("userLabel").textContent = `${profile.email || user.email} · ${profile.role}`;
+      document.getElementById("adminMenu").hidden = profile.role !== "admin";
       loginScreen.hidden = true;
       app.hidden = false;
-      refreshLiveStock(true);
+      if (currentPageKey === "admin-members" && profile.role !== "admin") {
+        await showPage("stock-dashboard");
+      }
+      await refreshLiveStock(true);
+    }
+
+    function setAuthMode(mode) {
+      document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.authMode === mode);
+      });
+      document.getElementById("loginForm").hidden = mode !== "login";
+      document.getElementById("signupForm").hidden = mode !== "signup";
+      document.getElementById("approvalPanel").hidden = true;
+      document.getElementById("loginStatus").textContent = "";
+    }
+
+    function showApproval(profile) {
+      app.hidden = true;
+      loginScreen.hidden = false;
+      document.getElementById("authTabs").hidden = true;
+      document.getElementById("loginForm").hidden = true;
+      document.getElementById("signupForm").hidden = true;
+      document.getElementById("approvalPanel").hidden = false;
+      const labels = {
+        pending: ["관리자 승인 대기 중", "가입 신청이 접수되었습니다. 관리자가 승인하면 대시보드를 이용할 수 있습니다."],
+        rejected: ["가입 신청이 반려되었습니다", "관리자에게 계정 승인을 문의해 주세요."],
+        suspended: ["계정 이용이 중지되었습니다", "관리자에게 계정 상태를 문의해 주세요."]
+      };
+      const fallback = profile.must_change_password
+        ? ["계정 확인이 필요합니다", "관리자에게 초기 계정 설정을 문의해 주세요."]
+        : ["계정 확인이 필요합니다", "관리자에게 계정 상태를 문의해 주세요."];
+      const [title, message] = labels[profile.status] || fallback;
+      document.getElementById("approvalTitle").textContent = title;
+      document.getElementById("approvalMessage").textContent = message;
+      document.getElementById("loginStatus").textContent = "";
     }
 
     function showLogin() {
+      currentUser = null;
+      currentProfile = null;
       app.hidden = true;
       loginScreen.hidden = false;
-      document.getElementById("loginForm").hidden = false;
-      document.getElementById("passwordForm").hidden = true;
+      document.getElementById("authTabs").hidden = false;
+      document.getElementById("adminMenu").hidden = true;
       document.getElementById("loginPassword").value = "";
+      setAuthMode("login");
     }
+
+    document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+      button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
+    });
 
     document.getElementById("loginForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       const button = document.getElementById("loginButton");
       const status = document.getElementById("loginStatus");
       const loginId = document.getElementById("loginId").value.trim();
-      const email = loginId.includes("@") ? loginId : `${loginId}@multiasset.local`;
+      const email = (loginId.includes("@") ? loginId : `${loginId}@multiasset.local`).toLowerCase();
       button.disabled = true;
       status.textContent = "로그인 중입니다.";
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -479,48 +540,61 @@
       });
       button.disabled = false;
       if (error) {
-        status.textContent = "아이디 또는 비밀번호를 확인하세요.";
+        status.textContent = "이메일 또는 비밀번호를 확인하세요.";
         return;
       }
       status.textContent = "";
       await handleAuthenticatedUser(data.user);
-      frame.contentWindow?.location.reload();
+      await refreshLiveStock(true);
     });
 
-    document.getElementById("passwordForm").addEventListener("submit", async (event) => {
+    document.getElementById("signupForm").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const password = document.getElementById("newPassword").value;
-      const confirmation = document.getElementById("confirmPassword").value;
+      const email = document.getElementById("signupEmail").value.trim().toLowerCase();
+      const password = document.getElementById("signupPassword").value;
+      const confirmation = document.getElementById("signupPasswordConfirm").value;
       const status = document.getElementById("loginStatus");
-      if (password.length < 8) {
-        status.textContent = "새 비밀번호는 8자 이상이어야 합니다.";
+      if (password.length < 8 || !/[^A-Za-z0-9]/.test(password)) {
+        status.textContent = "비밀번호는 8자 이상이며 특수문자를 포함해야 합니다.";
         return;
       }
       if (password !== confirmation) {
-        status.textContent = "새 비밀번호 확인이 일치하지 않습니다.";
+        status.textContent = "비밀번호 확인이 일치하지 않습니다.";
         return;
       }
-      const button = document.getElementById("changePasswordButton");
+      const button = document.getElementById("signupButton");
       button.disabled = true;
-      status.textContent = "비밀번호를 변경하는 중입니다.";
-      const { error: passwordError } = await supabase.auth.updateUser({ password });
-      if (passwordError) {
-        button.disabled = false;
-        status.textContent = `비밀번호 변경 실패: ${passwordError.message}`;
-        return;
-      }
-      const { error: profileError } = await supabase.from("user_profiles")
-        .update({ must_change_password: false, updated_at: new Date().toISOString() })
-        .eq("user_id", currentUser.id);
+      status.textContent = "가입 신청을 처리하고 있습니다.";
+      const redirectTo = `${location.origin}${location.pathname}`;
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: redirectTo }
+      });
       button.disabled = false;
-      if (profileError) {
-        status.textContent = `계정 상태 변경 실패: ${profileError.message}`;
+      if (error) {
+        status.textContent = `가입 신청 실패: ${error.message}`;
         return;
       }
-      document.getElementById("newPassword").value = "";
-      document.getElementById("confirmPassword").value = "";
-      await handleAuthenticatedUser(currentUser);
-      frame.contentWindow?.location.reload();
+      document.getElementById("signupPassword").value = "";
+      document.getElementById("signupPasswordConfirm").value = "";
+      if (data.session?.user) await handleAuthenticatedUser(data.session.user);
+      else status.textContent = "확인 이메일을 보냈습니다. 이메일 인증 후 관리자 승인을 기다려 주세요.";
+    });
+
+    document.getElementById("googleLoginButton").addEventListener("click", async () => {
+      const status = document.getElementById("loginStatus");
+      status.textContent = "Google 로그인으로 이동합니다.";
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${location.origin}${location.pathname}` }
+      });
+      if (error) status.textContent = `Google 로그인 실패: ${error.message}`;
+    });
+
+    document.getElementById("approvalLogoutButton").addEventListener("click", async () => {
+      await supabase.auth.signOut();
+      showLogin();
     });
 
     document.getElementById("logoutButton").addEventListener("click", async () => {
@@ -528,7 +602,8 @@
       showLogin();
     });
 
-    function showPage(key) {
+    async function showPage(key) {
+      if (key === "admin-members" && currentProfile?.role !== "admin") key = "stock-dashboard";
       const page = pages[key];
       if (!page) return;
       currentPageKey = key;
@@ -541,11 +616,11 @@
       frame.title = page.title;
       openButton.href = page.src;
       location.hash = key;
-      if (key === "stock-dashboard") refreshLiveStock(true);
+      if (key === "stock-dashboard") await refreshLiveStock(true);
     }
 
     document.querySelectorAll("[data-page]").forEach((button) => {
-      button.addEventListener("click", () => showPage(button.dataset.page));
+        button.addEventListener("click", () => showPage(button.dataset.page));
     });
 
     reloadButton.addEventListener("click", () => {
@@ -553,7 +628,7 @@
     });
 
     const initial = location.hash.replace("#", "");
-    showPage(pages[initial] ? initial : "stock-dashboard");
+    await showPage(pages[initial] ? initial : "stock-dashboard");
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) await handleAuthenticatedUser(session.user);
     else showLogin();
