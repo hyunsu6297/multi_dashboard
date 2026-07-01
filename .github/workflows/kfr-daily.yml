@@ -8,6 +8,8 @@ on:
       - "web/**"
       - "apps/**"
       - "scripts/**"
+      - "functions/**"
+      - "supabase/functions/**"
       - ".github/workflows/kfr-daily.yml"
   workflow_dispatch:
     inputs:

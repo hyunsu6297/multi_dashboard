@@ -35,6 +35,17 @@ async function dart(endpoint: string, params: Record<string,string>, binary = fa
       lastError = error;
     }
   }
+  try {
+    const response = await fetch("https://multi-dashboard.pages.dev/api/opendart-proxy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint, params }),
+    });
+    if (!response.ok) throw new Error(`OpenDART Cloudflare proxy HTTP ${response.status}`);
+    return binary ? new Uint8Array(await response.arrayBuffer()) : await response.json();
+  } catch (error) {
+    lastError = error;
+  }
   throw lastError instanceof Error ? lastError : new Error("OpenDART 연결에 실패했습니다.");
 }
 
