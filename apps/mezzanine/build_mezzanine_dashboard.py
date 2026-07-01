@@ -232,6 +232,11 @@ def build_data() -> dict:
         return found if found is not None else fund_by_assoc.get(code(assoc_value))
 
     security_by_code = {code(r["KR코드"]): r for _, r in master.iterrows()}
+    issuer_code_by_name = {
+        clean(r.get("발행사명")): code(r.get("발행코드"))
+        for _, r in master.iterrows()
+        if clean(r.get("발행사명")) and code(r.get("발행코드"))
+    }
     id_by_code = dict(zip(aliases["security_code"].map(code), aliases["instrument_id"]))
     delta_by_instrument = shared_deltas(master, aliases)
 
@@ -280,6 +285,7 @@ def build_data() -> dict:
             hold_date = str(row.get("보유일") or "")[:10]
             latest_hold_date = max(latest_hold_date, hold_date)
             issuer_name, issuer_code = issuer_from_security_name(raw_name)
+            issuer_code = issuer_code or issuer_code_by_name.get(issuer_name, "")
             holding_rows.append({
                 "date": hold_date, "manager": clean(fund.get("운용사")), "fund": clean(fund.get("펀드명")),
                 "fundCode": code(fund.get("펀드코드")), "share": share, "instrumentId": "", "code": sec_code,
