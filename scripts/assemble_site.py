@@ -17,6 +17,7 @@ def main() -> None:
     targets = {
         ROOT / "apps" / "stock" / "fund_dashboard.html": DIST / "pages" / "stock" / "index.html",
         ROOT / "apps" / "bond" / "채권형수익증권_대시보드.html": DIST / "pages" / "bond" / "index.html",
+        ROOT / "apps" / "mezzanine" / "메자닌_대시보드.html": DIST / "pages" / "mezzanine" / "index.html",
     }
     for source, target in targets.items():
         if not source.is_file():
@@ -28,4 +29,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
