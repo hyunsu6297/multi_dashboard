@@ -227,11 +227,17 @@ def recalculate_deltas(client: SupabaseRest, underlying_by_security: dict[str, s
                 else None
             )
             output.append({
-                **row,
+                "business_date": row["business_date"],
+                "security_code": row["security_code"],
+                "security_name": row.get("security_name", ""),
+                "fund_name": row.get("fund_name", ""),
+                "nav": nav,
                 "nav_return": nav_return,
                 "underlying_change_rate": underlying_change,
                 "daily_delta": daily_delta,
                 "is_valid": daily_delta is not None and 0 <= daily_delta <= 1,
+                "source": row["source"],
+                "source_snapshot_id": row.get("source_snapshot_id"),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             })
             prior_nav = nav
