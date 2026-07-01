@@ -385,6 +385,11 @@ def main() -> None:
     data = build_data()
     template_path = ROOT / "dashboard_template.html"
     template = template_path.read_text(encoding="utf-8") if template_path.exists() else HTML
+    template = template.replace(
+        '../manual-edit/index.html?domain=mezzanine&amp;', '../mezzanine-admin/?'
+    ).replace(
+        '../manual-edit/index.html?domain=mezzanine', '../mezzanine-admin/'
+    ).replace('disclosure_view.html', '../mezzanine-disclosures/')
     OUTPUT.write_text(template.replace("__DATA__", json.dumps(data, ensure_ascii=False, separators=(",", ":"))), encoding="utf-8")
     print(f"created: {OUTPUT}")
     print(f"holdings={len(data['holdings'])}, securities={len(data['securities'])}, trades={len(data['trades'])}")
