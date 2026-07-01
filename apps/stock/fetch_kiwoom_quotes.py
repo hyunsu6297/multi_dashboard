@@ -217,6 +217,26 @@ def collect_codes() -> dict[str, str]:
     return codes
 
 
+def collect_mezzanine_codes() -> dict[str, str]:
+    path = BASE_DIR.parent / "mezzanine" / "종목정보.xlsx"
+    if not path.exists():
+        return {}
+    frame = pd.read_excel(path, dtype=object)
+    codes: dict[str, str] = {}
+    for _, row in frame.iterrows():
+        exchange = row.get("교환코드")
+        raw = exchange if exchange is not None and not pd.isna(exchange) and str(exchange).strip() else row.get("발행코드")
+        if raw is None or pd.isna(raw):
+            continue
+        text = str(raw).split(".")[0].strip()
+        stock_code = text.zfill(6) if text.isdigit() else text
+        target = row.get("교환대상명")
+        name = str(target if target is not None and not pd.isna(target) and str(target).strip() else row.get("발행사명") or stock_code).strip()
+        if stock_code:
+            codes[stock_code] = name
+    return codes
+
+
 def chunks(items: list[tuple[str, str, str]], size: int) -> list[list[tuple[str, str, str]]]:
     return [items[idx : idx + size] for idx in range(0, len(items), size)]
 
@@ -416,6 +436,9 @@ def main() -> None:
         token = request_token(args.host, appkey, secretkey, args.timeout)
 
     codes = collect_codes()
+    mezzanine_codes = collect_mezzanine_codes()
+    codes.update(mezzanine_codes)
+    print(f"quote universe: mezzanine_underlyings={len(mezzanine_codes)}, merged={len(codes)}")
     if not codes:
         raise SystemExit("No quote codes found.")
 
@@ -431,4 +454,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
