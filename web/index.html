@@ -419,7 +419,8 @@
           .from(versionRow.storage_bucket)
           .download(versionRow.storage_path);
         if (downloadError || !blob) return;
-        const nextUrl = URL.createObjectURL(blob);
+        const htmlBlob = new Blob([await blob.arrayBuffer()], { type: "text/html;charset=utf-8" });
+        const nextUrl = URL.createObjectURL(htmlBlob);
         frame.src = nextUrl;
         if (liveStockObjectUrl) URL.revokeObjectURL(liveStockObjectUrl);
         liveStockObjectUrl = nextUrl;
