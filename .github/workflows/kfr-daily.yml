@@ -99,6 +99,9 @@ jobs:
       - name: Build bond dashboard
         run: python apps/bond/build_dashboard.py
 
+      - name: Build mezzanine dashboard
+        run: python apps/mezzanine/build_mezzanine_dashboard.py
+
       - name: Assemble Cloudflare Pages site
         run: python scripts/assemble_site.py
 
@@ -119,4 +122,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=multi-dashboard --branch=main
+
 
