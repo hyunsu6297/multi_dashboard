@@ -32,7 +32,7 @@ from fetch_kiwoom_quotes import (
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
-from scripts.restore_dashboard_inputs import SupabaseRest, restore_manual  # noqa: E402
+from scripts.restore_dashboard_inputs import SupabaseRest, restore_kfr, restore_manual  # noqa: E402
 
 MEZZANINE_DIR = REPOSITORY_ROOT / "apps" / "mezzanine"
 if str(MEZZANINE_DIR) not in sys.path:
@@ -104,6 +104,20 @@ class SupabasePublisher:
         )
         rows = json.loads(payload or b"[]")
         return str(rows[0]["updated_at"]) if rows else ""
+
+    def source_version(self) -> str:
+        query = urllib.parse.urlencode({
+            "select": "downloaded_at",
+            "order": "downloaded_at.desc",
+            "limit": "1",
+        })
+        payload = self.request(
+            f"{self.url}/rest/v1/kfr_source_snapshots?{query}",
+            method="GET",
+            content_type="application/json",
+        )
+        rows = json.loads(payload or b"[]")
+        return str(rows[0]["downloaded_at"]) if rows else ""
 
     def upsert_rows(self, table: str, rows: list[dict[str, Any]], conflict: str) -> None:
         endpoint = f"{self.url}/rest/v1/{table}?on_conflict={urllib.parse.quote(conflict)}"
@@ -202,6 +216,7 @@ def publish_cycle(
     token: str,
     codes: dict[str, str],
 ) -> None:
+    restore_client = None
     manual_version = publisher.manual_version()
     manual_changed = manual_version != getattr(args, "manual_version", None)
     if manual_changed:
@@ -212,13 +227,28 @@ def publish_cycle(
             REPOSITORY_ROOT / "apps" / "bond",
         )
         args.manual_version = manual_version
+
+    source_version = publisher.source_version()
+    source_changed = source_version != getattr(args, "source_version", None)
+    if source_changed:
+        restore_client = restore_client or SupabaseRest(publisher.url, required_secret())
+        restore_kfr(
+            restore_client,
+            REPOSITORY_ROOT / "apps" / "stock",
+            REPOSITORY_ROOT / "apps" / "bond",
+            REPOSITORY_ROOT / "apps" / "mezzanine",
+        )
+        args.source_version = source_version
+
+    inputs_changed = manual_changed or source_changed
+    if inputs_changed:
         cached_quotes = load_cached_quotes(args.output)
         publish_dashboard(publisher, cached_quotes, publish_quote_rows=False)
 
     try:
         quotes = run_refresh(args, token, codes)
     except Exception as exc:
-        if manual_changed:
+        if inputs_changed:
             print(f"Kiwoom refresh failed after cached dashboard publish: {exc}")
             return
         raise
@@ -226,7 +256,7 @@ def publish_cycle(
     rows = quote_rows(quotes, datetime.now(timezone.utc).isoformat())
     available = sum(1 for row in rows if row["price"] not in (None, 0, 0.0))
     if not rows or available == 0:
-        if manual_changed:
+        if inputs_changed:
             print("Kiwoom returned no usable quotes after cached dashboard publish")
             return
         raise RuntimeError("No usable Kiwoom quotes were returned; previous live dashboard was retained")
