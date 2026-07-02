@@ -33,7 +33,7 @@
       width: 100%;
       height: 100%;
       display: grid;
-      grid-template-columns: 272px minmax(0, 1fr);
+      grid-template-columns: 204px minmax(0, 1fr);
     }
 
     .sidebar {
@@ -45,10 +45,7 @@
       border-right: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    .brand {
-      padding: 21px 18px 18px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    }
+    .brand { display: none; }
 
     .brand strong {
       display: block;
@@ -87,7 +84,7 @@
       background: transparent;
       color: #cbd5e1;
       font: inherit;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 750;
       text-align: left;
       cursor: pointer;
@@ -254,15 +251,24 @@
         grid-template-columns: 1fr;
       }
       .content {
-        height: calc(100vh - 360px);
-        min-height: 680px;
+        height: calc(100vh - 190px);
+        min-height: 620px;
       }
+      .sidebar { max-height:118px; overflow:auto; }
+      .nav { display:flex; gap:6px; padding:8px; overflow-x:auto; }
+      .group { flex:0 0 auto; margin:0; padding:0 8px 0 0; border-bottom:0; border-right:1px solid rgba(255,255,255,.1); }
+      .group-title { margin:0 4px 4px; font-size:11px; }
+      .nav button { width:auto; height:30px; padding:0 8px; white-space:nowrap; }
+      .nav .sub { margin-left:0; width:auto; }
       .topbar {
         min-height: 72px;
         align-items: flex-start;
         padding: 10px 12px;
         flex-direction: column;
       }
+      .actions { width:100%; overflow-x:auto; }
+      .actions a,.actions button { flex:0 0 auto; }
+      .frame-wrap { padding:4px; }
     }
   </style>
 </head>
@@ -303,7 +309,7 @@
   <div class="app" id="app" hidden>
     <aside class="sidebar">
       <div class="brand">
-        <strong>멀티에셋운용팀 대시보드</strong>
+        <strong></strong>
       </div>
       <nav class="nav" aria-label="멀티에셋운용팀 대시보드 메뉴">
         <section class="group">
@@ -341,7 +347,7 @@
     <main class="content">
       <header class="topbar">
         <div class="title">
-          <h1 id="pageTitle">주식 & 수익증권 대시보드</h1>
+          <h1 id="pageTitle">멀티에셋운용팀 | 주식 & 수익증권 대시보드</h1>
           <p id="pageNote">기존 주식 대시보드 결과물</p>
         </div>
         <div class="actions">
@@ -616,7 +622,7 @@
       document.querySelectorAll("[data-page]").forEach((button) => {
         button.classList.toggle("active", button.dataset.page === key);
       });
-      pageTitle.textContent = page.title;
+      pageTitle.textContent = `멀티에셋운용팀 | ${page.title}`;
       pageNote.textContent = page.note;
       frame.src = page.src;
       frame.title = page.title;

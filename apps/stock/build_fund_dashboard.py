@@ -753,7 +753,7 @@ def make_view(
         <div class="trade-grid">
           <article class="panel"><div class="panel-title"><h4>상위 순매수</h4><span>hover: 펀드별 순금액/비율</span></div>{net_trade_table(stock_trades, "buy")}</article>
           <article class="panel"><div class="panel-title"><h4>상위 순매도</h4><span>hover: 펀드별 순금액/비율</span></div>{net_trade_table(stock_trades, "sell")}</article>
-          <article class="panel trade-recent"><div class="panel-title"><h4>최근 매매내역</h4><span>5천만원 이상</span></div>{trade_table(stock_trades)}</article>
+          <article class="panel trade-recent"><div class="panel-title trade-title"><h4>매매내역</h4><div class="trade-range"><input class="trade-date" id="tradeStart" type="date" aria-label="매매 시작일"><span>~</span><input class="trade-date" id="tradeEnd" type="date" aria-label="매매 종료일"></div></div><div class="table-wrap"><table id="stockTradeTable"></table></div></article>
           <article class="panel trade-sector-panel"><div class="panel-title"><h4>업종별 매매내역(대)</h4><span>매수 + / 매도 -</span></div>{trade_category_svg(list(zip(sector_trade_large["업종대분류"], sector_trade_large["순매수금액"])), sector_large_view_labels)}</article>
           <article class="panel trade-sector-panel"><div class="panel-title"><h4>업종별 매매내역(중)</h4><span>매수 + / 매도 -</span></div>{trade_category_svg(list(zip(sector_trade_mid["업종중분류"], sector_trade_mid["순매수금액"])), sector_mid_view_labels)}</article>
         </div>
@@ -794,6 +794,21 @@ def build_dashboard() -> Path:
 
     stock_holdings = holdings[is_equity_related(holdings, "자산군")].copy()
     stock_trades = trades[is_equity_related(trades, "자산구분") & trades["거래구분"].isin(["매수", "매도"])].copy()
+    stock_trade_history = stock_trades.copy()
+    if not stock_trades.empty and stock_trades["기준일"].notna().any():
+        default_trade_end = stock_trades["기준일"].max()
+        stock_trades = stock_trades[stock_trades["기준일"] >= default_trade_end - pd.DateOffset(months=1)].copy()
+    trade_history = [
+        {
+            "date": row["기준일"].strftime("%Y-%m-%d") if pd.notna(row["기준일"]) else "",
+            "fundCode": str(row["협회펀드코드"]),
+            "fund": str(row["보유펀드명"]),
+            "name": str(row["종목명"]),
+            "side": str(row["거래구분"]),
+            "amount": float(row["우리결제금액"]) if pd.notna(row["우리결제금액"]) else 0.0,
+        }
+        for _, row in stock_trade_history.iterrows()
+    ]
 
     investment_stocks = prepare_direct_stock_sheet("투자주식", quotes)
     product_stocks = prepare_direct_stock_sheet("상품주식", quotes)
@@ -1002,8 +1017,9 @@ def build_dashboard() -> Path:
     .has-tip:hover {{ background:#f3fbfa; }}
     .empty {{ padding:24px; color:var(--muted); text-align:center; border:1px dashed var(--line); border-radius:8px; }}
     .audit {{ color:var(--muted); font-size:11px; margin-top:14px; }}
+    .trade-title {{ flex-wrap:wrap; }}.trade-range {{ margin-left:auto;display:flex;align-items:center;gap:5px }}.trade-date {{ width:122px;border:1px solid #9abeb6;border-radius:4px;padding:4px 7px }}
     @media (max-width:1280px) {{ .hold-grid,.trade-grid {{ grid-template-columns:1fr 1fr; }} .investment-panel,.product-panel,.fund-pl-panel,.long-panel,.short-panel,.sector-large-panel,.sector-mid-panel,.trade-recent,.chart-panel {{ grid-column:1 / -1; grid-row:auto; }} }}
-    @media (max-width:980px) {{ .layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); }} .fund-list {{ max-height:260px; }} .kpis,.hold-grid,.trade-grid,.pie-wrap {{ grid-template-columns:1fr; }} .trade-recent {{ grid-column:auto; }} }}
+    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.brand {{ font-size:20px }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.hold-grid,.trade-grid,.pie-wrap {{ grid-template-columns:1fr; }} .trade-recent {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
   </style>
 </head>
 <body>
@@ -1028,14 +1044,28 @@ def build_dashboard() -> Path:
   <script>
     const views = {json.dumps(views, ensure_ascii=False)};
     const funds = {json.dumps(fund_buttons, ensure_ascii=False)};
+    const tradeHistory = {json.dumps(trade_history, ensure_ascii=False)};
+    const tradeDates = tradeHistory.map(row => row.date).filter(Boolean).sort();
+    const tradeMax = tradeDates.at(-1) || "";
+    const tradeMin = tradeDates[0] || "";
+    const defaultTradeStart = tradeMax ? (() => {{ const d=new Date(`${{tradeMax}}T00:00:00`); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,10); }})() : "";
+    let tradeStart = defaultTradeStart, tradeEnd = tradeMax;
     const fundList = document.getElementById("fundList");
     const dashboard = document.getElementById("dashboard");
     let currentKey = "ALL";
+    function renderTradeHistory() {{
+      const table = document.getElementById("stockTradeTable");
+      if (!table) return;
+      const rows = tradeHistory.filter(row => (currentKey === "ALL" || row.fundCode === currentKey) && (!tradeStart || row.date >= tradeStart) && (!tradeEnd || row.date <= tradeEnd)).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,500);
+      table.innerHTML = `<thead><tr><th>기준일</th><th>펀드명</th><th>종목명</th><th>거래</th><th>금액(실보유)</th></tr></thead><tbody>${{rows.map(row=>`<tr><td>${{row.date}}</td><td>${{row.fund}}</td><td>${{row.name}}</td><td>${{row.side}}</td><td class="num">${{Math.round(row.amount).toLocaleString("ko-KR")}}</td></tr>`).join("")}}</tbody>`;
+      for (const [id,value] of [["tradeStart",tradeStart],["tradeEnd",tradeEnd]]) {{ const input=document.getElementById(id); if(!input)continue; input.min=tradeMin;input.max=tradeMax;input.value=value;input.onchange=e=>{{if(id==="tradeStart")tradeStart=e.target.value;else tradeEnd=e.target.value;renderTradeHistory();}}; }}
+    }}
     function render(key) {{
       currentKey = key;
       dashboard.innerHTML = views[key];
       const period = dashboard.querySelector(".period-data")?.dataset.period || "";
       document.getElementById("periodCaption").textContent = period ? `매매기간 ${{period}}` : "";
+      renderTradeHistory();
       document.querySelectorAll(".fund-button").forEach((button) => button.classList.toggle("active", button.dataset.key === key));
     }}
     function drawList(term = "") {{

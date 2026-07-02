@@ -1,4 +1,4 @@
-"""Restore dashboard build inputs from the latest Supabase snapshots."""
+"""Restore dashboard build inputs from Supabase snapshots."""
 
 from __future__ import annotations
 
@@ -98,23 +98,33 @@ def restore_kfr(client: SupabaseRest, stock_dir: Path, bond_dir: Path, mezzanine
         latest.setdefault(snapshot["source_key"], snapshot)
 
     for source_key, file_name in KFR_TARGETS.items():
-        snapshot = latest.get(source_key)
-        if not snapshot:
-            raise RuntimeError(f"No KFR snapshot found for {source_key}")
-        rows = client.get_all(
-            "kfr_source_rows",
-            {
-                "select": "sheet_name,row_no,payload",
-                "snapshot_id": f"eq.{snapshot['id']}",
-                "order": "sheet_name.asc,row_no.asc",
-            },
+        source_snapshots = (
+            [snapshot for snapshot in snapshots if snapshot["source_key"] == source_key]
+            if source_key == "fund_trades"
+            else [latest[source_key]] if source_key in latest else []
         )
+        if not source_snapshots:
+            raise RuntimeError(f"No KFR snapshot found for {source_key}")
         sheets: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in rows:
-            sheets[row["sheet_name"]].append(row)
+        row_count = 0
+        # Trade snapshots are daily files. Combining every retained snapshot makes
+        # the static dashboards capable of filtering the complete DB history.
+        for snapshot in reversed(source_snapshots):
+            rows = client.get_all(
+                "kfr_source_rows",
+                {
+                    "select": "sheet_name,row_no,payload",
+                    "snapshot_id": f"eq.{snapshot['id']}",
+                    "order": "sheet_name.asc,row_no.asc",
+                },
+            )
+            row_count += len(rows)
+            for row in rows:
+                sheets[row["sheet_name"]].append(row)
         for target_dir in (stock_dir, bond_dir, mezzanine_dir):
             write_workbook(target_dir / file_name, sheets, header_row=2)
-        print(f"restored {source_key}: snapshot={snapshot['id']}, rows={len(rows)}")
+        snapshot_label = ",".join(str(item["id"]) for item in source_snapshots)
+        print(f"restored {source_key}: snapshots={snapshot_label}, rows={row_count}")
 
 
 def restore_manual(client: SupabaseRest, stock_dir: Path, bond_dir: Path) -> None:
