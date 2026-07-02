@@ -176,14 +176,14 @@ def upsert_current_quotes(client: SupabaseRest, business_date: str, names: dict[
     if not path.exists():
         return 0
     payload = json.loads(path.read_text(encoding="utf-8"))
-    rows = []
+    rows_by_code: dict[str, dict[str, Any]] = {}
     for source_code, quote in (payload.get("stocks") or {}).items():
         rest_code = text(quote.get("kiwoom_rest_code") or source_code).zfill(6)
         close_price = number(quote.get("price"))
         change_rate = quote.get("change_rate")
         if rest_code not in names or close_price in (None, 0) or change_rate in (None, ""):
             continue
-        rows.append({
+        rows_by_code[rest_code] = {
             "business_date": business_date,
             "code": rest_code,
             "name": names.get(rest_code, text(quote.get("name"))),
@@ -191,7 +191,8 @@ def upsert_current_quotes(client: SupabaseRest, business_date: str, names: dict[
             "change_rate": float(change_rate) / 100.0,
             "source": "ka10095",
             "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+    rows = list(rows_by_code.values())
     client.upsert("kiwoom_daily_prices", rows, "business_date,code")
     return len(rows)
 
