@@ -388,14 +388,21 @@ def build_data() -> dict:
     for _, row in trades.iterrows():
         fund = matched_fund(row.get("예탁원펀드코드"), row.get("협회펀드코드"))
         sec_code = code(row.get("종목코드"))
-        if fund is None or sec_code not in security_by_code:
+        if fund is None:
             continue
+        sec = security_by_code.get(sec_code)
+        if sec is None:
+            raw_name = clean(row.get("종목명"))
+            kind_match = re.search(r"(CB|BW|EB)", raw_name, re.IGNORECASE)
+            if clean(row.get("자산구분")) != "채권" or not kind_match:
+                continue
         trade_rows.append({
             "date": str(row.get("기준일") or "")[:10], "manager": clean(fund.get("운용사")), "fund": clean(fund.get("펀드명")),
             "code": sec_code, "name": clean(row.get("종목명")), "side": clean(row.get("거래구분")),
             "quantity": number(row.get("매매수량")), "price": number(row.get("매매가격")), "amount": number(row.get("결제금액")),
             "share": number(fund.get("지분율"), 1.0),
             "lookthroughAmount": number(row.get("결제금액")) * number(fund.get("지분율"), 1.0),
+            "needsRegistration": sec is None,
         })
 
     raw_trade_dates = sorted({
