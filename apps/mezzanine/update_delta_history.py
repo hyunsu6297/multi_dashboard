@@ -175,20 +175,34 @@ def upsert_current_quotes(client: SupabaseRest, business_date: str, names: dict[
     path = STOCK_DIR / "kiwoom_quotes.json"
     if not path.exists():
         return 0
+    existing_daily = client.get_all("kiwoom_daily_prices", {
+        "select": "code,source,change_rate",
+        "business_date": f"eq.{business_date}",
+    })
+    protected_codes = {
+        row["code"]
+        for row in existing_daily
+        if row.get("source") == "ka10081" and row.get("change_rate") not in (None, "", "0", "0.0", 0, 0.0)
+    }
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows_by_code: dict[str, dict[str, Any]] = {}
     for source_code, quote in (payload.get("stocks") or {}).items():
         rest_code = text(quote.get("kiwoom_rest_code") or source_code).zfill(6)
         close_price = number(quote.get("price"))
         change_rate = quote.get("change_rate")
+        if rest_code in protected_codes:
+            continue
         if rest_code not in names or close_price in (None, 0) or change_rate in (None, ""):
+            continue
+        numeric_change = float(change_rate)
+        if numeric_change == 0:
             continue
         rows_by_code[rest_code] = {
             "business_date": business_date,
             "code": rest_code,
             "name": names.get(rest_code, text(quote.get("name"))),
             "close_price": close_price,
-            "change_rate": float(change_rate) / 100.0,
+            "change_rate": numeric_change / 100.0,
             "source": "ka10095",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -243,6 +257,7 @@ def recalculate_deltas(client: SupabaseRest, underlying_by_security: dict[str, s
             })
             prior_nav = nav
     client.upsert("mezzanine_delta_history", output, "business_date,security_code,fund_name")
+    DELTA_HISTORY_FILE.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     return len(output)
 
 
@@ -262,13 +277,19 @@ def run_update(
     if not skip_backfill:
         cutoff = (date.fromisoformat(business_date) - timedelta(days=history_days * 2)).isoformat()
         existing = client.get_all("kiwoom_daily_prices", {
-            "select": "code,business_date",
+            "select": "code,business_date,source,change_rate",
             "business_date": f"gte.{cutoff}",
         })
         counts: dict[str, int] = {}
+        valid_daily: set[tuple[str, str]] = set()
         for row in existing:
-            counts[row["code"]] = counts.get(row["code"], 0) + 1
-        missing = [code for code in sorted(names) if counts.get(code, 0) < 10]
+            if row.get("source") == "ka10081" and row.get("change_rate") not in (None, "", "0", "0.0", 0, 0.0):
+                counts[row["code"]] = counts.get(row["code"], 0) + 1
+                valid_daily.add((row["code"], row["business_date"]))
+        missing = [
+            code for code in sorted(names)
+            if counts.get(code, 0) < 10 or (code, business_date) not in valid_daily
+        ]
         if missing:
             if not token:
                 appkey, secretkey = load_credentials()

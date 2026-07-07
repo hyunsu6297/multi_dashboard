@@ -398,11 +398,16 @@ def build_data() -> dict:
             "lookthroughAmount": number(row.get("결제금액")) * number(fund.get("지분율"), 1.0),
         })
 
+    raw_trade_dates = sorted({
+        str(value)[:10]
+        for value in pd.to_datetime(trades.get("기준일"), errors="coerce").dropna()
+    })
     kfr_date = str(kfr["거래일"].max())[:10] if not kfr.empty else ""
     return {
         "generatedAt": datetime.now().isoformat(timespec="seconds"), "holdingDate": latest_hold_date,
         "kfrDate": kfr_date, "quoteUpdated": quote_updated,
         "funds": records(funds), "securities": security_rows, "holdings": holding_rows, "stockHoldings": stock_rows, "trades": trade_rows,
+        "tradeMin": raw_trade_dates[0] if raw_trade_dates else "", "tradeMax": raw_trade_dates[-1] if raw_trade_dates else "",
         "methodology": {"window": 10, "exclude": "일일 델타 < 0 또는 > 100%", "identity": "발행사+증권종류+회차 기반 UUID와 종목코드 alias"},
     }
 

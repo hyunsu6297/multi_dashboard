@@ -10,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -98,17 +99,26 @@ def restore_kfr(client: SupabaseRest, stock_dir: Path, bond_dir: Path, mezzanine
         latest.setdefault(snapshot["source_key"], snapshot)
 
     for source_key, file_name in KFR_TARGETS.items():
-        source_snapshots = (
-            [snapshot for snapshot in snapshots if snapshot["source_key"] == source_key]
-            if source_key == "fund_trades"
-            else [latest[source_key]] if source_key in latest else []
-        )
-        if not source_snapshots:
+        snapshot = latest.get(source_key)
+        if not snapshot:
             raise RuntimeError(f"No KFR snapshot found for {source_key}")
+        source_snapshots = [snapshot]
+        if source_key == "fund_trades":
+            latest_date = date.fromisoformat(snapshot["business_date"])
+            cutoff = latest_date - timedelta(days=31)
+            seen_dates = {snapshot["business_date"]}
+            for candidate in snapshots:
+                if candidate["source_key"] != source_key or candidate["business_date"] in seen_dates:
+                    continue
+                business_date = date.fromisoformat(candidate["business_date"])
+                if business_date < cutoff:
+                    continue
+                seen_dates.add(candidate["business_date"])
+                source_snapshots.append(candidate)
         sheets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         row_count = 0
-        # Trade snapshots are daily files. Combining every retained snapshot makes
-        # the static dashboards capable of filtering the complete DB history.
+        # Trade snapshots are daily files. Combining recent retained snapshots
+        # makes the static dashboards capable of filtering the DB history.
         for snapshot in reversed(source_snapshots):
             rows = client.get_all(
                 "kfr_source_rows",
