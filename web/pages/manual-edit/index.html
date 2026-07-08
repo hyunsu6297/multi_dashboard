@@ -45,6 +45,8 @@
     td[contenteditable="true"]:focus { background: #f3fffc; box-shadow: inset 0 0 0 2px var(--accent); }
     tr.dirty td { background: #fff9e8; }
     .row-no { min-width: 58px; width: 58px; text-align: right; color: var(--muted); background: #f8fafb; font-weight: 700; }
+    .select-col { min-width: 44px; width: 44px; text-align: center; background: #f8fafb; }
+    .select-col input { min-width: 0; width: 16px; height: 16px; padding: 0; }
     .status { padding: 9px 12px; border-top: 1px solid var(--line); background: #fbfcfd; }
     .spacer { flex: 1; }
     @media (max-width: 860px) {
@@ -76,6 +78,7 @@
           <button id="uploadExcelButton" type="button">엑셀 업로드</button>
           <input id="excelFileInput" type="file" accept=".xlsx" hidden>
           <button id="addRowButton" type="button">행 추가</button>
+          <button id="deleteSelectedFundsButton" type="button" class="danger" hidden>선택 펀드 삭제</button>
           <button id="deleteRowButton" type="button" class="danger">마지막 행 삭제</button>
           <button id="saveButton" type="button" class="primary" disabled>변경 저장</button>
         </div>
@@ -118,6 +121,7 @@
     let mustChangePassword = false;
     const dirtyRows = new Set();
     const deletedRows = new Set();
+    const selectedRows = new Set();
     let realtimeChannel = null;
     let realtimeRefreshTimer = null;
 
@@ -125,6 +129,10 @@
     const escapeHtml = (value) => String(value ?? "")
       .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+
+    function canSelectFundRows() {
+      return domain === "stock" && activeFile?.file_key === "fund_info";
+    }
 
     async function getSupabase() {
       if (supabase) return supabase;
@@ -302,6 +310,7 @@
       page = 1;
       dirtyRows.clear();
       deletedRows.clear();
+      selectedRows.clear();
       $("status").textContent = `${file.file_label} 데이터를 불러오는 중입니다.`;
       try {
         if (currentUser) await loadDatabase(file, activeSheet.name);
@@ -342,10 +351,32 @@
     function renderTable() {
       const start = (page - 1) * PAGE_SIZE;
       const visible = rows.slice(start, start + PAGE_SIZE);
-      $("tableHead").innerHTML = `<tr><th class="row-no">#</th>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr>`;
+      const selectable = canSelectFundRows();
+      const selectHead = selectable ? `<th class="select-col"><input id="selectVisibleRows" type="checkbox" aria-label="현재 페이지 펀드 전체 선택"></th>` : "";
+      $("tableHead").innerHTML = `<tr>${selectHead}<th class="row-no">#</th>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr>`;
       $("tableBody").innerHTML = visible.map((row) =>
-        `<tr data-row-no="${row.row_no}" class="${dirtyRows.has(row.row_no) ? "dirty" : ""}"><td class="row-no">${row.row_no.toLocaleString()}</td>${columns.map((column) => `<td contenteditable="${currentUser ? "true" : "false"}" data-column="${escapeHtml(column)}">${escapeHtml(row.payload[column])}</td>`).join("")}</tr>`
+        `<tr data-row-no="${row.row_no}" class="${dirtyRows.has(row.row_no) ? "dirty" : ""}">${selectable ? `<td class="select-col"><input class="row-selector" type="checkbox" aria-label="펀드 선택" ${selectedRows.has(row.row_no) ? "checked" : ""}></td>` : ""}<td class="row-no">${row.row_no.toLocaleString()}</td>${columns.map((column) => `<td contenteditable="${currentUser ? "true" : "false"}" data-column="${escapeHtml(column)}">${escapeHtml(row.payload[column])}</td>`).join("")}</tr>`
       ).join("");
+      const selectVisibleRows = $("selectVisibleRows");
+      if (selectVisibleRows) {
+        selectVisibleRows.checked = visible.length > 0 && visible.every((row) => selectedRows.has(row.row_no));
+        selectVisibleRows.addEventListener("change", () => {
+          visible.forEach((row) => {
+            if (selectVisibleRows.checked) selectedRows.add(row.row_no);
+            else selectedRows.delete(row.row_no);
+          });
+          renderTable();
+          updateControls();
+        });
+      }
+      $("tableBody").querySelectorAll(".row-selector").forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          const rowNo = Number(checkbox.closest("tr").dataset.rowNo);
+          if (checkbox.checked) selectedRows.add(rowNo);
+          else selectedRows.delete(rowNo);
+          updateControls();
+        });
+      });
       $("tableBody").querySelectorAll("td[contenteditable='true']").forEach((cell) => {
         cell.addEventListener("input", () => {
           const rowNo = Number(cell.parentElement.dataset.rowNo);
@@ -365,7 +396,10 @@
       $("nextButton").disabled = page >= totalPages;
       $("saveButton").disabled = !currentUser || mustChangePassword || (dirtyRows.size === 0 && deletedRows.size === 0);
       $("addRowButton").disabled = !currentUser || mustChangePassword;
+      $("deleteRowButton").hidden = canSelectFundRows();
       $("deleteRowButton").disabled = !currentUser || mustChangePassword || rows.length === 0;
+      $("deleteSelectedFundsButton").hidden = !canSelectFundRows();
+      $("deleteSelectedFundsButton").disabled = !currentUser || mustChangePassword || selectedRows.size === 0;
       $("downloadExcelButton").disabled = !currentUser || mustChangePassword;
       $("uploadExcelButton").disabled = !currentUser || mustChangePassword;
       $("sourceBadge").textContent = source === "database" ? "Supabase DB" : "로컬 원본";
@@ -438,10 +472,27 @@
       if (removed) {
         deletedRows.add(removed.row_no);
         dirtyRows.delete(removed.row_no);
+        selectedRows.delete(removed.row_no);
         page = Math.min(page, Math.max(1, Math.ceil(rows.length / PAGE_SIZE)));
         renderTable();
         updateControls();
       }
+    });
+    $("deleteSelectedFundsButton").addEventListener("click", () => {
+      if (!canSelectFundRows() || selectedRows.size === 0) return;
+      const deleteCount = selectedRows.size;
+      const selected = new Set(selectedRows);
+      rows = rows.filter((row) => {
+        if (!selected.has(row.row_no)) return true;
+        deletedRows.add(row.row_no);
+        dirtyRows.delete(row.row_no);
+        return false;
+      });
+      selectedRows.clear();
+      page = Math.min(page, Math.max(1, Math.ceil(rows.length / PAGE_SIZE)));
+      renderTable();
+      updateControls();
+      $("status").textContent = `${deleteCount.toLocaleString()}개 펀드를 삭제 대상으로 표시했습니다. 변경 저장을 눌러 Supabase에 반영하세요.`;
     });
     $("prevButton").addEventListener("click", () => { page -= 1; renderTable(); updateControls(); });
     $("nextButton").addEventListener("click", () => { page += 1; renderTable(); updateControls(); });

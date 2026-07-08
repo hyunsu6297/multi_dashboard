@@ -615,20 +615,51 @@ def direct_stock_table(df: pd.DataFrame, title: str, panel_class: str = "") -> s
     return f"<article class='{cls}'><div class='panel-title'><h4>{esc(title)}</h4><span>8행 슬롯 + 합계</span></div>" + table_html(["종목명", "코드", "수량", "주가", "평가액", "등락율", "PL"], body, "table-wrap direct") + "</article>"
 
 
-def fund_pl_table(df: pd.DataFrame, all_holdings: pd.DataFrame, highlight_fund: str | None = None) -> str:
-    if df.empty or "PL" not in df:
+def fund_pl_table(
+    df: pd.DataFrame,
+    all_holdings: pd.DataFrame,
+    fund_catalog: pd.DataFrame | None = None,
+    highlight_fund: str | None = None,
+) -> str:
+    if (df.empty or "PL" not in df) and (fund_catalog is None or fund_catalog.empty):
         return empty("시세 캐시가 없어 펀드별 PL을 계산할 수 없습니다.")
-    summary = (
-        df.groupby("보유펀드명", dropna=False)
-        .agg(Exposure=("우리평가금", "sum"), PL=("PL", "sum"), 종목수=("종목코드정규", "nunique"))
-        .reset_index()
-    )
-    fund_value_denominator = (
-        df.groupby("보유펀드명", dropna=False)["펀드평가액원"].first()
-        if not df.empty and "펀드평가액원" in df
-        else pd.Series(dtype=float)
-    )
-    summary["펀드평가액원"] = summary["보유펀드명"].map(fund_value_denominator).fillna(summary["Exposure"])
+
+    if fund_catalog is not None and not fund_catalog.empty:
+        summary = (
+            fund_catalog[["펀드명", "평가액원"]]
+            .rename(columns={"펀드명": "보유펀드명", "평가액원": "펀드평가액원"})
+            .dropna(subset=["보유펀드명"])
+            .drop_duplicates(subset=["보유펀드명"], keep="first")
+            .copy()
+        )
+        summary["Exposure"] = 0.0
+        summary["PL"] = 0.0
+        summary["종목수"] = 0
+    else:
+        summary = pd.DataFrame(columns=["보유펀드명", "펀드평가액원", "Exposure", "PL", "종목수"])
+
+    if not df.empty and "PL" in df:
+        stock_summary = (
+            df.groupby("보유펀드명", dropna=False)
+            .agg(Exposure=("우리평가금", "sum"), PL=("PL", "sum"), 종목수=("종목코드정규", "nunique"))
+            .reset_index()
+        )
+        fund_value_denominator = (
+            df.groupby("보유펀드명", dropna=False)["펀드평가액원"].first()
+            if "펀드평가액원" in df
+            else pd.Series(dtype=float)
+        )
+        stock_summary["펀드평가액원"] = stock_summary["보유펀드명"].map(fund_value_denominator).fillna(stock_summary["Exposure"])
+        if summary.empty:
+            summary = stock_summary
+        else:
+            summary = summary.merge(stock_summary, on="보유펀드명", how="outer", suffixes=("", "_stock"))
+            for column in ("Exposure", "PL", "종목수"):
+                summary[column] = summary[f"{column}_stock"].fillna(summary[column]).fillna(0)
+                summary.drop(columns=[f"{column}_stock"], inplace=True)
+            summary["펀드평가액원"] = summary["펀드평가액원"].fillna(summary["펀드평가액원_stock"]).fillna(summary["Exposure"])
+            summary.drop(columns=["펀드평가액원_stock"], inplace=True)
+
     summary["등락율"] = summary["PL"] / summary["펀드평가액원"].replace({0: pd.NA})
     summary = summary.sort_values("등락율", ascending=False, na_position="last")
     body = []
@@ -643,7 +674,7 @@ def fund_pl_table(df: pd.DataFrame, all_holdings: pd.DataFrame, highlight_fund: 
         ])
     total_exposure = summary["Exposure"].sum()
     total_pl = summary["PL"].sum()
-    total_fund_value = fund_value_denominator.sum() if not fund_value_denominator.empty else total_exposure
+    total_fund_value = summary["펀드평가액원"].sum() if "펀드평가액원" in summary else total_exposure
     total_rate = total_pl / total_fund_value if total_fund_value else pd.NA
     body.append([
         "<td class='total-label'>합계</td>",
@@ -675,6 +706,7 @@ def make_view(
     stock_holdings: pd.DataFrame,
     all_stock_holdings_for_pl: pd.DataFrame,
     stock_trades: pd.DataFrame,
+    fund_catalog: pd.DataFrame,
     global_pl: dict[str, float | None],
     investment_table_html: str,
     product_table_html: str,
@@ -734,7 +766,7 @@ def make_view(
         <div class="section-title"><h3>보유분석</h3></div>
         <div class="hold-grid">
           {investment_table_html}
-          <article class="panel fund-pl-panel"><div class="panel-title"><h4>펀드별 등락율/손익</h4><span>등락율 내림차순</span></div>{fund_pl_table(all_stock_holdings_for_pl, all_holdings, None if label == "전체 펀드 통합" else label)}</article>
+          <article class="panel fund-pl-panel"><div class="panel-title"><h4>펀드별 등락율/손익</h4><span>등락율 내림차순</span></div>{fund_pl_table(all_stock_holdings_for_pl, all_holdings, fund_catalog, None if label == "전체 펀드 통합" else label)}</article>
           <article class="panel long-panel"><div class="panel-title"><h4>Long 보유내역</h4><span>hover: 펀드별 금액/비율</span></div>{holding_table(stock_holdings, "매수", total_fund_amount)}</article>
           {product_table_html}
           <article class="panel sector-large-panel"><div class="mini-title"><span class="mini-icon"></span>업종별(대)</div>{sector_large_pie_svg(list(zip(sector_large_hold["업종대분류"], sector_large_hold["우리평가금"])))}</article>
@@ -835,7 +867,7 @@ def build_dashboard() -> Path:
         stock_holdings.groupby("업종대분류")["우리평가금"].sum().sort_values(ascending=False).index.astype(str).tolist()
     )
 
-    views = {"ALL": make_view("전체 펀드 통합", holdings, stock_holdings, stock_holdings, stock_trades, global_pl, investment_table, product_table, sector_large_labels, sector_mid_labels)}
+    views = {"ALL": make_view("전체 펀드 통합", holdings, stock_holdings, stock_holdings, stock_trades, funds, global_pl, investment_table, product_table, sector_large_labels, sector_mid_labels)}
     fund_buttons = [{
         "key": "ALL",
         "name": "전체 펀드",
@@ -850,7 +882,7 @@ def build_dashboard() -> Path:
         h_all = holdings[holdings["협회펀드코드"] == code].copy()
         h_stock = stock_holdings[stock_holdings["협회펀드코드"] == code].copy()
         t_stock = stock_trades[stock_trades["협회펀드코드"] == code].copy()
-        views[code] = make_view(fund["펀드명"], h_all, h_stock, stock_holdings, t_stock, global_pl, investment_table, product_table, sector_large_labels, sector_mid_labels)
+        views[code] = make_view(fund["펀드명"], h_all, h_stock, stock_holdings, t_stock, funds, global_pl, investment_table, product_table, sector_large_labels, sector_mid_labels)
         fund_buttons.append({
             "key": code,
             "name": fund["펀드명"],
