@@ -23,6 +23,11 @@ QUOTE_CANDIDATES = [
     BASE_DIR / "change_rates.json",
 ]
 OUTPUT = BASE_DIR / "fund_dashboard.html"
+FUND_CODE_ALIAS_CANDIDATES = {
+    # KFR holdings currently report this fund under the source code below,
+    # while the manually maintained fund list has used different dashboard codes.
+    "K554D4EN6070": ["K554D4E97861", "K554D4DM3483"],
+}
 
 
 def esc(value: object) -> str:
@@ -148,6 +153,13 @@ def read_inputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     holdings["보유일"] = pd.to_datetime(holdings["보유일"], errors="coerce")
     trades["협회펀드코드"] = trades["협회펀드코드"].map(normalize_code)
     holdings["협회펀드코드"] = holdings["협회펀드코드"].map(normalize_code)
+    fund_codes = set(funds["펀드코드"])
+    fund_code_aliases = {
+        source: next((target for target in targets if target in fund_codes), targets[0])
+        for source, targets in FUND_CODE_ALIAS_CANDIDATES.items()
+    }
+    trades["협회펀드코드"] = trades["협회펀드코드"].replace(fund_code_aliases)
+    holdings["협회펀드코드"] = holdings["협회펀드코드"].replace(fund_code_aliases)
     trades["종목코드정규"] = trades["종목코드"].map(normalize_code)
     holdings["종목코드정규"] = holdings["종목코드"].map(normalize_code)
     return funds, trades, holdings

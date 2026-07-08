@@ -443,10 +443,21 @@
     let liveStockVersion = "";
     let liveStockObjectUrl = "";
     let deployedStockDate = "";
+    let deployedStockFunds = null;
 
     function latestDashboardDate(html) {
       const dates = String(html || "").match(/\b20\d{2}-\d{2}-\d{2}\b/g) || [];
       return dates.length ? dates.sort().at(-1) : "";
+    }
+
+    function dashboardFundNames(html) {
+      const match = String(html || "").match(/const funds = (\[.*?\]);/s);
+      if (!match) return new Set();
+      try {
+        return new Set(JSON.parse(match[1]).map((fund) => String(fund.name || "")).filter(Boolean));
+      } catch (error) {
+        return new Set();
+      }
     }
 
     async function getDeployedStockDate() {
@@ -459,6 +470,18 @@
         deployedStockDate = "";
       }
       return deployedStockDate;
+    }
+
+    async function getDeployedStockFunds() {
+      if (deployedStockFunds) return deployedStockFunds;
+      try {
+        const response = await fetch("pages/stock/index.html", { cache: "no-store" });
+        if (!response.ok) return new Set();
+        deployedStockFunds = dashboardFundNames(await response.text());
+      } catch (error) {
+        deployedStockFunds = new Set();
+      }
+      return deployedStockFunds;
     }
 
     async function refreshLiveStock(force = false) {
@@ -482,6 +505,15 @@
         if (liveDate && snapshotDate && liveDate < snapshotDate) {
           console.warn(`주식 실시간 대시보드가 배포 스냅샷보다 오래되어 유지합니다. live=${liveDate}, deployed=${snapshotDate}`);
           return;
+        }
+        const snapshotFunds = await getDeployedStockFunds();
+        if (snapshotFunds.size) {
+          const liveFunds = dashboardFundNames(liveHtml);
+          const missingFunds = [...snapshotFunds].filter((fund) => !liveFunds.has(fund));
+          if (missingFunds.length) {
+            console.warn(`주식 실시간 대시보드에 배포 스냅샷 펀드가 누락되어 유지합니다: ${missingFunds.slice(0, 5).join(", ")}`);
+            return;
+          }
         }
         const htmlBlob = new Blob([buffer], { type: "text/html;charset=utf-8" });
         const nextUrl = URL.createObjectURL(htmlBlob);
