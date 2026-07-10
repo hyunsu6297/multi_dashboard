@@ -133,6 +133,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def write_json(self, payload: dict, status: int) -> None:
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
