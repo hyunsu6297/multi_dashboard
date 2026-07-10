@@ -1,7 +1,7 @@
 {
   "domain": "global",
   "file_key": "emp_info",
-  "file_label": "EMP??",
+  "file_label": "EMP정보",
   "sheets": [
     {
       "name": "Data",
@@ -12,19 +12,23 @@
       "rows": [
         {
           "name": "EMP1",
-          "principal": 10000000.0
+          "principal": 10000000
         },
         {
           "name": "EMP2",
-          "principal": 20000000.0
+          "principal": 20000000
         },
         {
           "name": "EMP3",
-          "principal": 10000000.0
+          "principal": 10000000
         },
         {
           "name": "EMP4",
-          "principal": 20000000.0
+          "principal": 20000000
+        },
+        {
+          "name": "채권형",
+          "principal": 0
         }
       ]
     }
