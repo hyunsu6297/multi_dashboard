@@ -1,0 +1,32 @@
+{
+  "domain": "global",
+  "file_key": "emp_info",
+  "file_label": "EMP??",
+  "sheets": [
+    {
+      "name": "Data",
+      "columns": [
+        "name",
+        "principal"
+      ],
+      "rows": [
+        {
+          "name": "EMP1",
+          "principal": 10000000.0
+        },
+        {
+          "name": "EMP2",
+          "principal": 20000000.0
+        },
+        {
+          "name": "EMP3",
+          "principal": 10000000.0
+        },
+        {
+          "name": "EMP4",
+          "principal": 20000000.0
+        }
+      ]
+    }
+  ]
+}

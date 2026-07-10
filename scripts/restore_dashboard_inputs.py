@@ -89,7 +89,13 @@ def write_workbook(
     workbook.save(path)
 
 
-def restore_kfr(client: SupabaseRest, stock_dir: Path, bond_dir: Path, mezzanine_dir: Path) -> None:
+def restore_kfr(
+    client: SupabaseRest,
+    stock_dir: Path,
+    bond_dir: Path,
+    mezzanine_dir: Path,
+    global_dir: Path | None = None,
+) -> None:
     snapshots = client.get_all(
         "kfr_source_snapshots",
         {"select": "id,source_key,business_date,downloaded_at", "order": "business_date.desc,downloaded_at.desc"},
@@ -131,7 +137,10 @@ def restore_kfr(client: SupabaseRest, stock_dir: Path, bond_dir: Path, mezzanine
             row_count += len(rows)
             for row in rows:
                 sheets[row["sheet_name"]].append(row)
-        for target_dir in (stock_dir, bond_dir, mezzanine_dir):
+        target_dirs = [stock_dir, bond_dir, mezzanine_dir]
+        if global_dir and global_dir.exists():
+            target_dirs.append(global_dir)
+        for target_dir in target_dirs:
             write_workbook(target_dir / file_name, sheets, header_row=2)
         snapshot_label = ",".join(str(item["id"]) for item in source_snapshots)
         print(f"restored {source_key}: snapshots={snapshot_label}, rows={row_count}")
@@ -214,16 +223,88 @@ def restore_mezzanine_manual(client: SupabaseRest, mezzanine_dir: Path) -> None:
     print(f"restored mezzanine manual data: instruments={len(rows)}, additions={len(addition_payload)}, overrides={len(override_payload)}, delta_history={len(delta_rows)}")
 
 
+def restore_global_manual(client: SupabaseRest, global_dir: Path) -> None:
+    if not global_dir.exists():
+        return
+
+    def manual_rows(file_key: str) -> list[dict[str, Any]]:
+        return client.get_all(
+            "manual_file_rows",
+            {
+                "select": "sheet_name,row_no,payload",
+                "domain": "eq.global",
+                "file_key": f"eq.{file_key}",
+                "order": "sheet_name.asc,row_no.asc",
+            },
+        )
+
+    etf_rows = manual_rows("etf_db")
+    if etf_rows:
+        write_workbook(global_dir / "ETF정보.xlsx", {"Sheet1": etf_rows}, header_row=1)
+        print(f"restored global/etf_db: rows={len(etf_rows)}")
+
+    fund_rows = manual_rows("fund_info")
+    if fund_rows:
+        write_workbook(global_dir / "펀드정보.xlsx", {"Sheet1": fund_rows}, header_row=1)
+        print(f"restored global/fund_info: rows={len(fund_rows)}")
+
+    emp_info_rows = manual_rows("emp_info")
+    emp_portfolio_rows = manual_rows("emp_portfolios")
+    if emp_info_rows or emp_portfolio_rows:
+        workbook = Workbook()
+        workbook.remove(workbook.active)
+        summary = workbook.create_sheet("전체")
+        summary.append(["구분", "원금"])
+        emp_names: list[str] = []
+        for row in emp_info_rows:
+            payload = row["payload"]
+            name = str(payload.get("name") or payload.get("emp") or "").strip()
+            if not name:
+                continue
+            emp_names.append(name)
+            summary.append([name, payload.get("principal", 0)])
+
+        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in emp_portfolio_rows:
+            payload = row["payload"]
+            name = str(payload.get("emp") or "").strip()
+            if not name:
+                continue
+            if name not in emp_names:
+                emp_names.append(name)
+                summary.append([name, 0])
+            grouped[name].append(payload)
+
+        headers = ["종목", "시총", "3M Avg Vol.", "보유수량", "종가", "등락율", "목표비중"]
+        for name in emp_names:
+            sheet = workbook.create_sheet(str(name)[:31])
+            sheet.append(headers)
+            for payload in grouped.get(name, []):
+                sheet.append([
+                    payload.get("security", ""),
+                    payload.get("marketCap", 0),
+                    payload.get("avgTurnover3m", 0),
+                    payload.get("quantity", 0),
+                    payload.get("price", 0),
+                    payload.get("change", 0),
+                    payload.get("targetWeight", 0),
+                ])
+        workbook.save(global_dir / "EMP보유현황.xlsx")
+        print(f"restored global EMP data: emps={len(emp_names)}, rows={len(emp_portfolio_rows)}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stock-dir", default="apps/stock")
     parser.add_argument("--bond-dir", default="apps/bond")
     parser.add_argument("--mezzanine-dir", default="apps/mezzanine")
+    parser.add_argument("--global-dir", default="apps/global")
     args = parser.parse_args()
     client = SupabaseRest(required_env("SUPABASE_URL"), required_env("SUPABASE_SERVICE_ROLE_KEY"))
-    restore_kfr(client, Path(args.stock_dir), Path(args.bond_dir), Path(args.mezzanine_dir))
+    restore_kfr(client, Path(args.stock_dir), Path(args.bond_dir), Path(args.mezzanine_dir), Path(args.global_dir))
     restore_manual(client, Path(args.stock_dir), Path(args.bond_dir))
     restore_mezzanine_manual(client, Path(args.mezzanine_dir))
+    restore_global_manual(client, Path(args.global_dir))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,75 @@
+{
+  "domain": "global",
+  "file_key": "fund_info",
+  "file_label": "????",
+  "sheets": [
+    {
+      "name": "Data",
+      "columns": [
+        "manager",
+        "fund",
+        "depositCode",
+        "assocCode",
+        "joinDate",
+        "eval",
+        "share"
+      ],
+      "rows": [
+        {
+          "manager": "하나",
+          "fund": "하나TDF 2030",
+          "depositCode": "KRZ502600725",
+          "assocCode": "K55102ED7284",
+          "joinDate": "2024-10-30",
+          "eval": 2702000000.0,
+          "share": 0.0337
+        },
+        {
+          "manager": "하나",
+          "fund": "하나TDF 2035",
+          "depositCode": "KRZ502600785",
+          "assocCode": "K55102ED7292",
+          "joinDate": "2024-10-30",
+          "eval": 2709000000.0,
+          "share": 0.1013
+        },
+        {
+          "manager": "하나",
+          "fund": "하나TDF 2040",
+          "depositCode": "KRZ502600795",
+          "assocCode": "K55102ED7466",
+          "joinDate": "2024-10-30",
+          "eval": 2767000000.0,
+          "share": 0.0596
+        },
+        {
+          "manager": "하나",
+          "fund": "하나TDF 2045",
+          "depositCode": "KRZ502600805",
+          "assocCode": "K55102ED7649",
+          "joinDate": "2024-10-30",
+          "eval": 2802000000.0,
+          "share": 0.1061
+        },
+        {
+          "manager": "하나",
+          "fund": "하나TDF 2050",
+          "depositCode": "KRZ502600865",
+          "assocCode": "K55102ED7813",
+          "joinDate": "2024-10-30",
+          "eval": 2800000000.0,
+          "share": 0.1445
+        },
+        {
+          "manager": "하나",
+          "fund": "하나TDF 2055",
+          "depositCode": "KRZ502600885",
+          "assocCode": "K55102ED7995",
+          "joinDate": "2024-10-30",
+          "eval": 2815000000.0,
+          "share": 0.1118
+        }
+      ]
+    }
+  ]
+}

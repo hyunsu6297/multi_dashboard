@@ -18,6 +18,7 @@ def main() -> None:
         ROOT / "apps" / "stock" / "fund_dashboard.html": DIST / "pages" / "stock" / "index.html",
         ROOT / "apps" / "bond" / "채권형수익증권_대시보드.html": DIST / "pages" / "bond" / "index.html",
         ROOT / "apps" / "mezzanine" / "메자닌_대시보드.html": DIST / "pages" / "mezzanine" / "index.html",
+        ROOT / "apps" / "global" / "index.html": DIST / "pages" / "global" / "index.html",
     }
     for source, target in targets.items():
         if not source.is_file():
@@ -25,9 +26,13 @@ def main() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         print(f"copied {source.name} -> {target.relative_to(DIST)}")
+    global_script = ROOT / "apps" / "global" / "emp_dashboard_upgrade.js"
+    if global_script.is_file():
+        target = DIST / "pages" / "global" / "emp_dashboard_upgrade.js"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(global_script, target)
+        print(f"copied {global_script.name} -> {target.relative_to(DIST)}")
 
 
 if __name__ == "__main__":
     main()
-
-

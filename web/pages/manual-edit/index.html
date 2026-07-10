@@ -103,9 +103,9 @@
     const SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co";
     const SUPABASE_KEY = "sb_publishable_T0q_8mB9yzcitTL7HH0SuA_W4DUcVtP";
     const PAGE_SIZE = 100;
-    const domainNames = { stock: "주식 대시보드", bond: "채권대시보드", mezzanine: "메자닌대시보드", fund: "펀드차트" };
+    const domainNames = { stock: "주식 대시보드", bond: "채권대시보드", mezzanine: "메자닌대시보드", fund: "펀드차트", global: "글로벌대시보드" };
     const params = new URLSearchParams(location.search);
-    const domain = ["stock", "bond", "mezzanine", "fund"].includes(params.get("domain")) ? params.get("domain") : "stock";
+    const domain = ["stock", "bond", "mezzanine", "fund", "global"].includes(params.get("domain")) ? params.get("domain") : "stock";
     const requestedFileKey = params.get("file") || "";
 
     let indexData = [];

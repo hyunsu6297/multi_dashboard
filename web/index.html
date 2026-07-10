@@ -329,16 +329,20 @@
           <button type="button" class="sub" data-page="mezzanine-fund-edit">펀드정보수정</button>
         </section>
         <section class="group">
-          <div class="group-title">4. 펀드차트</div>
+          <div class="group-title">4. 글로벌대시보드</div>
+          <button type="button" class="sub" data-page="global-dashboard">대시보드</button>
+        </section>
+        <section class="group">
+          <div class="group-title">5. 펀드차트</div>
           <button type="button" class="sub" data-page="fund-dashboard">대시보드</button>
           <button type="button" class="sub" data-page="fund-edit">정보수정</button>
         </section>
         <section class="group">
-          <div class="group-title">5. 액티브ETF 분석</div>
+          <div class="group-title">6. 액티브ETF 분석</div>
           <button type="button" data-page="etf-dashboard">대시보드</button>
         </section>
         <section class="group" id="adminMenu" hidden>
-          <div class="group-title">6. Admin</div>
+          <div class="group-title">7. Admin</div>
           <button type="button" data-page="admin-members">회원 관리</button>
         </section>
       </nav>
@@ -406,6 +410,11 @@
         title: "메자닌 펀드정보수정",
         note: "메자닌 펀드의 운용사·지분율·장부가·평가금액 관리",
         src: "pages/manual-edit/index.html?domain=mezzanine&file=fund_info"
+      },
+      "global-dashboard": {
+        title: "글로벌대시보드",
+        note: "글로벌 EMP, 수익증권, ETF DB 통합 관리",
+        src: "pages/global/index.html"
       },
       "fund-dashboard": {
         title: "펀드 일별 수익률 대시보드",

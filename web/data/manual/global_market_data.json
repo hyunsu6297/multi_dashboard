@@ -1,0 +1,16 @@
+{
+  "domain": "global",
+  "file_key": "market_data",
+  "file_label": "???? ???",
+  "sheets": [
+    {
+      "name": "Data",
+      "columns": [
+        "fx",
+        "asOf",
+        "securities"
+      ],
+      "rows": []
+    }
+  ]
+}

@@ -113,6 +113,9 @@ jobs:
       - name: Build mezzanine dashboard
         run: python apps/mezzanine/build_mezzanine_dashboard.py
 
+      - name: Build global dashboard
+        run: python apps/global/build_global_dashboard.py
+
       - name: Assemble Cloudflare Pages site
         run: python scripts/assemble_site.py
 

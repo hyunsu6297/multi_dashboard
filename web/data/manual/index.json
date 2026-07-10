@@ -286,5 +286,101 @@
         "row_count": 38382
       }
     ]
+  },
+  {
+    "domain": "global",
+    "file_key": "etf_db",
+    "file_label": "ETF DB",
+    "sheets": [
+      {
+        "name": "Data",
+        "columns": [
+          "ticker",
+          "name",
+          "koreanName",
+          "listing",
+          "country",
+          "large",
+          "mid",
+          "small",
+          "emp"
+        ],
+        "row_count": 173
+      }
+    ]
+  },
+  {
+    "domain": "global",
+    "file_key": "fund_info",
+    "file_label": "????",
+    "sheets": [
+      {
+        "name": "Data",
+        "columns": [
+          "manager",
+          "fund",
+          "depositCode",
+          "assocCode",
+          "joinDate",
+          "eval",
+          "share"
+        ],
+        "row_count": 6
+      }
+    ]
+  },
+  {
+    "domain": "global",
+    "file_key": "emp_info",
+    "file_label": "EMP??",
+    "sheets": [
+      {
+        "name": "Data",
+        "columns": [
+          "name",
+          "principal"
+        ],
+        "row_count": 4
+      }
+    ]
+  },
+  {
+    "domain": "global",
+    "file_key": "emp_portfolios",
+    "file_label": "EMP??",
+    "sheets": [
+      {
+        "name": "Data",
+        "columns": [
+          "emp",
+          "security",
+          "marketCap",
+          "avgTurnover3m",
+          "quantity",
+          "price",
+          "prevClose",
+          "change",
+          "targetWeight",
+          "targetTouched"
+        ],
+        "row_count": 90
+      }
+    ]
+  },
+  {
+    "domain": "global",
+    "file_key": "market_data",
+    "file_label": "???? ???",
+    "sheets": [
+      {
+        "name": "Data",
+        "columns": [
+          "fx",
+          "asOf",
+          "securities"
+        ],
+        "row_count": 0
+      }
+    ]
   }
 ]
