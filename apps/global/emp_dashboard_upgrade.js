@@ -1294,6 +1294,28 @@
   const marketApiUrl = () => {
     return window.GLOBAL_BLOOMBERG_API_URL || "http://127.0.0.1:8766/api/emp-market";
   };
+  const parseFxValue = value => {
+    const n = Number(String(value ?? "").replaceAll(",", ""));
+    return Number.isFinite(n) && n > 100 ? n : 0;
+  };
+  async function fetchFxOnly() {
+    const res = await fetch(marketApiUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ securities: [] })
+    });
+    const payload = await res.json().catch(() => ({}));
+    return res.ok ? parseFxValue(payload.fx) : 0;
+  }
+  function bestKnownFx() {
+    const candidates = [
+      state.fx,
+      JSON.parse(localStorage.getItem("globalDashboard.market") || "null")?.fx,
+      JSON.parse(localStorage.getItem("globalDashboard.emp") || "null")?.fx,
+      DATA.market?.fx
+    ];
+    return candidates.map(parseFxValue).find(Boolean) || 0;
+  }
   refreshMarket = async function () {
     const status = document.getElementById("empStatus");
     const button = document.getElementById("refreshMarket");
@@ -1313,8 +1335,8 @@
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || "Bloomberg 조회 실패");
-      const nextFx = Number(payload.fx || 1);
-      if (Number.isFinite(nextFx) && nextFx > 1) state.fx = nextFx;
+      const nextFx = parseFxValue(payload.fx) || await fetchFxOnly().catch(() => 0) || bestKnownFx();
+      if (nextFx) state.fx = nextFx;
       const fxNode = document.getElementById("eFx");
       if (fxNode) fxNode.textContent = state.fx === 1 ? "조회 전" : amount(state.fx);
       const map = payload.securities || {};
