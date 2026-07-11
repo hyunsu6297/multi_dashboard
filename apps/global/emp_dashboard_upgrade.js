@@ -1313,7 +1313,10 @@
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || "Bloomberg 조회 실패");
-      state.fx = Number(payload.fx || 1);
+      const nextFx = Number(payload.fx || 1);
+      if (Number.isFinite(nextFx) && nextFx > 1) state.fx = nextFx;
+      const fxNode = document.getElementById("eFx");
+      if (fxNode) fxNode.textContent = state.fx === 1 ? "조회 전" : amount(state.fx);
       const map = payload.securities || {};
       allRows.forEach(row => Object.assign(row, map[row.security] || {}));
       fundRows.forEach(row => {
@@ -1329,9 +1332,10 @@
       render();
       button.textContent = `${Object.keys(map).length.toLocaleString("ko-KR")}종목 갱신`;
       const failedDbSave = dbResults.find(result => result.status === "rejected");
+      const fxLabel = state.fx === 1 ? "조회 전" : amount(state.fx);
       clearEmpDirty(failedDbSave
-        ? `${payload.asOf || ""} · 업데이트 완료 · DB 저장 실패: ${failedDbSave.reason?.message || failedDbSave.reason}`
-        : `${payload.asOf || ""} · ${Object.keys(map).length}종목 업데이트`);
+        ? `${payload.asOf || ""} · 업데이트 완료 · 환율 ${fxLabel} · DB 저장 실패: ${failedDbSave.reason?.message || failedDbSave.reason}`
+        : `${payload.asOf || ""} · ${Object.keys(map).length}종목 업데이트 · 환율 ${fxLabel}`);
     } catch (error) {
       button.textContent = "업데이트 실패";
       status.textContent = `오류: ${error.message === "Failed to fetch" ? "대시보드 서버를 실행한 뒤 다시 시도하세요" : error.message}`;

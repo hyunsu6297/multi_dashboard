@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import shutil
+import subprocess
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -34,8 +36,8 @@ def element_value(element, field: str):
 def fetch_reference(securities: list[str], host: str, port: int) -> dict:
     try:
         import blpapi
-    except ImportError as exc:
-        raise RuntimeError("blpapi 모듈을 찾지 못했습니다. Bloomberg Desktop API Python 패키지를 설치한 뒤 다시 시도하세요.") from exc
+    except ImportError:
+        return fetch_reference_dotnet(securities, host, port)
 
     requested = [s.strip() for s in securities if s and s.strip()]
     all_securities = list(dict.fromkeys(requested + ["USDKRW Curncy"]))
@@ -87,6 +89,45 @@ def fetch_reference(securities: list[str], host: str, port: int) -> dict:
         return {"securities": output, "fx": fx, "errors": errors, "asOf": datetime.now().strftime("%Y-%m-%d %H:%M")}
     finally:
         session.stop()
+
+
+def fetch_reference_dotnet(securities: list[str], host: str, port: int) -> dict:
+    helper = ROOT / "fetch_bloomberg_dotnet.ps1"
+    if not helper.is_file():
+        raise RuntimeError("blpapi 모듈이 없고 .NET Bloomberg helper도 찾지 못했습니다.")
+    powershell = shutil.which("powershell.exe") or shutil.which("powershell")
+    if not powershell:
+        raise RuntimeError("PowerShell 실행 파일을 찾지 못했습니다. blpapi 설치 또는 PowerShell 실행 경로가 필요합니다.")
+    payload = json.dumps({"securities": securities}, ensure_ascii=False)
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(helper),
+            "-BlpHost",
+            host,
+            "-BlpPort",
+            str(port),
+        ],
+        input=payload,
+        text=True,
+        capture_output=True,
+        timeout=90,
+        encoding="utf-8",
+        errors="replace",
+    )
+    raw = completed.stdout.strip()
+    try:
+        result = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        detail = (completed.stderr or raw or "").strip()
+        raise RuntimeError(f"Bloomberg .NET helper 응답을 해석하지 못했습니다: {detail[:1000]}") from exc
+    if completed.returncode != 0:
+        raise RuntimeError(result.get("error") or completed.stderr.strip() or "Bloomberg .NET helper 실행 실패")
+    return result
 
 
 class Handler(BaseHTTPRequestHandler):
