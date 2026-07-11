@@ -2,7 +2,7 @@
   const style = document.createElement("style");
   style.textContent = `
     #dashboard .notice,#dashboard .kpis{display:none!important}#dashboard .grid{margin-top:0}
-    #emp .panel{border-radius:8px}#emp .empTableWrap{max-height:calc(100vh - 185px)!important}#empTable{font-size:10.5px;table-layout:fixed;white-space:normal}#empTable th{padding:5px 4px;line-height:1.2;text-align:center}#empTable td{padding:4px 4px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}#empTable th:nth-child(n+4),#empTable td:nth-child(n+4){text-align:center!important}#empTable .manualCell{background:#fff!important}.manualInput{width:56px;border:1px solid #b8cbc6;border-radius:3px;padding:2px 3px;text-align:right;background:#fff}.manualInput:focus{outline:2px solid #e0b323;background:#fff8d8}.manualChanged{background:#fff3b0!important}.manualChanged .manualInput{background:#fff8d8!important;border-color:#d09b00!important;font-weight:800}.rowCheck,.etfCheck{width:14px;height:14px;accent-color:#064e43}.empActions{flex-wrap:wrap}.empStatus.dirty{color:#b7791f;font-weight:800}.changeBarCell{padding:3px 4px!important}.changeBar{position:relative;height:15px;background:#e4efec;border-radius:3px;overflow:hidden}.changeBar:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(6,78,67,.28);z-index:2}.changeFill{position:absolute;top:0;bottom:0;left:50%;background:linear-gradient(90deg,#6fa99e,#064e43)}.changeFill.neg{left:auto;right:50%;background:linear-gradient(90deg,#c2413a,#f0a09b)}.changeBarText{position:absolute;inset:0;display:grid;place-items:center;font-weight:900;font-size:9px;color:#173a34;text-shadow:0 1px 2px rgba(255,255,255,.9);z-index:3}
+    #emp .panel{border-radius:8px}#emp .empTableWrap{max-height:calc(100vh - 185px)!important}#empTable{font-size:10.5px;table-layout:fixed;white-space:normal}#empTable th{padding:5px 4px;line-height:1.2;text-align:center}#empTable td{padding:4px 4px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}#empTable th:nth-child(n+4),#empTable td:nth-child(n+4){text-align:center!important}#empTable .manualCell{background:#fff!important}.manualInput{width:56px;border:1px solid #b8cbc6;border-radius:3px;padding:2px 3px;text-align:right;background:#fff}.targetWeightInput{width:72px}.manualInput:focus{outline:2px solid #e0b323;background:#fff8d8}.manualChanged{background:#fff3b0!important}.manualChanged .manualInput{background:#fff8d8!important;border-color:#d09b00!important;font-weight:800}.rowCheck,.etfCheck{width:14px;height:14px;accent-color:#064e43}.empActions{flex-wrap:wrap}.empStatus.dirty{color:#b7791f;font-weight:800}.changeBarCell{padding:3px 4px!important}.changeBar{position:relative;height:15px;background:#e4efec;border-radius:3px;overflow:hidden}.changeBar:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(6,78,67,.28);z-index:2}.changeFill{position:absolute;top:0;bottom:0;left:50%;background:linear-gradient(90deg,#6fa99e,#064e43)}.changeFill.neg{left:auto;right:50%;background:linear-gradient(90deg,#c2413a,#f0a09b)}.changeBarText{position:absolute;inset:0;display:grid;place-items:center;font-weight:900;font-size:9px;color:#173a34;text-shadow:0 1px 2px rgba(255,255,255,.9);z-index:3}
     .subtotalRow{background:#dfeeea!important;font-weight:900;color:#064e43}.subtotalRow td{border-top:2px solid #609d91;border-bottom:1px solid #609d91}.totalRow{background:#064e43!important;color:white;font-weight:900}.totalRow td{border-top:2px solid #033b32}
     .picker{position:fixed;inset:0;background:rgba(3,31,27,.46);display:none;place-items:center;z-index:100}.picker.active{display:grid}.pickerBox{width:min(1100px,94vw);max-height:84vh;background:white;border-radius:12px;padding:14px;box-shadow:0 22px 70px rgba(0,0,0,.25)}.pickerHead{display:flex;gap:8px;align-items:center;margin-bottom:10px}.pickerHead h2{margin:0;min-width:170px}.pickerTable{max-height:64vh;overflow:auto}.pickBtn{border:0;background:#064e43;color:white;border-radius:3px;padding:4px 8px;cursor:pointer}.pickBtn.added{background:#8aa9a1;cursor:default}.pickerCheck{width:15px;height:15px;accent-color:#064e43}.pickerBulk{border:1px solid #064e43;background:#064e43;color:#fff;border-radius:4px;padding:6px 10px;font-weight:800;cursor:pointer;white-space:nowrap}.pickerTray{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 8px}.pickerChip{border:1px solid #b6d1ca;background:#e9f2ef;color:#173a34;border-radius:12px;padding:3px 8px;font-size:11px}.pickerChip button{border:0;background:transparent;color:#b42318;font-weight:900;cursor:pointer;margin-left:4px}
     .etfManageTools,.empInfoTools,.fundManageTools{display:flex;gap:8px;align-items:center;margin-bottom:8px}.etfManageTools .search{max-width:420px}.etfInput,.empInfoInput,.fundInput{width:100%;min-width:80px;border:1px solid #b8cbc6;border-radius:3px;padding:4px}.etfInput.wide,.fundInput.wide{min-width:190px}.empPrincipalInput,.fundNumericInput{text-align:right}.etfStatus,.empInfoStatus,.fundStatus{font-size:11px;color:#6c7f7b;font-weight:800;margin-left:auto}.etfStatus.dirty,.empInfoStatus.dirty,.fundStatus.dirty{color:#b7791f}
@@ -372,6 +372,29 @@
     status.textContent = message;
     status.classList.remove("dirty");
   };  const parseNumber = value => Number(String(value ?? "0").replaceAll(",", "")) || 0;
+  const normalizeSecurity = value => String(value || "").trim().replace(/\s+/g, " ")
+    .replace(/\s+US\s+EQUITY$/i, " US Equity")
+    .replace(/\s+KS\s+EQUITY$/i, " KS Equity");
+  const securityKey = value => normalizeSecurity(value).toUpperCase();
+  const securityRequests = value => {
+    const security = normalizeSecurity(value);
+    if (!security) return [];
+    if (/\s+(US|KS)\s+Equity$/i.test(security) || /\s+Curncy$/i.test(security)) return [security];
+    return [security, `${security} US Equity`, `${security} KS Equity`];
+  };
+  const marketMatch = (map, security) => {
+    const normalized = normalizeSecurity(security);
+    if (map[security]) return map[security];
+    if (map[normalized]) return map[normalized];
+    const key = securityKey(normalized);
+    const found = Object.keys(map).find(item => securityKey(item) === key);
+    return found ? map[found] : null;
+  };
+  const formatPercentInput = value => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return "";
+    return n.toFixed(4).replace(/\.?0+$/, "");
+  };
   state.multiDimension = false;
   state.dashboardSource = "all";
   state.showMidDimension = false;
@@ -548,19 +571,24 @@
     return { value, krw, pnl, current, target, gap, prev, signedTradeQty, tradeQty: Math.abs(signedTradeQty), tradeAmount: Math.abs(signedTradeQty * prev) };
   };
 
-  editEmp = function (index, key, value) {
+  editEmp = function (index, key, value, renderAfterEdit = true) {
     const row = empRows()[index];
-    if (key === "security") row[key] = value;
+    if (key === "security") row[key] = normalizeSecurity(value);
     else if (key === "quantity") {
       row.quantity = parseNumber(value);
       row.quantityTouched = true;
     }
     else if (key === "targetWeight") {
-      if (String(value).trim() === "") { row.targetTouched = false; delete row.targetWeight; }
-      else { row.targetTouched = true; row.targetWeight = parseNumber(value) / 100; }
+      const raw = String(value).trim();
+      row.targetWeightDraft = raw;
+      if (raw === "") { row.targetTouched = false; delete row.targetWeight; }
+      else { row.targetTouched = true; row.targetWeight = parseNumber(raw) / 100; }
     } else row[key] = parseNumber(value);
-    markEmpDirty();
-    renderEmp();
+    markEmpDirty(renderAfterEdit ? "저장되지 않은 변경사항" : "목표비중 입력 중");
+    if (renderAfterEdit) {
+      delete row.targetWeightDraft;
+      renderEmp();
+    }
   };
   function updatePanelHeader(panel, text, meta, toggleId) {
     const wasExpanded = panel.classList.contains("expanded");
@@ -979,7 +1007,8 @@
       const groupTradeAmount = groupMetrics.reduce((s, m) => s + m.tradeAmount, 0);
       list.forEach(({ row, index: i, meta, metric: m }) => {
         const side = m.signedTradeQty > 0 ? "매수" : m.signedTradeQty < 0 ? "매도" : "유지";
-        body += `<tr><td><input class="rowCheck" type="checkbox" data-row-check="${i}" ${selectedRows.has(i) ? "checked" : ""}></td><td>${esc(row.security)}</td><td>${esc(meta.koreanName || meta.fullName || "")}</td><td>${esc(meta.listing || "")}</td><td>${esc(meta.country || "")}</td><td>${esc(meta.large || "미분류")}</td><td>${esc(meta.mid || "")}</td><td>${esc(meta.small || "")}</td><td class="num">${amount(usdMillion(row.marketCap, row.security))}</td><td class="num">${amount(usdMillion(row.avgTurnover3m, row.security))}</td><td class="manualCell"><input class="manualInput" data-i="${i}" data-key="quantity" inputmode="numeric" value="${Number(row.quantity || 0).toLocaleString("ko-KR")}"></td><td class="num">${amount(row.price)}</td><td class="num">${amount(m.value)}</td><td class="changeBarCell">${changeBar(row.change)}</td><td class="num ${m.pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(m.pnl)}</td><td class="num">${pct2(m.current)}</td><td class="manualCell ${row.targetTouched ? "manualChanged" : ""}"><input class="manualInput" data-i="${i}" data-key="targetWeight" type="number" step="0.01" value="${(m.target * 100).toFixed(2)}"></td><td class="num ${m.gap < 0 ? "neg" : "pos"}">${pct(m.gap)}</td><td>${side}</td><td class="num">${m.tradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(m.tradeAmount)}</td></tr>`;
+        const targetValue = row.targetWeightDraft ?? formatPercentInput(m.target * 100);
+        body += `<tr><td><input class="rowCheck" type="checkbox" data-row-check="${i}" ${selectedRows.has(i) ? "checked" : ""}></td><td>${esc(row.security)}</td><td>${esc(meta.koreanName || meta.fullName || "")}</td><td>${esc(meta.listing || "")}</td><td>${esc(meta.country || "")}</td><td>${esc(meta.large || "미분류")}</td><td>${esc(meta.mid || "")}</td><td>${esc(meta.small || "")}</td><td class="num">${amount(usdMillion(row.marketCap, row.security))}</td><td class="num">${amount(usdMillion(row.avgTurnover3m, row.security))}</td><td class="manualCell"><input class="manualInput" data-i="${i}" data-key="quantity" inputmode="numeric" value="${Number(row.quantity || 0).toLocaleString("ko-KR")}"></td><td class="num">${amount(row.price)}</td><td class="num">${amount(m.value)}</td><td class="changeBarCell">${changeBar(row.change)}</td><td class="num ${m.pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(m.pnl)}</td><td class="num">${pct2(m.current)}</td><td class="manualCell ${row.targetTouched ? "manualChanged" : ""}"><input class="manualInput targetWeightInput" data-i="${i}" data-key="targetWeight" inputmode="decimal" value="${esc(targetValue)}"></td><td class="num ${m.gap < 0 ? "neg" : "pos"}">${pct(m.gap)}</td><td>${side}</td><td class="num">${m.tradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(m.tradeAmount)}</td></tr>`;
       });
       body += `<tr class="subtotalRow"><td></td><td colspan="9">${esc(large)} 소계</td><td class="num">${groupQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(groupValue)}</td><td></td><td class="num ${groupPnl < 0 ? "neg" : "pos"}">${krwMillionAmount(groupPnl)}</td><td class="num">${pct2(principal ? groupValue / principal : 0)}</td><td class="num">${pct(groupTarget)}</td><td></td><td></td><td class="num">${groupTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(groupTradeAmount)}</td></tr>`;
     });
@@ -990,7 +1019,21 @@
     body += `<tr class="totalRow"><td></td><td colspan="9">총계</td><td class="num">${totalQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(total)}</td><td></td><td class="num ${pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(pnl)}</td><td class="num">${pct2(principal ? total / principal : 0)}</td><td class="num">${pct(totalTarget)}</td><td></td><td></td><td class="num">${totalTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(totalTradeAmount)}</td></tr>`;
     const colWidths = [2, 5.5, 6, 3, 3.5, 3.5, 3.5, 3.5, 4.5, 4.5, 4.5, 3.5, 5, 3.8, 5.2, 4, 4, 3.5, 3.2, 4.2, 5.2];
     document.getElementById("empTable").innerHTML = `<colgroup>${colWidths.map(width => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
-    document.querySelectorAll("#empTable input[data-i][data-key]").forEach(input => input.onchange = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value));
+    document.querySelectorAll("#empTable input[data-i][data-key]").forEach(input => {
+      if (input.dataset.key === "targetWeight") {
+        input.oninput = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value, false);
+        input.onchange = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value, true);
+        input.onblur = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value, true);
+        input.onkeydown = event => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            input.blur();
+          }
+        };
+      } else {
+        input.onchange = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value);
+      }
+    });
     document.querySelectorAll("#empTable [data-row-check]").forEach(input => input.onchange = () => {
       const index = Number(input.dataset.rowCheck);
       if (input.checked) selectedRows.add(index);
@@ -1323,6 +1366,7 @@
     const allRows = Object.values(DATA.emp.portfolios).flat();
     const fundRows = DATA.holdings.filter(row => !row.isFx && row.security);
     const fundSecurities = fundRows.flatMap(row => [row.security, tradeTicker(row)]).filter(Boolean);
+    const empSecurities = allRows.flatMap(row => securityRequests(row.security));
     status.classList.remove("dirty");
     status.textContent = "Bloomberg 데이터 업데이트 중...";
     button.textContent = "업데이트 중...";
@@ -1331,7 +1375,7 @@
       const res = await fetch(marketApiUrl(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ securities: [...new Set([...allRows.map(row => row.security).filter(Boolean), ...fundSecurities])] })
+        body: JSON.stringify({ securities: [...new Set([...empSecurities, ...fundSecurities.flatMap(securityRequests)])] })
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || "Bloomberg 조회 실패");
@@ -1340,9 +1384,15 @@
       const fxNode = document.getElementById("eFx");
       if (fxNode) fxNode.textContent = state.fx === 1 ? "조회 전" : amount(state.fx);
       const map = payload.securities || {};
-      allRows.forEach(row => Object.assign(row, map[row.security] || {}));
+      allRows.forEach(row => {
+        const updated = marketMatch(map, row.security);
+        if (updated) {
+          Object.assign(row, updated);
+          row.security = normalizeSecurity(row.security);
+        }
+      });
       fundRows.forEach(row => {
-        const updated = map[row.security] || map[tradeTicker(row)];
+        const updated = marketMatch(map, row.security) || marketMatch(map, tradeTicker(row));
         if (updated && updated.change !== undefined) row.change = Number(updated.change || 0);
         if (updated && updated.price !== undefined) row.marketPrice = Number(updated.price || 0);
         if (updated && updated.prevClose !== undefined) row.prevClose = Number(updated.prevClose || 0);
