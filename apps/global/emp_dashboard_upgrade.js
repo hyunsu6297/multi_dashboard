@@ -2,7 +2,7 @@
   const style = document.createElement("style");
   style.textContent = `
     #dashboard .notice,#dashboard .kpis{display:none!important}#dashboard .grid{margin-top:0}
-    #emp .panel{border-radius:8px}#emp .empTableWrap{max-height:calc(100vh - 185px)!important}#empTable{font-size:10.5px;table-layout:fixed;white-space:normal}#empTable th{padding:5px 4px;line-height:1.2;text-align:center}#empTable td{padding:4px 4px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}#empTable th:nth-child(n+4),#empTable td:nth-child(n+4){text-align:center!important}#empTable .manualCell{background:#fff!important}.manualInput{width:56px;border:1px solid #b8cbc6;border-radius:3px;padding:2px 3px;text-align:right;background:#fff}.targetWeightInput{width:72px}.manualInput:focus{outline:2px solid #e0b323;background:#fff8d8}.manualChanged{background:#fff3b0!important}.manualChanged .manualInput{background:#fff8d8!important;border-color:#d09b00!important;font-weight:800}.rowCheck,.etfCheck{width:14px;height:14px;accent-color:#064e43}.empActions{flex-wrap:wrap}.empStatus.dirty{color:#b7791f;font-weight:800}.changeBarCell{padding:3px 4px!important}.changeBar{position:relative;height:15px;background:#e4efec;border-radius:3px;overflow:hidden}.changeBar:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(6,78,67,.28);z-index:2}.changeFill{position:absolute;top:0;bottom:0;left:50%;background:linear-gradient(90deg,#6fa99e,#064e43)}.changeFill.neg{left:auto;right:50%;background:linear-gradient(90deg,#c2413a,#f0a09b)}.changeBarText{position:absolute;inset:0;display:grid;place-items:center;font-weight:900;font-size:9px;color:#173a34;text-shadow:0 1px 2px rgba(255,255,255,.9);z-index:3}
+    #emp .panel{border-radius:8px}#emp .empTableWrap{max-height:calc(100vh - 185px)!important}#empTable{font-size:10.5px;table-layout:fixed;white-space:normal}#empTable th{padding:5px 4px;line-height:1.2;text-align:center}#empTable td{padding:4px 4px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}#empTable th:nth-child(n+4),#empTable td:nth-child(n+4){text-align:center!important}#empTable .manualCell{background:#fff!important}.manualInput{width:56px;border:1px solid #b8cbc6;border-radius:3px;padding:2px 3px;text-align:right;background:#fff}.securityInput{width:100%;text-align:left}.targetWeightInput{width:72px}.manualInput:focus{outline:2px solid #e0b323;background:#fff8d8}.manualChanged{background:#fff3b0!important}.manualChanged .manualInput{background:#fff8d8!important;border-color:#d09b00!important;font-weight:800}.rowCheck,.etfCheck{width:14px;height:14px;accent-color:#064e43}.empActions{flex-wrap:wrap}.empStatus.dirty{color:#b7791f;font-weight:800}.empTableMeta{caption-side:top;text-align:right;color:#6c7f7b;font-size:11px;font-weight:900;padding:0 2px 4px}.changeBarCell{padding:3px 4px!important}.changeBar{position:relative;height:15px;background:#e4efec;border-radius:3px;overflow:hidden}.changeBar:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(6,78,67,.28);z-index:2}.changeFill{position:absolute;top:0;bottom:0;left:50%;background:linear-gradient(90deg,#6fa99e,#064e43)}.changeFill.neg{left:auto;right:50%;background:linear-gradient(90deg,#c2413a,#f0a09b)}.changeBarText{position:absolute;inset:0;display:grid;place-items:center;font-weight:900;font-size:9px;color:#173a34;text-shadow:0 1px 2px rgba(255,255,255,.9);z-index:3}
     .subtotalRow{background:#dfeeea!important;font-weight:900;color:#064e43}.subtotalRow td{border-top:2px solid #609d91;border-bottom:1px solid #609d91}.totalRow{background:#064e43!important;color:white;font-weight:900}.totalRow td{border-top:2px solid #033b32}
     .picker{position:fixed;inset:0;background:rgba(3,31,27,.46);display:none;place-items:center;z-index:100}.picker.active{display:grid}.pickerBox{width:min(1100px,94vw);max-height:84vh;background:white;border-radius:12px;padding:14px;box-shadow:0 22px 70px rgba(0,0,0,.25)}.pickerHead{display:flex;gap:8px;align-items:center;margin-bottom:10px}.pickerHead h2{margin:0;min-width:170px}.pickerTable{max-height:64vh;overflow:auto}.pickBtn{border:0;background:#064e43;color:white;border-radius:3px;padding:4px 8px;cursor:pointer}.pickBtn.added{background:#8aa9a1;cursor:default}.pickerCheck{width:15px;height:15px;accent-color:#064e43}.pickerBulk{border:1px solid #064e43;background:#064e43;color:#fff;border-radius:4px;padding:6px 10px;font-weight:800;cursor:pointer;white-space:nowrap}.pickerTray{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 8px}.pickerChip{border:1px solid #b6d1ca;background:#e9f2ef;color:#173a34;border-radius:12px;padding:3px 8px;font-size:11px}.pickerChip button{border:0;background:transparent;color:#b42318;font-weight:900;cursor:pointer;margin-left:4px}
     .etfManageTools,.empInfoTools,.fundManageTools{display:flex;gap:8px;align-items:center;margin-bottom:8px}.etfManageTools .search{max-width:420px}.etfInput,.empInfoInput,.fundInput{width:100%;min-width:80px;border:1px solid #b8cbc6;border-radius:3px;padding:4px}.etfInput.wide,.fundInput.wide{min-width:190px}.empPrincipalInput,.fundNumericInput{text-align:right}.etfStatus,.empInfoStatus,.fundStatus{font-size:11px;color:#6c7f7b;font-weight:800;margin-left:auto}.etfStatus.dirty,.empInfoStatus.dirty,.fundStatus.dirty{color:#b7791f}
@@ -379,8 +379,8 @@
   const securityRequests = value => {
     const security = normalizeSecurity(value);
     if (!security) return [];
-    if (/\s+(US|KS)\s+Equity$/i.test(security) || /\s+Curncy$/i.test(security)) return [security];
-    return [security, `${security} US Equity`, `${security} KS Equity`];
+    const original = String(value || "").trim().replace(/\s+/g, " ");
+    return [...new Set([original, security].filter(Boolean))];
   };
   const marketMatch = (map, security) => {
     const normalized = normalizeSecurity(security);
@@ -393,7 +393,7 @@
   const formatPercentInput = value => {
     const n = Number(value || 0);
     if (!Number.isFinite(n)) return "";
-    return n.toFixed(4).replace(/\.?0+$/, "");
+    return n.toFixed(2);
   };
   state.multiDimension = false;
   state.dashboardSource = "all";
@@ -426,6 +426,10 @@
   const usdMillion = (value, security) => {
     const usd = isUsd(security) ? Number(value || 0) : Number(value || 0) / Number(state.fx || 1);
     return usd / 1_000_000;
+  };
+  const marketDisplayAmount = (value, security) => {
+    const amountValue = Number(value || 0);
+    return isUsd(security) ? amountValue / 1_000_000 : amountValue / 1_000_000;
   };
   const localToUsd = (value, security) => {
     const amount = Number(value || 0);
@@ -573,6 +577,7 @@
 
   editEmp = function (index, key, value, renderAfterEdit = true) {
     const row = empRows()[index];
+    if (!row) return;
     if (key === "security") row[key] = normalizeSecurity(value);
     else if (key === "quantity") {
       row.quantity = parseNumber(value);
@@ -589,6 +594,13 @@
       delete row.targetWeightDraft;
       renderEmp();
     }
+  };
+  const commitVisibleEmpInputs = () => {
+    document.querySelectorAll("#empTable input[data-i][data-key]").forEach(input => {
+      const index = Number(input.dataset.i);
+      if (!Number.isFinite(index)) return;
+      editEmp(index, input.dataset.key, input.value, false);
+    });
   };
   function updatePanelHeader(panel, text, meta, toggleId) {
     const wasExpanded = panel.classList.contains("expanded");
@@ -989,7 +1001,7 @@
 
     renderDashboardAssetCharts();
 
-    const headers = ["선택", "종목", "종목명", "상장", "투자국가", "대분류", "중분류", "소분류", "시총($mn)", "3M Avg($mn)", "보유수량", "종가", "평가금액", "등락율(전일)", "손익(원화)", "현재비중", "목표비중", "차이", "거래방향", "거래수량", "거래금액(전일종가)"];
+    const headers = ["선택", "종목", "종목명", "상장", "투자국가", "대분류", "중분류", "소분류", "시총", "3M Avg", "보유수량", "종가", "평가금액", "등락율(전일)", "손익(원화)", "현재비중", "목표비중", "차이", "거래방향", "거래수량", "거래금액(전일종가)"];
     const groups = {};
     rows.forEach((row, index) => {
       const meta = securityEtf(row.security);
@@ -1008,7 +1020,7 @@
       list.forEach(({ row, index: i, meta, metric: m }) => {
         const side = m.signedTradeQty > 0 ? "매수" : m.signedTradeQty < 0 ? "매도" : "유지";
         const targetValue = row.targetWeightDraft ?? formatPercentInput(m.target * 100);
-        body += `<tr><td><input class="rowCheck" type="checkbox" data-row-check="${i}" ${selectedRows.has(i) ? "checked" : ""}></td><td>${esc(row.security)}</td><td>${esc(meta.koreanName || meta.fullName || "")}</td><td>${esc(meta.listing || "")}</td><td>${esc(meta.country || "")}</td><td>${esc(meta.large || "미분류")}</td><td>${esc(meta.mid || "")}</td><td>${esc(meta.small || "")}</td><td class="num">${amount(usdMillion(row.marketCap, row.security))}</td><td class="num">${amount(usdMillion(row.avgTurnover3m, row.security))}</td><td class="manualCell"><input class="manualInput" data-i="${i}" data-key="quantity" inputmode="numeric" value="${Number(row.quantity || 0).toLocaleString("ko-KR")}"></td><td class="num">${amount(row.price)}</td><td class="num">${amount(m.value)}</td><td class="changeBarCell">${changeBar(row.change)}</td><td class="num ${m.pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(m.pnl)}</td><td class="num">${pct2(m.current)}</td><td class="manualCell ${row.targetTouched ? "manualChanged" : ""}"><input class="manualInput targetWeightInput" data-i="${i}" data-key="targetWeight" inputmode="decimal" value="${esc(targetValue)}"></td><td class="num ${m.gap < 0 ? "neg" : "pos"}">${pct(m.gap)}</td><td>${side}</td><td class="num">${m.tradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(m.tradeAmount)}</td></tr>`;
+        body += `<tr><td><input class="rowCheck" type="checkbox" data-row-check="${i}" ${selectedRows.has(i) ? "checked" : ""}></td><td class="manualCell"><input class="manualInput securityInput" data-i="${i}" data-key="security" value="${esc(row.security)}"></td><td>${esc(meta.koreanName || meta.fullName || "")}</td><td>${esc(meta.listing || "")}</td><td>${esc(meta.country || "")}</td><td>${esc(meta.large || "미분류")}</td><td>${esc(meta.mid || "")}</td><td>${esc(meta.small || "")}</td><td class="num">${amount(marketDisplayAmount(row.marketCap, row.security))}</td><td class="num">${amount(marketDisplayAmount(row.avgTurnover3m, row.security))}</td><td class="manualCell"><input class="manualInput" data-i="${i}" data-key="quantity" inputmode="numeric" value="${Number(row.quantity || 0).toLocaleString("ko-KR")}"></td><td class="num">${amount(row.price)}</td><td class="num">${amount(m.value)}</td><td class="changeBarCell">${changeBar(row.change)}</td><td class="num ${m.pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(m.pnl)}</td><td class="num">${pct2(m.current)}</td><td class="manualCell ${row.targetTouched ? "manualChanged" : ""}"><input class="manualInput targetWeightInput" data-i="${i}" data-key="targetWeight" inputmode="decimal" value="${esc(targetValue)}"></td><td class="num ${m.gap < 0 ? "neg" : "pos"}">${pct(m.gap)}</td><td>${side}</td><td class="num">${m.tradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(m.tradeAmount)}</td></tr>`;
       });
       body += `<tr class="subtotalRow"><td></td><td colspan="9">${esc(large)} 소계</td><td class="num">${groupQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(groupValue)}</td><td></td><td class="num ${groupPnl < 0 ? "neg" : "pos"}">${krwMillionAmount(groupPnl)}</td><td class="num">${pct2(principal ? groupValue / principal : 0)}</td><td class="num">${pct(groupTarget)}</td><td></td><td></td><td class="num">${groupTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(groupTradeAmount)}</td></tr>`;
     });
@@ -1018,12 +1030,11 @@
     const totalTradeAmount = metrics.reduce((sum, metric) => sum + metric.tradeAmount, 0);
     body += `<tr class="totalRow"><td></td><td colspan="9">총계</td><td class="num">${totalQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(total)}</td><td></td><td class="num ${pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(pnl)}</td><td class="num">${pct2(principal ? total / principal : 0)}</td><td class="num">${pct(totalTarget)}</td><td></td><td></td><td class="num">${totalTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(totalTradeAmount)}</td></tr>`;
     const colWidths = [2, 5.5, 6, 3, 3.5, 3.5, 3.5, 3.5, 4.5, 4.5, 4.5, 3.5, 5, 3.8, 5.2, 4, 4, 3.5, 3.2, 4.2, 5.2];
-    document.getElementById("empTable").innerHTML = `<colgroup>${colWidths.map(width => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
+    document.getElementById("empTable").innerHTML = `<caption class="empTableMeta">시총·3M Avg 단위: 미국 상장 ETF 백만불 / 한국 상장 ETF 백만원</caption><colgroup>${colWidths.map(width => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
     document.querySelectorAll("#empTable input[data-i][data-key]").forEach(input => {
       if (input.dataset.key === "targetWeight") {
         input.oninput = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value, false);
         input.onchange = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value, true);
-        input.onblur = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value, true);
         input.onkeydown = event => {
           if (event.key === "Enter") {
             event.preventDefault();
@@ -1099,6 +1110,7 @@
     renderEmp();
   };
   document.getElementById("saveEmpChanges").onclick = async () => {
+    commitVisibleEmpInputs();
     await saveEmp();
     clearEmpDirty();
   };
@@ -1309,10 +1321,6 @@
     const status = document.getElementById("empStatus");
     status.textContent = "입력 중 · 변경저장을 눌러 확정";
     status.classList.add("dirty");
-    clearTimeout(empInputTimer);
-    empInputTimer = setTimeout(() => {
-      if (document.body.contains(input)) editEmp(Number(input.dataset.i), input.dataset.key, input.value);
-    }, 250);
   });  document.getElementById("addEtfMaster").onclick = () => { DATA.etfs.unshift({ ticker: "", name: "", koreanName: "", listing: "", country: "", large: "", mid: "", small: "", emp: state.emp }); selectedEtfRows.clear(); markEtfDirty("ETF 추가됨 · 변경저장을 눌러 확정"); renderEtfManager(); };
   unclassifiedButton.onclick = () => {
     const rows = unclassifiedCandidates();
@@ -1363,6 +1371,7 @@
     const status = document.getElementById("empStatus");
     const button = document.getElementById("refreshMarket");
     const originalText = button.textContent;
+    commitVisibleEmpInputs();
     const allRows = Object.values(DATA.emp.portfolios).flat();
     const fundRows = DATA.holdings.filter(row => !row.isFx && row.security);
     const fundSecurities = fundRows.flatMap(row => [row.security, tradeTicker(row)]).filter(Boolean);
