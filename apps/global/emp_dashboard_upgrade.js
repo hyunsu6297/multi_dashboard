@@ -123,7 +123,16 @@
     if (!market) return;
     if (market.fx) state.fx = Number(market.fx || 1);
     const map = market.securities || {};
-    Object.values(DATA.emp.portfolios || {}).flat().forEach(row => Object.assign(row, map[row.security] || {}));
+    const keyOf = value => String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+    Object.values(DATA.emp.portfolios || {}).flat().forEach(row => {
+      const key = keyOf(row.security);
+      const found = Object.keys(map).find(item => keyOf(item) === key);
+      const updated = map[row.security] || (found ? map[found] : null);
+      if (!updated) return;
+      ["marketCap", "avgTurnover3m", "price", "prevClose", "change"].forEach(field => {
+        if (updated[field] !== undefined && updated[field] !== null && updated[field] !== "") row[field] = Number(updated[field] || 0);
+      });
+    });
     DATA.holdings.forEach(row => {
       const updated = map[row.security] || map[tradeTicker(row)];
       if (!updated) return;
@@ -148,6 +157,7 @@
   let globalSupabase = null;
   let globalCurrentUser = null;
   let globalDbReady = false;
+  let globalDbLoadPromise = null;
   async function getGlobalSupabase() {
     if (globalSupabase) return globalSupabase;
     if (window.parent !== window && window.parent.dashboardSupabase) {
@@ -1373,15 +1383,17 @@
     const status = document.getElementById("empStatus");
     const button = document.getElementById("refreshMarket");
     const originalText = button.textContent;
-    const allRows = Object.values(DATA.emp.portfolios).flat();
-    const fundRows = DATA.holdings.filter(row => !row.isFx && row.security);
-    const fundSecurities = fundRows.flatMap(row => [row.security, tradeTicker(row)]).filter(Boolean);
-    const empSecurities = allRows.flatMap(row => securityRequests(row.security));
     status.classList.remove("dirty");
-    status.textContent = "Bloomberg 데이터 업데이트 중...";
+    status.textContent = "Supabase DB 상태 확인 중...";
     button.textContent = "업데이트 중...";
     button.disabled = true;
     try {
+      if (globalDbLoadPromise) await globalDbLoadPromise.catch(() => false);
+      const allRows = Object.values(DATA.emp.portfolios).flat();
+      const fundRows = DATA.holdings.filter(row => !row.isFx && row.security);
+      const fundSecurities = fundRows.flatMap(row => [row.security, tradeTicker(row)]).filter(Boolean);
+      const empSecurities = allRows.flatMap(row => securityRequests(row.security));
+      status.textContent = "Bloomberg 데이터 업데이트 중...";
       const res = await fetch(marketApiUrl(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1502,7 +1514,7 @@
   if (etfSearch) etfSearch.oninput = () => { state.etfSearch = etfSearch.value; renderDashboardFundInfo(); };
   renderEmpMenu(); render(); renderEtfManager(); renderEmpInfoManager();
   document.getElementById("empMenu").classList.remove("active");
-  loadGlobalDbState().then(loaded => {
+  globalDbLoadPromise = loadGlobalDbState().then(loaded => {
     if (!loaded) return;
     renderEmpMenu();
     render();
