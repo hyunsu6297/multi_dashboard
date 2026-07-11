@@ -477,7 +477,7 @@
   };
   const emptyEmpRow = ticker => ({ security: ticker, marketCap: 0, avgTurnover3m: 0, quantity: 0, price: 0, prevClose: 0, change: 0, targetTouched: false });
   const insertEmpRows = rowsToInsert => {
-    if (!rowsToInsert.length) return;
+    if (!rowsToInsert.length) return [];
     const rows = empRows();
     const selected = [...selectedRows].sort((a, b) => b - a);
     const insertAt = selected.length ? selected[0] + 1 : rows.length;
@@ -486,6 +486,7 @@
     rowsToInsert.forEach((_, offset) => selectedRows.add(insertAt + offset));
     markEmpDirty(`${rowsToInsert.length}개 행 추가됨 · 변경저장을 눌러 확정`);
     renderEmp();
+    return rows.slice(insertAt, insertAt + rowsToInsert.length);
   };
   const activeDimensions = () => state.showMidDimension ? ["large", "mid", "small"] : ["large", "small"];
   const dimensionLabel = () => activeDimensions().map(key => dimensionDefs.find(def => def[0] === key)?.[1] || key).join(" → ");
@@ -1100,16 +1101,41 @@
   }
 
   document.getElementById("addEmpRow").onclick = () => { document.getElementById("pickerSearch").value = ""; pickerSelected.clear(); picker.classList.add("active"); renderPicker(); };
-  document.getElementById("pickSelectedEtfs").onclick = () => {
+  document.getElementById("pickSelectedEtfs").onclick = async () => {
+    const applyButton = document.getElementById("pickSelectedEtfs");
+    const status = document.getElementById("empStatus");
     const existing = new Set(empRows().map(row => String(row.security || "").toUpperCase()));
     const selected = [...pickerSelected].filter(ticker => !existing.has(String(ticker).toUpperCase()));
     if (!selected.length) {
       document.getElementById("pickerTitle").textContent = `${state.emp} 라벨 ETF 선택 · 선택된 종목 없음`;
       return;
     }
-    insertEmpRows(selected.map(emptyEmpRow));
+    const insertedRows = insertEmpRows(selected.map(emptyEmpRow));
     pickerSelected.clear();
     picker.classList.remove("active");
+    applyButton.disabled = true;
+    if (status) {
+      status.classList.remove("dirty");
+      status.textContent = `${selected.length}개 신규 종목 Bloomberg 조회 중...`;
+    }
+    try {
+      const result = await refreshInsertedEmpRows(insertedRows);
+      renderEmp();
+      render();
+      if (status) {
+        status.textContent = result.failed.length
+          ? `${result.count}개 신규 종목 조회 완료 · 실패: ${result.failed.join(", ")}`
+          : `${result.count}개 신규 종목 Bloomberg 조회 완료`;
+        status.classList.toggle("dirty", result.failed.length > 0);
+      }
+    } catch (error) {
+      if (status) {
+        status.textContent = `신규 종목 Bloomberg 조회 실패: ${error.message}`;
+        status.classList.add("dirty");
+      }
+    } finally {
+      applyButton.disabled = false;
+    }
   };
   document.getElementById("deleteSelectedEmpRows").onclick = () => {
     if (!selectedRows.size) {
@@ -1378,6 +1404,36 @@
       DATA.market?.fx
     ];
     return candidates.map(parseFxValue).find(Boolean) || 0;
+  }
+  async function refreshInsertedEmpRows(rows) {
+    const targets = rows.filter(row => row?.security);
+    if (!targets.length) return { count: 0, failed: [] };
+    const securities = [...new Set(targets.flatMap(row => securityRequests(row.security)))];
+    const res = await fetch(marketApiUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ securities })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || "Bloomberg 신규종목 조회 실패");
+    const nextFx = parseFxValue(payload.fx) || bestKnownFx();
+    if (nextFx) state.fx = nextFx;
+    const map = payload.securities || {};
+    let count = 0;
+    const failed = [];
+    targets.forEach(row => {
+      if (applyEmpMarketRow(row, map)) count += 1;
+      else failed.push(row.security);
+    });
+    const previousMarket = JSON.parse(localStorage.getItem("globalDashboard.market") || "null") || {};
+    const market = {
+      fx: state.fx,
+      securities: { ...(previousMarket.securities || {}), ...map },
+      asOf: payload.asOf || previousMarket.asOf || ""
+    };
+    localStorage.setItem("globalDashboard.market", JSON.stringify(market));
+    await Promise.allSettled([saveGlobalMarketData(market), saveEmp()]);
+    return { count, failed, asOf: payload.asOf || "" };
   }
   refreshMarket = async function () {
     const status = document.getElementById("empStatus");
