@@ -390,6 +390,15 @@
     const found = Object.keys(map).find(item => securityKey(item) === key);
     return found ? map[found] : null;
   };
+  const applyEmpMarketRow = (row, map) => {
+    const updated = marketMatch(map, row.security);
+    if (!updated) return false;
+    ["marketCap", "avgTurnover3m", "price", "prevClose", "change"].forEach(key => {
+      if (updated[key] !== undefined && updated[key] !== null && updated[key] !== "") row[key] = Number(updated[key] || 0);
+    });
+    row.security = normalizeSecurity(row.security);
+    return true;
+  };
   const formatPercentInput = value => {
     const n = Number(value || 0);
     if (!Number.isFinite(n)) return "";
@@ -570,7 +579,7 @@
     const target = row.targetTouched ? Number(row.targetWeight || 0) : current;
     const prev = localToUsd(Number(row.prevClose || row.price || 0), row.security);
     const gap = target - current;
-    if (!row.targetTouched) return { value, krw, pnl, current, target, gap: 0, prev, signedTradeQty: 0, tradeQty: 0, tradeAmount: 0 };
+    if (!row.targetTouched || Math.abs(gap) < 0.00005) return { value, krw, pnl, current, target: current, gap: 0, prev, signedTradeQty: 0, tradeQty: 0, tradeAmount: 0 };
     const targetQty = prev ? (target * principal) / prev : Number(row.quantity || 0);
     const signedTradeQty = Math.round((targetQty - Number(row.quantity || 0)) / 10) * 10;
     return { value, krw, pnl, current, target, gap, prev, signedTradeQty, tradeQty: Math.abs(signedTradeQty), tradeAmount: Math.abs(signedTradeQty * prev) };
@@ -595,14 +604,6 @@
       delete row.targetWeightDraft;
       renderEmp();
     }
-  };
-  const commitVisibleEmpInputs = () => {
-    document.querySelectorAll("#empTable input[data-i][data-key]").forEach(input => {
-      const index = Number(input.dataset.i);
-      if (!Number.isFinite(index)) return;
-      if (input.dataset.key === "security") return;
-      editEmp(index, input.dataset.key, input.value, false);
-    });
   };
   function updatePanelHeader(panel, text, meta, toggleId) {
     const wasExpanded = panel.classList.contains("expanded");
@@ -1022,7 +1023,7 @@
       list.forEach(({ row, index: i, meta, metric: m }) => {
         const side = m.signedTradeQty > 0 ? "매수" : m.signedTradeQty < 0 ? "매도" : "유지";
         const targetValue = row.targetWeightDraft ?? formatPercentInput(m.target * 100);
-        body += `<tr><td><input class="rowCheck" type="checkbox" data-row-check="${i}" ${selectedRows.has(i) ? "checked" : ""}></td><td>${esc(row.security)}</td><td>${esc(meta.koreanName || meta.fullName || "")}</td><td>${esc(meta.listing || "")}</td><td>${esc(meta.country || "")}</td><td>${esc(meta.large || "미분류")}</td><td>${esc(meta.mid || "")}</td><td>${esc(meta.small || "")}</td><td class="num">${integerAmount(marketDisplayAmount(row.marketCap, row.security))}</td><td class="num">${integerAmount(marketDisplayAmount(row.avgTurnover3m, row.security))}</td><td class="manualCell"><input class="manualInput" data-i="${i}" data-key="quantity" inputmode="numeric" value="${Number(row.quantity || 0).toLocaleString("ko-KR")}"></td><td class="num">${amount(row.price)}</td><td class="num">${amount(m.value)}</td><td class="changeBarCell">${changeBar(row.change)}</td><td class="num ${m.pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(m.pnl)}</td><td class="num">${pct2(m.current)}</td><td class="manualCell ${row.targetTouched ? "manualChanged" : ""}"><input class="manualInput targetWeightInput" data-i="${i}" data-key="targetWeight" inputmode="decimal" value="${esc(targetValue)}"></td><td class="num ${m.gap < 0 ? "neg" : "pos"}">${pct(m.gap)}</td><td>${side}</td><td class="num">${m.tradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(m.tradeAmount)}</td></tr>`;
+        body += `<tr><td><input class="rowCheck" type="checkbox" data-row-check="${i}" ${selectedRows.has(i) ? "checked" : ""}></td><td>${esc(row.security)}</td><td>${esc(meta.koreanName || meta.fullName || "")}</td><td>${esc(meta.listing || "")}</td><td>${esc(meta.country || "")}</td><td>${esc(meta.large || "미분류")}</td><td>${esc(meta.mid || "")}</td><td>${esc(meta.small || "")}</td><td class="num">${integerAmount(marketDisplayAmount(row.marketCap, row.security))}</td><td class="num">${integerAmount(marketDisplayAmount(row.avgTurnover3m, row.security))}</td><td class="manualCell"><input class="manualInput" data-i="${i}" data-key="quantity" inputmode="numeric" value="${Number(row.quantity || 0).toLocaleString("ko-KR")}"></td><td class="num">${amount(row.price)}</td><td class="num">${amount(m.value)}</td><td class="changeBarCell">${changeBar(row.change)}</td><td class="num ${m.pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(m.pnl)}</td><td class="num">${pct2(m.current)}</td><td class="manualCell ${row.targetTouched && Math.abs(m.gap) >= 0.00005 ? "manualChanged" : ""}"><input class="manualInput targetWeightInput" data-i="${i}" data-key="targetWeight" inputmode="decimal" value="${esc(targetValue)}"></td><td class="num ${m.gap < 0 ? "neg" : "pos"}">${pct(m.gap)}</td><td>${side}</td><td class="num">${m.tradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(m.tradeAmount)}</td></tr>`;
       });
       body += `<tr class="subtotalRow"><td></td><td colspan="9">${esc(large)} 소계</td><td class="num">${groupQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(groupValue)}</td><td></td><td class="num ${groupPnl < 0 ? "neg" : "pos"}">${krwMillionAmount(groupPnl)}</td><td class="num">${pct2(principal ? groupValue / principal : 0)}</td><td class="num">${pct(groupTarget)}</td><td></td><td></td><td class="num">${groupTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(groupTradeAmount)}</td></tr>`;
     });
@@ -1112,7 +1113,6 @@
     renderEmp();
   };
   document.getElementById("saveEmpChanges").onclick = async () => {
-    commitVisibleEmpInputs();
     await saveEmp();
     clearEmpDirty();
   };
@@ -1373,7 +1373,6 @@
     const status = document.getElementById("empStatus");
     const button = document.getElementById("refreshMarket");
     const originalText = button.textContent;
-    commitVisibleEmpInputs();
     const allRows = Object.values(DATA.emp.portfolios).flat();
     const fundRows = DATA.holdings.filter(row => !row.isFx && row.security);
     const fundSecurities = fundRows.flatMap(row => [row.security, tradeTicker(row)]).filter(Boolean);
@@ -1395,13 +1394,22 @@
       const fxNode = document.getElementById("eFx");
       if (fxNode) fxNode.textContent = state.fx === 1 ? "조회 전" : amount(state.fx);
       const map = payload.securities || {};
-      allRows.forEach(row => {
-        const updated = marketMatch(map, row.security);
-        if (updated) {
-          Object.assign(row, updated);
-          row.security = normalizeSecurity(row.security);
+      allRows.forEach(row => applyEmpMarketRow(row, map));
+      const missingEmpSecurities = [...new Set(allRows
+        .filter(row => row.security && !marketMatch(map, row.security))
+        .flatMap(row => securityRequests(row.security)))];
+      if (missingEmpSecurities.length) {
+        const retryRes = await fetch(marketApiUrl(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ securities: missingEmpSecurities })
+        });
+        const retryPayload = await retryRes.json().catch(() => ({}));
+        if (retryRes.ok && retryPayload.securities) {
+          Object.assign(map, retryPayload.securities);
+          allRows.forEach(row => applyEmpMarketRow(row, retryPayload.securities));
         }
-      });
+      }
       fundRows.forEach(row => {
         const updated = marketMatch(map, row.security) || marketMatch(map, tradeTicker(row));
         if (updated && updated.change !== undefined) row.change = Number(updated.change || 0);
