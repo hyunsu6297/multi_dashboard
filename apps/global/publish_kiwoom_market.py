@@ -1,13 +1,14 @@
-"""Continuously publish Global Strategy dashboard market data to Supabase.
+"""Publish Global Strategy dashboard market data to Supabase.
 
-This is the shared-price worker for the deployed global dashboard:
+The deployed dashboard cannot call the user's local Kiwoom API directly.
+Instead, browser users write refresh requests to Supabase and this local
+receiver processes those requests on the user's PC.
 
-1. Read ETF DB / EMP portfolio tickers from Supabase manual_file_rows.
-2. Fetch prices with Kiwoom REST API.
-3. Store one shared market snapshot in global/market_data.
-
-The browser only reads that snapshot, so other users do not need to run a
-local Kiwoom receiver.
+Runtime behavior:
+1. Korean listed securities refresh every 20 seconds.
+2. US/global/full refreshes run only when a pending DB request exists.
+3. The shared snapshot is still written to global/market_data for the
+   existing dashboard hydration path.
 """
 
 from __future__ import annotations
@@ -28,19 +29,25 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from global_dashboard_server import KiwoomClient, normalize_security  # noqa: E402
+from global_dashboard_server import KiwoomClient, is_ks_security, normalize_security  # noqa: E402
 
 
 DEFAULT_SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co"
 GLOBAL_DOMAIN = "global"
 MARKET_FILE_KEY = "market_data"
-MARKET_FILE_LABEL = "시세 데이터"
+MARKET_FILE_LABEL = "Market data"
+REQUEST_TABLE = "global_market_refresh_requests"
+QUOTE_TABLE = "global_market_quotes"
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
-        raise RuntimeError(f"{name} 환경변수가 필요합니다.")
+        raise RuntimeError(f"{name} environment variable is required.")
     return value
 
 
@@ -89,7 +96,7 @@ class SupabaseRest:
             out.extend(rows)
             if len(rows) < 1000:
                 return out
-        raise RuntimeError(f"{table} 페이지네이션 한도를 초과했습니다.")
+        raise RuntimeError(f"{table} pagination limit exceeded.")
 
     def upsert_rows(self, table: str, rows: list[dict[str, Any]], conflict: str) -> None:
         if not rows:
@@ -102,6 +109,16 @@ class SupabaseRest:
                 body=rows[start : start + 500],
                 headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
             )
+
+    def update_rows(self, table: str, filters: dict[str, str], payload: dict[str, Any]) -> list[dict[str, Any]]:
+        query = urllib.parse.urlencode(filters, safe=".,()")
+        raw = self.request(
+            f"{table}?{query}",
+            method="PATCH",
+            body=payload,
+            headers={"Prefer": "return=representation"},
+        )
+        return json.loads(raw or b"[]")
 
 
 def suffix_from_listing(listing: str) -> str:
@@ -124,6 +141,17 @@ def candidate_security(value: Any, listing: str = "") -> str:
     if suffix:
         return f"{text.split()[0].upper()} {suffix}"
     return text.split()[0].upper()
+
+
+def normalize_security_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    securities: list[str] = []
+    for value in values:
+        security = candidate_security(value)
+        if security:
+            securities.append(security)
+    return list(dict.fromkeys(securities))
 
 
 def collect_securities(client: SupabaseRest) -> tuple[list[str], str | None]:
@@ -168,7 +196,7 @@ def collect_securities(client: SupabaseRest) -> tuple[list[str], str | None]:
     for row in etf_rows:
         payload = row.get("payload") or {}
         listing = str(payload.get("listing") or "")
-        for key in ("ticker", "name"):
+        for key in ("ticker", "security", "name"):
             security = candidate_security(payload.get(key), listing)
             if security:
                 securities.append(security)
@@ -179,12 +207,46 @@ def collect_securities(client: SupabaseRest) -> tuple[list[str], str | None]:
         if security:
             securities.append(security)
 
-    unique = list(dict.fromkeys(securities))
-    return unique, created_by
+    return list(dict.fromkeys(securities)), created_by
+
+
+def load_market_snapshot(client: SupabaseRest) -> tuple[dict[str, Any], str | None]:
+    rows = client.get_all(
+        "manual_file_rows",
+        {
+            "select": "payload,created_by",
+            "domain": f"eq.{GLOBAL_DOMAIN}",
+            "file_key": f"eq.{MARKET_FILE_KEY}",
+            "order": "row_no.asc",
+            "limit": "1",
+        },
+    )
+    if not rows:
+        return {"securities": {}, "errors": {}, "fx": 1, "source": "kiwoom-supabase-receiver"}, None
+    return rows[0].get("payload") or {}, rows[0].get("created_by")
+
+
+def merge_market_snapshot(existing: dict[str, Any], incoming: dict[str, Any], *, label: str) -> dict[str, Any]:
+    merged = dict(existing or {})
+    merged["securities"] = {
+        **((existing or {}).get("securities") or {}),
+        **(incoming.get("securities") or {}),
+    }
+    merged["errors"] = {
+        **((existing or {}).get("errors") or {}),
+        **(incoming.get("errors") or {}),
+    }
+    if incoming.get("fx"):
+        merged["fx"] = incoming["fx"]
+    merged["asOf"] = incoming.get("asOf") or existing.get("asOf") or ""
+    merged["publishedAt"] = utc_now()
+    merged["source"] = "kiwoom-supabase-receiver"
+    merged["lastRefreshType"] = label
+    merged["universeCount"] = len(merged.get("securities") or {})
+    return merged
 
 
 def publish_market_snapshot(client: SupabaseRest, market: dict[str, Any], created_by: str | None) -> None:
-    now = datetime.now(timezone.utc).isoformat()
     record: dict[str, Any] = {
         "domain": GLOBAL_DOMAIN,
         "file_key": MARKET_FILE_KEY,
@@ -192,61 +254,208 @@ def publish_market_snapshot(client: SupabaseRest, market: dict[str, Any], create
         "sheet_name": "Data",
         "row_no": 1,
         "payload": market,
-        "updated_at": now,
+        "updated_at": utc_now(),
     }
     if created_by:
         record["created_by"] = created_by
     client.upsert_rows("manual_file_rows", [record], "domain,file_key,sheet_name,row_no")
 
 
-def run_once(supabase: SupabaseRest, kiwoom: KiwoomClient, *, limit: int | None = None) -> dict[str, Any]:
-    securities, created_by = collect_securities(supabase)
-    if limit:
-        securities = securities[:limit]
+def publish_quotes(client: SupabaseRest, market: dict[str, Any]) -> None:
+    securities = market.get("securities") or {}
+    errors = market.get("errors") or {}
+    rows: list[dict[str, Any]] = []
+    now = utc_now()
+    for security, payload in securities.items():
+        rows.append({
+            "security": security,
+            "payload": payload,
+            "fx": market.get("fx"),
+            "source": market.get("source") or "kiwoom",
+            "as_of": market.get("asOf"),
+            "updated_at": now,
+            "error": None,
+        })
+    for security, error in errors.items():
+        if security in securities:
+            continue
+        rows.append({
+            "security": security,
+            "payload": {},
+            "fx": market.get("fx"),
+            "source": market.get("source") or "kiwoom",
+            "as_of": market.get("asOf"),
+            "updated_at": now,
+            "error": str(error),
+        })
+    client.upsert_rows(QUOTE_TABLE, rows, "security")
+
+
+def fetch_and_publish(
+    supabase: SupabaseRest,
+    kiwoom: KiwoomClient,
+    securities: list[str],
+    *,
+    refresh_type: str,
+    created_by: str | None = None,
+) -> dict[str, Any]:
+    securities = list(dict.fromkeys([candidate_security(item) for item in securities if candidate_security(item)]))
     if not securities:
-        raise RuntimeError("Supabase ETF DB/EMP상세에서 조회할 종목을 찾지 못했습니다.")
-    market = kiwoom.fetch_reference(securities)
-    market["source"] = "kiwoom-supabase-receiver"
-    market["universeCount"] = len(securities)
-    market["publishedAt"] = datetime.now(timezone.utc).isoformat()
-    publish_market_snapshot(supabase, market, created_by)
-    return market
+        raise RuntimeError("No securities to refresh.")
+    incoming = kiwoom.fetch_reference(securities)
+    incoming["source"] = "kiwoom-supabase-receiver"
+    incoming["requestedCount"] = len(securities)
+    existing, existing_created_by = load_market_snapshot(supabase)
+    market = merge_market_snapshot(existing, incoming, label=refresh_type)
+    publish_quotes(supabase, incoming)
+    publish_market_snapshot(supabase, market, created_by or existing_created_by)
+    return incoming
+
+
+def claim_pending_request(client: SupabaseRest) -> dict[str, Any] | None:
+    rows = client.get_all(
+        REQUEST_TABLE,
+        {
+            "select": "*",
+            "status": "eq.pending",
+            "order": "priority.desc,requested_at.asc",
+            "limit": "1",
+        },
+    )
+    if not rows:
+        return None
+    request = rows[0]
+    claimed = client.update_rows(
+        REQUEST_TABLE,
+        {"id": f"eq.{request['id']}", "status": "eq.pending"},
+        {"status": "processing", "started_at": utc_now(), "error": None},
+    )
+    return claimed[0] if claimed else None
+
+
+def complete_request(
+    client: SupabaseRest,
+    request_id: str,
+    *,
+    status: str,
+    result: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> None:
+    client.update_rows(
+        REQUEST_TABLE,
+        {"id": f"eq.{request_id}"},
+        {
+            "status": status,
+            "completed_at": utc_now(),
+            "result": result or {},
+            "error": error,
+        },
+    )
+
+
+def process_one_request(supabase: SupabaseRest, kiwoom: KiwoomClient, *, limit: int | None = None) -> bool:
+    request = claim_pending_request(supabase)
+    if not request:
+        return False
+    request_id = request["id"]
+    refresh_type = str(request.get("request_type") or "batch")
+    try:
+        securities = normalize_security_list(request.get("securities"))
+        created_by = request.get("requested_by")
+        if refresh_type == "full" and not securities:
+            securities, created_by = collect_securities(supabase)
+        if limit:
+            securities = securities[:limit]
+        incoming = fetch_and_publish(
+            supabase,
+            kiwoom,
+            securities,
+            refresh_type=refresh_type,
+            created_by=created_by,
+        )
+        result = {
+            "requestedCount": len(securities),
+            "successCount": len(incoming.get("securities") or {}),
+            "failedCount": len(incoming.get("errors") or {}),
+            "asOf": incoming.get("asOf"),
+        }
+        complete_request(supabase, request_id, status="done", result=result)
+        print(f"request {request_id} done: {result}")
+    except Exception as exc:
+        complete_request(supabase, request_id, status="failed", error=str(exc))
+        print(f"request {request_id} failed: {exc}")
+    return True
+
+
+def refresh_domestic_once(
+    supabase: SupabaseRest,
+    kiwoom: KiwoomClient,
+    *,
+    limit: int | None = None,
+) -> dict[str, Any] | None:
+    securities, created_by = collect_securities(supabase)
+    domestic = [security for security in securities if is_ks_security(security)]
+    if limit:
+        domestic = domestic[:limit]
+    if not domestic:
+        print("domestic refresh skipped: no KS securities")
+        return None
+    incoming = fetch_and_publish(
+        supabase,
+        kiwoom,
+        domestic,
+        refresh_type="domestic_auto",
+        created_by=created_by,
+    )
+    print(
+        f"{incoming.get('asOf')} domestic refresh: "
+        f"requested={len(domestic)}, success={len(incoming.get('securities') or {})}, "
+        f"failed={len(incoming.get('errors') or {})}"
+    )
+    return incoming
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="글로벌전략 대시보드 키움 시세를 Supabase에 게시합니다.")
-    parser.add_argument("--cycle-seconds", type=float, default=20.0)
+    parser = argparse.ArgumentParser(description="Global dashboard Kiwoom Supabase receiver")
+    parser.add_argument("--cycle-seconds", type=float, default=20.0, help="Alias for --domestic-cycle-seconds.")
+    parser.add_argument("--domestic-cycle-seconds", type=float, default=None)
+    parser.add_argument("--request-poll-seconds", type=float, default=2.0)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
 
+    domestic_cycle = args.domestic_cycle_seconds or args.cycle_seconds
     supabase = SupabaseRest(
         os.getenv("SUPABASE_URL", DEFAULT_SUPABASE_URL),
         required_env("SUPABASE_SERVICE_ROLE_KEY"),
     )
     kiwoom = KiwoomClient()
 
+    print("Global dashboard Kiwoom receiver started")
+    print(f"domestic refresh: every {domestic_cycle:g}s")
+    print(f"request polling : every {args.request_poll_seconds:g}s")
+
+    last_domestic = 0.0
     while True:
-        started = time.monotonic()
+        now = time.monotonic()
+        if args.once or now - last_domestic >= domestic_cycle:
+            try:
+                refresh_domestic_once(supabase, kiwoom, limit=args.limit)
+            except Exception as exc:
+                print(f"domestic refresh failed: {exc}")
+            last_domestic = time.monotonic()
+
         try:
-            market = run_once(supabase, kiwoom, limit=args.limit)
-            success = len(market.get("securities", {}))
-            failed = len(market.get("errors", {}))
-            print(
-                f"{market.get('asOf')} published: "
-                f"universe={market.get('universeCount', 0)}, success={success}, failed={failed}, fx={market.get('fx')}"
-            )
-            if failed:
-                sample = list((market.get("errors") or {}).items())[:3]
-                for security, error in sample:
-                    print(f"  - {security}: {error}")
+            while process_one_request(supabase, kiwoom, limit=args.limit):
+                if args.once:
+                    break
         except Exception as exc:
-            print(f"publish failed: {exc}")
+            print(f"request polling failed: {exc}")
+
         if args.once:
             break
-        sleep_for = max(0.0, args.cycle_seconds - (time.monotonic() - started))
-        print(f"next refresh in {sleep_for:.2f}s")
-        time.sleep(sleep_for)
+
+        time.sleep(max(0.5, args.request_poll_seconds))
 
 
 if __name__ == "__main__":

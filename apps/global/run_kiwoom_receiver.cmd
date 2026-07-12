@@ -10,8 +10,9 @@ cd /d "%APP_DIR%"
 
 echo Global Dashboard Kiwoom Supabase receiver
 echo.
-echo Mode          : Kiwoom REST API -^> Supabase global/market_data
-echo Cycle         : %CYCLE_SECONDS% seconds
+echo Mode          : domestic KS auto refresh + Supabase request queue
+echo Domestic cycle: %CYCLE_SECONDS% seconds
+echo Request queue : pending global refreshes are processed on this PC
 echo.
 echo Required environment variables:
 echo   KIWOOM_APPKEY
@@ -60,7 +61,7 @@ if not exist "%PUBLISHER%" (
 if defined GLOBAL_DASHBOARD_PYTHON (
   if exist "%GLOBAL_DASHBOARD_PYTHON%" (
     echo Using GLOBAL_DASHBOARD_PYTHON
-    "%GLOBAL_DASHBOARD_PYTHON%" "%PUBLISHER%" --cycle-seconds %CYCLE_SECONDS%
+    "%GLOBAL_DASHBOARD_PYTHON%" "%PUBLISHER%" --domestic-cycle-seconds %CYCLE_SECONDS%
     set "EXIT_CODE=%ERRORLEVEL%"
     goto done
   )
@@ -68,7 +69,7 @@ if defined GLOBAL_DASHBOARD_PYTHON (
 
 if exist "%CODEX_PYTHON%" (
   echo Using bundled Python
-  "%CODEX_PYTHON%" "%PUBLISHER%" --cycle-seconds %CYCLE_SECONDS%
+  "%CODEX_PYTHON%" "%PUBLISHER%" --domestic-cycle-seconds %CYCLE_SECONDS%
   set "EXIT_CODE=%ERRORLEVEL%"
   goto done
 )
@@ -76,7 +77,7 @@ if exist "%CODEX_PYTHON%" (
 py -3 -c "import sys" >nul 2>nul
 if not errorlevel 1 (
   echo Using py launcher
-  py -3 "%PUBLISHER%" --cycle-seconds %CYCLE_SECONDS%
+  py -3 "%PUBLISHER%" --domestic-cycle-seconds %CYCLE_SECONDS%
   set "EXIT_CODE=%ERRORLEVEL%"
   goto done
 )
@@ -84,7 +85,7 @@ if not errorlevel 1 (
 python -c "import sys" >nul 2>nul
 if not errorlevel 1 (
   echo Using python from PATH
-  python "%PUBLISHER%" --cycle-seconds %CYCLE_SECONDS%
+  python "%PUBLISHER%" --domestic-cycle-seconds %CYCLE_SECONDS%
   set "EXIT_CODE=%ERRORLEVEL%"
   goto done
 )

@@ -1458,10 +1458,77 @@
     ];
     return candidates.map(parseFxValue).find(Boolean) || 0;
   }
+  const allMarketSecurities = () => {
+    const empRows = Object.values(DATA.emp.portfolios || {}).flat();
+    const empSecurities = empRows.flatMap(row => securityRequests(row.security));
+    const fundSecurities = (DATA.holdings || [])
+      .filter(row => !row.isFx && row.security)
+      .flatMap(row => [row.security, tradeTicker(row)].filter(Boolean).flatMap(securityRequests));
+    const etfSecurities = (DATA.etfs || [])
+      .flatMap(row => [row.security, row.ticker, row.name].filter(Boolean).flatMap(securityRequests));
+    return [...new Set([...empSecurities, ...fundSecurities, ...etfSecurities].filter(Boolean))];
+  };
+  async function createGlobalMarketRequest(requestType, securities = []) {
+    const client = await getGlobalSupabase();
+    const user = await getGlobalUser().catch(() => null);
+    const payload = {
+      request_type: requestType,
+      securities: [...new Set((securities || []).flatMap(securityRequests))],
+      status: "pending",
+      requested_by: user?.id || null,
+      priority: requestType === "full" ? 5 : 10
+    };
+    const { data, error } = await client
+      .from("global_market_refresh_requests")
+      .insert(payload)
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+  async function waitForGlobalMarketRequest(id, options = {}) {
+    const client = await getGlobalSupabase();
+    const timeoutMs = options.timeoutMs || 120000;
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const { data, error } = await client
+        .from("global_market_refresh_requests")
+        .select("status,error,result")
+        .eq("id", id)
+        .single();
+      if (error) throw error;
+      if (data?.status === "done") {
+        await hydrateGlobalMarketData({ force: true });
+        return data.result || {};
+      }
+      if (data?.status === "failed") {
+        throw new Error(data.error || "Market refresh failed.");
+      }
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    throw new Error("Market refresh request timed out. Check that the local Kiwoom receiver is running.");
+  }
+  async function requestGlobalMarketRefresh(requestType, securities = [], options = {}) {
+    const id = await createGlobalMarketRequest(requestType, securities);
+    return waitForGlobalMarketRequest(id, options);
+  }
   async function refreshInsertedEmpRows(rows) {
     const targets = rows.filter(row => row?.security);
     if (!targets.length) return { count: 0, failed: [] };
     const securities = [...new Set(targets.flatMap(row => securityRequests(row.security)))];
+    const requestResult = await requestGlobalMarketRefresh(targets.length === 1 ? "single" : "batch", securities, { timeoutMs: 90000 });
+    const sharedMarket = JSON.parse(localStorage.getItem("globalDashboard.market") || "null") || {};
+    const sharedFx = parseFxValue(sharedMarket.fx) || bestKnownFx();
+    if (sharedFx) state.fx = sharedFx;
+    const sharedMap = sharedMarket.securities || {};
+    let sharedCount = 0;
+    const sharedFailed = [];
+    targets.forEach(row => {
+      if (applyEmpMarketRow(row, sharedMap)) sharedCount += 1;
+      else sharedFailed.push(row.security);
+    });
+    await saveEmp();
+    return { count: sharedCount, failed: sharedFailed, asOf: sharedMarket.asOf || requestResult.asOf || "" };
     const res = await fetch(marketApiUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1569,6 +1636,32 @@
     button.textContent = "새로고침 중...";
     button.disabled = true;
     try {
+      if (globalDbLoadPromise) await globalDbLoadPromise.catch(() => false);
+      const securities = allMarketSecurities();
+      if (!securities.length) throw new Error("No securities to refresh.");
+      status.textContent = "Kiwoom refresh request queued. Waiting for local receiver...";
+      const result = await requestGlobalMarketRefresh("full", securities, { timeoutMs: 180000 });
+      await hydrateGlobalMarketData({ force: true });
+      const refreshedMarket = JSON.parse(localStorage.getItem("globalDashboard.market") || "null") || {};
+      const map = refreshedMarket.securities || {};
+      const allRows = Object.values(DATA.emp.portfolios || {}).flat();
+      const fundRows = (DATA.holdings || []).filter(row => !row.isFx && row.security);
+      allRows.forEach(row => applyEmpMarketRow(row, map));
+      fundRows.forEach(row => {
+        const updated = marketMatch(map, row.security) || marketMatch(map, tradeTicker(row));
+        if (updated && updated.change !== undefined) row.change = Number(updated.change || 0);
+        if (updated && updated.price !== undefined) row.marketPrice = Number(updated.price || 0);
+        if (updated && updated.prevClose !== undefined) row.prevClose = Number(updated.prevClose || 0);
+      });
+      const nextFx = parseFxValue(refreshedMarket.fx) || bestKnownFx();
+      if (nextFx) state.fx = nextFx;
+      await saveEmp();
+      renderEmp();
+      render();
+      const refreshedCount = Number(result.successCount || Object.keys(map).length || 0);
+      button.textContent = `${refreshedCount.toLocaleString("ko-KR")} refreshed`;
+      clearEmpDirty(`${refreshedMarket.asOf || result.asOf || ""} Kiwoom refresh complete (${refreshedCount.toLocaleString("ko-KR")} securities)`);
+      return;
       const updated = await hydrateGlobalMarketData({ force: true });
       button.textContent = updated ? "시세 반영 완료" : "변경 없음";
       const market = JSON.parse(localStorage.getItem("globalDashboard.market") || "null") || {};
