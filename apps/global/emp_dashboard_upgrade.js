@@ -1068,7 +1068,7 @@
 
     renderDashboardAssetCharts();
 
-    const headers = ["선택", "종목", "종목명", "상장", "투자국가", "대분류", "중분류", "소분류", "시총", "3M Avg", "보유수량", "종가", "평가금액", "등락율(전일)", "손익(원화)", "현재비중", "목표비중", "차이", "거래방향", "거래수량", "거래금액(전일종가)"];
+    const headers = ["선택", "종목", "종목명", "상장", "투자국가", "대분류", "중분류", "소분류", "시총", "전일 거래대금", "보유수량", "종가", "평가금액", "등락율(전일)", "손익(원화)", "현재비중", "목표비중", "차이", "거래방향", "거래수량", "거래금액(전일종가)"];
     const groups = {};
     rows.forEach((row, index) => {
       const meta = securityEtf(row.security);
@@ -1097,7 +1097,7 @@
     const totalTradeAmount = metrics.reduce((sum, metric) => sum + metric.tradeAmount, 0);
     body += `<tr class="totalRow"><td></td><td colspan="9">총계</td><td class="num">${totalQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(total)}</td><td></td><td class="num ${pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(pnl)}</td><td class="num">${pct2(principal ? total / principal : 0)}</td><td class="num">${pct(totalTarget)}</td><td></td><td></td><td class="num">${totalTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(totalTradeAmount)}</td></tr>`;
     const colWidths = [2, 5.5, 6, 3, 3.5, 3.5, 3.5, 3.5, 4.5, 4.5, 4.5, 3.5, 5, 3.8, 5.2, 4, 4, 3.5, 3.2, 4.2, 5.2];
-    document.getElementById("empTable").innerHTML = `<caption class="empTableMeta">시총·3M Avg 단위: 미국 상장 ETF 백만불 / 한국 상장 ETF 백만원</caption><colgroup>${colWidths.map(width => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
+    document.getElementById("empTable").innerHTML = `<caption class="empTableMeta">시총·전일 거래대금 단위: 미국 상장 ETF 백만불 / 한국 상장 ETF 백만원</caption><colgroup>${colWidths.map(width => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
     document.querySelectorAll("#empTable input[data-i][data-key]").forEach(input => {
       if (input.dataset.key === "targetWeight") {
         input.oninput = () => editEmp(Number(input.dataset.i), input.dataset.key, input.value, false);

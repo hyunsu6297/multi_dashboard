@@ -171,7 +171,7 @@ class KiwoomClient:
         prev_close = clean_abs_number(quote.get("base_close_pric")) or (price - pred_pre if price else 0)
         return {
             "marketCap": clean_abs_number(quote.get("mac")) * 1_000,
-            "avgTurnover3m": clean_abs_number(day.get("trde_prica")) * 1_000,
+            "avgTurnover3m": clean_abs_number(day.get("trde_prica")),
             "price": price,
             "prevClose": abs(prev_close),
             "change": clean_number(quote.get("flu_rt") or day.get("flu_rt")) / 100,
