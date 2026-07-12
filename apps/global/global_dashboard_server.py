@@ -74,6 +74,7 @@ class KiwoomClient:
         self.token = kiwoom_env("KIWOOM_ACCESS_TOKEN")
         self.token_expires_at = 0.0
         self.exchange_cache: dict[str, str] = {}
+        self.fx_candidates: list[float] = []
         if not self.token and (not self.appkey or not self.secretkey):
             raise RuntimeError("KIWOOM_APPKEY와 KIWOOM_SECRETKEY 환경변수를 설정하세요.")
 
@@ -169,6 +170,9 @@ class KiwoomClient:
         price = clean_abs_number(quote.get("cur_prc") or day.get("cur_prc"))
         pred_pre = clean_number(quote.get("pred_pre") or day.get("pred_pre"))
         prev_close = clean_abs_number(quote.get("base_close_pric")) or (price - pred_pre if price else 0)
+        base_exrt = clean_abs_number(quote.get("base_exrt"))
+        if 1_000 <= base_exrt <= 2_000:
+            self.fx_candidates.append(base_exrt)
         return {
             "marketCap": clean_abs_number(quote.get("mac")) * 1_000,
             "avgTurnover3m": clean_abs_number(day.get("trde_prica")),
@@ -202,13 +206,21 @@ class KiwoomClient:
         }
 
     def fetch_fx(self) -> float:
-        try:
-            data = self.request_json("/api/us/exchange", "ust31301", {"exch_tp": "2"})
-            return clean_number(data.get("aplc_exrt") or data.get("spcl_bf_exrt"))
-        except Exception:
-            return 0.0
+        if self.fx_candidates:
+            values = sorted(self.fx_candidates)
+            return values[len(values) // 2]
+        for exch_tp in ("1", "2"):
+            try:
+                data = self.request_json("/api/us/exchange", "ust31301", {"exch_tp": exch_tp})
+                fx = clean_abs_number(data.get("spcl_bf_exrt") or data.get("aplc_exrt"))
+                if 1_000 <= fx <= 2_000:
+                    return fx
+            except Exception:
+                continue
+        return 0.0
 
     def fetch_reference(self, securities: list[str]) -> dict:
+        self.fx_candidates = []
         output: dict[str, dict] = {}
         errors: dict[str, str] = {}
         for raw in securities:
