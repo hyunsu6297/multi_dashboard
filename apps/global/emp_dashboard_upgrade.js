@@ -152,12 +152,15 @@
     fund_info: "펀드정보",
     emp_info: "EMP정보",
     emp_portfolios: "EMP상세",
-    market_data: "블룸버그 데이터"
+    market_data: "시세 데이터"
   };
   let globalSupabase = null;
   let globalCurrentUser = null;
   let globalDbReady = false;
   let globalDbLoadPromise = null;
+  let globalMarketPollingTimer = null;
+  let globalMarketRealtimeTimer = null;
+  let globalLastMarketKey = "";
   async function getGlobalSupabase() {
     if (globalSupabase) return globalSupabase;
     if (window.parent !== window && window.parent.dashboardSupabase) {
@@ -282,6 +285,52 @@
     await replaceGlobalManualRows("market_data", [market], "Data");
     globalDbReady = true;
   }
+  function marketSnapshotKey(market) {
+    const securities = market?.securities || {};
+    return `${market?.asOf || ""}|${market?.publishedAt || ""}|${Object.keys(securities).length}`;
+  }
+  async function hydrateGlobalMarketData(options = {}) {
+    const force = Boolean(options.force);
+    if (globalDbLoadPromise) await globalDbLoadPromise.catch(() => false);
+    const rows = await loadGlobalManualRows("market_data");
+    const market = rows[0]?.payload;
+    if (!market) return false;
+    const key = marketSnapshotKey(market);
+    if (!force && key && key === globalLastMarketKey) return false;
+    globalLastMarketKey = key;
+    applyMarketData(market);
+    localStorage.setItem("globalDashboard.market", JSON.stringify(market));
+    const editing = document.activeElement?.matches?.("input,textarea,select,[contenteditable='true']");
+    if (!editing) {
+      renderEmp();
+      render();
+    }
+    const status = document.getElementById("empStatus");
+    if (status && !status.classList.contains("dirty") && market.asOf) {
+      status.textContent = `${market.asOf} · 공용 시세 ${Object.keys(market.securities || {}).length}종목 반영`;
+    }
+    return true;
+  }
+  async function startGlobalMarketPolling() {
+    if (globalMarketPollingTimer) return;
+    await hydrateGlobalMarketData({ force: true }).catch(error => {
+      console.warn("global market initial hydrate failed", error);
+    });
+    globalMarketPollingTimer = setInterval(() => {
+      hydrateGlobalMarketData().catch(error => console.warn("global market polling failed", error));
+    }, 20000);
+    const client = await getGlobalSupabase();
+    client.channel(`global-market-${crypto.randomUUID()}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "manual_file_rows", filter: "domain=eq.global" }, payload => {
+        const fileKey = payload.new?.file_key || payload.old?.file_key;
+        if (fileKey !== "market_data") return;
+        clearTimeout(globalMarketRealtimeTimer);
+        globalMarketRealtimeTimer = setTimeout(() => {
+          hydrateGlobalMarketData({ force: true }).catch(error => console.warn("global market realtime hydrate failed", error));
+        }, 350);
+      })
+      .subscribe();
+  }
   saveEmp = function () {
     localStorage.setItem("globalDashboard.emp", JSON.stringify({ portfolios: DATA.emp.portfolios, principals: DATA.emp.principals, fx: state.fx }));
     return saveGlobalEmpState().catch(error => {
@@ -292,9 +341,10 @@
   };
   const refreshButton = document.getElementById("refreshMarket");
   const addRowButton = document.getElementById("addEmpRow");
-  refreshButton.textContent = "블룸버그 업데이트";
+  refreshButton.textContent = "키움 업데이트";
   refreshButton.classList.remove("actionBtn", "primary", "summaryRefresh");
   refreshButton.classList.add("topRefresh");
+  refreshButton.textContent = "시세 새로고침";
   empInfoTab.after(refreshButton);
   addRowButton.textContent = "행 추가";
   const deleteRowsButton = document.createElement("button");
@@ -1116,7 +1166,7 @@
     applyButton.disabled = true;
     if (status) {
       status.classList.remove("dirty");
-      status.textContent = `${selected.length}개 신규 종목 Bloomberg 조회 중...`;
+      status.textContent = `${selected.length}개 신규 종목 키움 조회 중...`;
     }
     try {
       const result = await refreshInsertedEmpRows(insertedRows);
@@ -1125,12 +1175,12 @@
       if (status) {
         status.textContent = result.failed.length
           ? `${result.count}개 신규 종목 조회 완료 · 실패: ${result.failed.join(", ")}`
-          : `${result.count}개 신규 종목 Bloomberg 조회 완료`;
+          : `${result.count}개 신규 종목 키움 조회 완료`;
         status.classList.toggle("dirty", result.failed.length > 0);
       }
     } catch (error) {
       if (status) {
-        status.textContent = `신규 종목 Bloomberg 조회 실패: ${error.message}`;
+        status.textContent = `신규 종목 키움 조회 실패: ${error.message}`;
         status.classList.add("dirty");
       }
     } finally {
@@ -1184,7 +1234,7 @@
 
   function renderEtfManager() {
     const q = document.getElementById("etfManagerSearch").value.trim().toLowerCase();
-    const fields = [["ticker", "Bloomberg 티커"], ["koreanName", "종목명"], ["listing", "상장"], ["country", "투자국가"], ["large", "대분류"], ["mid", "중분류"], ["small", "소분류"], ["emp", "EMP 일괄"]];
+    const fields = [["ticker", "티커"], ["koreanName", "종목명"], ["listing", "상장"], ["country", "투자국가"], ["large", "대분류"], ["mid", "중분류"], ["small", "소분류"], ["emp", "EMP 일괄"]];
     const collator = new Intl.Collator("ko-KR", { numeric: true, sensitivity: "base" });
     const sortedIndices = DATA.etfs.map((e, i) => ({ e, i }))
       .filter(({ e }) => !q || fields.map(([key]) => e[key] || "").join(" ").toLowerCase().includes(q))
@@ -1381,7 +1431,7 @@
   };
 
   const marketApiUrl = () => {
-    return window.GLOBAL_BLOOMBERG_API_URL || "http://127.0.0.1:8766/api/emp-market";
+    return window.GLOBAL_MARKET_API_URL || window.GLOBAL_BLOOMBERG_API_URL || "http://127.0.0.1:8766/api/emp-market";
   };
   const parseFxValue = value => {
     const n = Number(String(value ?? "").replaceAll(",", ""));
@@ -1415,7 +1465,7 @@
       body: JSON.stringify({ securities })
     });
     const payload = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(payload.error || "Bloomberg 신규종목 조회 실패");
+    if (!res.ok) throw new Error(payload.error || "키움 신규종목 조회 실패");
     const nextFx = parseFxValue(payload.fx) || bestKnownFx();
     if (nextFx) state.fx = nextFx;
     const map = payload.securities || {};
@@ -1449,14 +1499,14 @@
       const fundRows = DATA.holdings.filter(row => !row.isFx && row.security);
       const fundSecurities = fundRows.flatMap(row => [row.security, tradeTicker(row)]).filter(Boolean);
       const empSecurities = allRows.flatMap(row => securityRequests(row.security));
-      status.textContent = "Bloomberg 데이터 업데이트 중...";
+      status.textContent = "키움 데이터 업데이트 중...";
       const res = await fetch(marketApiUrl(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ securities: [...new Set([...empSecurities, ...fundSecurities.flatMap(securityRequests)])] })
       });
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload.error || "Bloomberg 조회 실패");
+      if (!res.ok) throw new Error(payload.error || "키움 조회 실패");
       const nextFx = parseFxValue(payload.fx) || await fetchFxOnly().catch(() => 0) || bestKnownFx();
       if (nextFx) state.fx = nextFx;
       const fxNode = document.getElementById("eFx");
@@ -1506,6 +1556,35 @@
       }, 2200);
     }
   };  document.getElementById("refreshMarket").onclick = refreshMarket;
+
+  refreshMarket = async function () {
+    const status = document.getElementById("empStatus");
+    const button = document.getElementById("refreshMarket");
+    const originalText = button.textContent;
+    status.classList.remove("dirty");
+    status.textContent = "Supabase 공용 시세를 불러오는 중...";
+    button.textContent = "새로고침 중...";
+    button.disabled = true;
+    try {
+      const updated = await hydrateGlobalMarketData({ force: true });
+      button.textContent = updated ? "시세 반영 완료" : "변경 없음";
+      const market = JSON.parse(localStorage.getItem("globalDashboard.market") || "null") || {};
+      const count = Object.keys(market.securities || {}).length;
+      clearEmpDirty(market.asOf
+        ? `${market.asOf} · 공용 시세 ${count.toLocaleString("ko-KR")}종목 반영`
+        : "저장된 공용 시세가 없습니다. 로컬 키움 수신기를 확인하세요.");
+    } catch (error) {
+      button.textContent = "새로고침 실패";
+      status.textContent = `오류: ${error.message}`;
+      status.classList.remove("dirty");
+    } finally {
+      button.disabled = false;
+      setTimeout(() => {
+        if (!button.disabled) button.textContent = originalText;
+      }, 2200);
+    }
+  };
+  document.getElementById("refreshMarket").onclick = refreshMarket;
 
   renderEmpMenu = function () {
     const nav = document.getElementById("empNav");
@@ -1583,5 +1662,9 @@
       empStatus.textContent = "Supabase DB 데이터 불러옴";
       empStatus.classList.remove("dirty");
     }
+  }).finally(() => {
+    setTimeout(() => {
+      startGlobalMarketPolling().catch(error => console.warn("global market polling start failed", error));
+    }, 0);
   });
 })();

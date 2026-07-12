@@ -3,12 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import os
 import shutil
 import subprocess
+import time
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 FIELDS = {
@@ -19,6 +22,204 @@ FIELDS = {
     "PX_PREV_CLOSE": "prevClose",
     "CHG_PCT_1D": "change",
 }
+
+KIWOOM_US_EXCHANGES = ("NY", "ND", "NA")
+KIWOOM_US_EXCHANGE_NAMES = {"NY": "NYSE", "ND": "NASDAQ", "NA": "AMEX"}
+
+
+def clean_number(value, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return default
+    text = text.replace("+", "")
+    try:
+        return float(text)
+    except ValueError:
+        return default
+
+
+def normalize_security(security: str) -> str:
+    return " ".join(str(security or "").strip().split())
+
+
+def security_code(security: str) -> str:
+    return normalize_security(security).split(" ")[0].upper()
+
+
+def is_ks_security(security: str) -> bool:
+    text = normalize_security(security).upper()
+    return " KS " in f" {text} " or text.endswith(" KS EQUITY")
+
+
+def is_us_security(security: str) -> bool:
+    text = normalize_security(security).upper()
+    return " US " in f" {text} " or text.endswith(" US EQUITY")
+
+
+def kiwoom_env(name: str, default: str = "") -> str:
+    return os.environ.get(name, default).strip()
+
+
+class KiwoomClient:
+    def __init__(self) -> None:
+        self.base_url = kiwoom_env("KIWOOM_BASE_URL", "https://api.kiwoom.com").rstrip("/")
+        self.appkey = kiwoom_env("KIWOOM_APPKEY")
+        self.secretkey = kiwoom_env("KIWOOM_SECRETKEY")
+        self.token = kiwoom_env("KIWOOM_ACCESS_TOKEN")
+        self.token_expires_at = 0.0
+        self.exchange_cache: dict[str, str] = {}
+        if not self.token and (not self.appkey or not self.secretkey):
+            raise RuntimeError("KIWOOM_APPKEY와 KIWOOM_SECRETKEY 환경변수를 설정하세요.")
+
+    def request_json(self, path: str, api_id: str, body: dict, *, retry: bool = True) -> dict:
+        token = self.get_token()
+        payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        req = Request(
+            f"{self.base_url}{path}",
+            data=payload,
+            headers={
+                "Content-Type": "application/json;charset=UTF-8",
+                "authorization": f"Bearer {token}",
+                "api-id": api_id,
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(req, timeout=20) as res:
+                raw = res.read().decode("utf-8", errors="replace")
+        except Exception:
+            if retry and not kiwoom_env("KIWOOM_ACCESS_TOKEN"):
+                self.token = ""
+                return self.request_json(path, api_id, body, retry=False)
+            raise
+        data = json.loads(raw or "{}")
+        code = str(data.get("return_code", "0"))
+        if code not in {"0", ""}:
+            raise RuntimeError(data.get("return_msg") or f"Kiwoom {api_id} failed: {code}")
+        return data
+
+    def get_token(self) -> str:
+        if self.token and (kiwoom_env("KIWOOM_ACCESS_TOKEN") or time.time() < self.token_expires_at - 60):
+            return self.token
+        payload = json.dumps({
+            "grant_type": "client_credentials",
+            "appkey": self.appkey,
+            "secretkey": self.secretkey,
+        }).encode("utf-8")
+        req = Request(
+            f"{self.base_url}/oauth2/token",
+            data=payload,
+            headers={"Content-Type": "application/json;charset=UTF-8"},
+            method="POST",
+        )
+        with urlopen(req, timeout=20) as res:
+            data = json.loads(res.read().decode("utf-8", errors="replace") or "{}")
+        if str(data.get("return_code", "0")) not in {"0", ""}:
+            raise RuntimeError(data.get("return_msg") or "Kiwoom token request failed")
+        self.token = data.get("token") or ""
+        expires_dt = str(data.get("expires_dt") or "")
+        try:
+            self.token_expires_at = datetime.strptime(expires_dt[:14], "%Y%m%d%H%M%S").timestamp()
+        except ValueError:
+            self.token_expires_at = time.time() + 60 * 50
+        if not self.token:
+            raise RuntimeError("Kiwoom token response did not include token")
+        return self.token
+
+    def us_exchange(self, ticker: str) -> str:
+        ticker = ticker.upper()
+        if ticker in self.exchange_cache:
+            return self.exchange_cache[ticker]
+        errors: list[str] = []
+        for exchange in KIWOOM_US_EXCHANGES:
+            try:
+                data = self.request_json("/api/us/stkinfo", "usa10100", {"stex_tp": exchange, "stk_cd": ticker})
+                if data.get("stk_cd") or data.get("stk_nm") or data.get("stk_enm"):
+                    self.exchange_cache[ticker] = data.get("stex_tp") or exchange
+                    return self.exchange_cache[ticker]
+            except Exception as exc:
+                errors.append(f"{exchange}/usa10100: {exc}")
+        for exchange in KIWOOM_US_EXCHANGES:
+            try:
+                data = self.request_json("/api/us/mrkcond", "usa20100", {"stex_tp": exchange, "stk_cd": ticker})
+                if data.get("cur_prc") or data.get("stk_cd") or data.get("stk_nm"):
+                    self.exchange_cache[ticker] = data.get("stex_tp") or exchange
+                    return self.exchange_cache[ticker]
+            except Exception as exc:
+                errors.append(f"{exchange}/usa20100: {exc}")
+        detail = f" ({'; '.join(errors[:2])})" if errors else ""
+        raise RuntimeError(f"{ticker}의 키움 미국주식 거래소구분을 찾지 못했습니다.{detail}")
+
+    def fetch_us(self, security: str) -> dict:
+        ticker = security_code(security)
+        exchange = self.us_exchange(ticker)
+        quote = self.request_json("/api/us/mrkcond", "usa20100", {"stex_tp": exchange, "stk_cd": ticker})
+        daily = self.request_json("/api/us/mrkcond", "usa20590", {
+            "stex_tp": exchange,
+            "stk_cd": ticker,
+            "base_dt": datetime.now().strftime("%Y%m%d"),
+        })
+        day = (daily.get("result_list") or [{}])[0] or {}
+        price = clean_number(quote.get("cur_prc") or day.get("cur_prc"))
+        pred_pre = clean_number(quote.get("pred_pre") or day.get("pred_pre"))
+        prev_close = clean_number(quote.get("base_close_pric")) or (price - pred_pre if price else 0)
+        return {
+            "marketCap": clean_number(quote.get("mac")) * 1_000,
+            "avgTurnover3m": clean_number(day.get("trde_prica")) * 1_000,
+            "price": price,
+            "prevClose": prev_close,
+            "change": clean_number(quote.get("flu_rt") or day.get("flu_rt")) / 100,
+            "kiwoomExchange": exchange,
+            "kiwoomExchangeName": KIWOOM_US_EXCHANGE_NAMES.get(exchange, exchange),
+        }
+
+    def fetch_kr(self, security: str) -> dict:
+        code = security_code(security)
+        quote = self.request_json("/api/dostk/stkinfo", "ka10001", {"stk_cd": code})
+        daily = self.request_json("/api/dostk/mrkcond", "ka10086", {
+            "stk_cd": code,
+            "qry_dt": datetime.now().strftime("%Y%m%d"),
+            "indc_tp": "1",
+        })
+        rows = daily.get("daly_stkpc") or []
+        today = datetime.now().strftime("%Y%m%d")
+        day = next((row for row in rows if str(row.get("date") or "") < today), rows[0] if rows else {})
+        price = clean_number(quote.get("cur_prc") or day.get("close_pric"))
+        pred_pre = clean_number(quote.get("pred_pre") or day.get("pred_rt"))
+        prev_close = clean_number(quote.get("base_pric")) or (price - pred_pre if price else 0)
+        return {
+            "marketCap": clean_number(quote.get("mac")) * 100_000_000,
+            "avgTurnover3m": clean_number(day.get("amt_mn")) * 1_000_000,
+            "price": price,
+            "prevClose": prev_close,
+            "change": clean_number(quote.get("flu_rt") or day.get("flu_rt")) / 100,
+        }
+
+    def fetch_fx(self) -> float:
+        try:
+            data = self.request_json("/api/us/exchange", "ust31301", {"exch_tp": "2"})
+            return clean_number(data.get("aplc_exrt") or data.get("spcl_bf_exrt"))
+        except Exception:
+            return 0.0
+
+    def fetch_reference(self, securities: list[str]) -> dict:
+        output: dict[str, dict] = {}
+        errors: dict[str, str] = {}
+        for raw in securities:
+            security = normalize_security(raw)
+            if not security:
+                continue
+            try:
+                if is_ks_security(security):
+                    output[security] = self.fetch_kr(security)
+                elif is_us_security(security) or len(security.split()) == 1:
+                    output[security] = self.fetch_us(security)
+            except Exception as exc:
+                errors[security] = str(exc)
+        fx = self.fetch_fx() or 1
+        return {"securities": output, "fx": fx, "errors": errors, "asOf": datetime.now().strftime("%Y-%m-%d %H:%M"), "source": "kiwoom"}
 
 
 def element_value(element, field: str):
@@ -157,7 +358,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length) or b"{}")
-            result = fetch_reference(payload.get("securities", []), self.server.blp_host, self.server.blp_port)
+            if self.server.provider == "kiwoom":
+                result = self.server.kiwoom.fetch_reference(payload.get("securities", []))
+            else:
+                result = fetch_reference(payload.get("securities", []), self.server.blp_host, self.server.blp_port)
             self.write_json(result, 200)
         except Exception as exc:
             self.write_json({"error": str(exc)}, 400)
@@ -190,15 +394,20 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="글로벌대시보드 + Bloomberg Desktop API 서버")
+    parser = argparse.ArgumentParser(description="글로벌전략 대시보드 로컬 시세 API 서버")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--provider", choices=["kiwoom", "bloomberg"], default="kiwoom")
     parser.add_argument("--blp-host", default="localhost")
     parser.add_argument("--blp-port", type=int, default=8194)
     args = parser.parse_args()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
+    server.provider = args.provider
     server.blp_host = args.blp_host
     server.blp_port = args.blp_port
+    if args.provider == "kiwoom":
+        server.kiwoom = KiwoomClient()
+    print(f"Provider: {args.provider}")
     print(f"글로벌대시보드: http://{args.host}:{args.port}")
     try:
         server.serve_forever()

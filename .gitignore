@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .env
 .env.*
+*_appkey.txt
+*_secretkey.txt
 
 # Restored database inputs and generated dashboards
 apps/stock/*.xlsx

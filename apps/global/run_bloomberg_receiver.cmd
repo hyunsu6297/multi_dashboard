@@ -29,7 +29,7 @@ if not exist "%SERVER%" (
 if defined GLOBAL_DASHBOARD_PYTHON (
   if exist "%GLOBAL_DASHBOARD_PYTHON%" (
     echo Using GLOBAL_DASHBOARD_PYTHON
-    "%GLOBAL_DASHBOARD_PYTHON%" "%SERVER%" --host %HOST% --port %PORT% --blp-host %BLP_HOST% --blp-port %BLP_PORT%
+    "%GLOBAL_DASHBOARD_PYTHON%" "%SERVER%" --host %HOST% --port %PORT% --provider bloomberg --blp-host %BLP_HOST% --blp-port %BLP_PORT%
     set "EXIT_CODE=%ERRORLEVEL%"
     goto done
   )
@@ -37,7 +37,7 @@ if defined GLOBAL_DASHBOARD_PYTHON (
 
 if exist "%CODEX_PYTHON%" (
   echo Using bundled Python
-  "%CODEX_PYTHON%" "%SERVER%" --host %HOST% --port %PORT% --blp-host %BLP_HOST% --blp-port %BLP_PORT%
+  "%CODEX_PYTHON%" "%SERVER%" --host %HOST% --port %PORT% --provider bloomberg --blp-host %BLP_HOST% --blp-port %BLP_PORT%
   set "EXIT_CODE=%ERRORLEVEL%"
   goto done
 )
@@ -45,7 +45,7 @@ if exist "%CODEX_PYTHON%" (
 py -3 -c "import sys" >nul 2>nul
 if not errorlevel 1 (
   echo Using py launcher
-  py -3 "%SERVER%" --host %HOST% --port %PORT% --blp-host %BLP_HOST% --blp-port %BLP_PORT%
+  py -3 "%SERVER%" --host %HOST% --port %PORT% --provider bloomberg --blp-host %BLP_HOST% --blp-port %BLP_PORT%
   set "EXIT_CODE=%ERRORLEVEL%"
   goto done
 )
@@ -53,7 +53,7 @@ if not errorlevel 1 (
 python -c "import sys" >nul 2>nul
 if not errorlevel 1 (
   echo Using python from PATH
-  python "%SERVER%" --host %HOST% --port %PORT% --blp-host %BLP_HOST% --blp-port %BLP_PORT%
+  python "%SERVER%" --host %HOST% --port %PORT% --provider bloomberg --blp-host %BLP_HOST% --blp-port %BLP_PORT%
   set "EXIT_CODE=%ERRORLEVEL%"
   goto done
 )
