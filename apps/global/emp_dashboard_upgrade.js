@@ -123,6 +123,7 @@
     if (!market) return;
     if (market.fx) state.fx = Number(market.fx || 1);
     const map = market.securities || {};
+    const marketValue = (field, value) => field === "change" ? Number(value || 0) : Math.abs(Number(value || 0));
     const keyOf = value => String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
     Object.values(DATA.emp.portfolios || {}).flat().forEach(row => {
       const key = keyOf(row.security);
@@ -130,15 +131,15 @@
       const updated = map[row.security] || (found ? map[found] : null);
       if (!updated) return;
       ["marketCap", "avgTurnover3m", "price", "prevClose", "change"].forEach(field => {
-        if (updated[field] !== undefined && updated[field] !== null && updated[field] !== "") row[field] = Number(updated[field] || 0);
+        if (updated[field] !== undefined && updated[field] !== null && updated[field] !== "") row[field] = marketValue(field, updated[field]);
       });
     });
     DATA.holdings.forEach(row => {
       const updated = map[row.security] || map[tradeTicker(row)];
       if (!updated) return;
       if (updated.change !== undefined) row.change = Number(updated.change || 0);
-      if (updated.price !== undefined) row.marketPrice = Number(updated.price || 0);
-      if (updated.prevClose !== undefined) row.prevClose = Number(updated.prevClose || 0);
+      if (updated.price !== undefined) row.marketPrice = Math.abs(Number(updated.price || 0));
+      if (updated.prevClose !== undefined) row.prevClose = Math.abs(Number(updated.prevClose || 0));
     });
   };
   const savedMarket = JSON.parse(localStorage.getItem("globalDashboard.market") || "null") || DATA.market || null;
@@ -454,7 +455,9 @@
     const updated = marketMatch(map, row.security);
     if (!updated) return false;
     ["marketCap", "avgTurnover3m", "price", "prevClose", "change"].forEach(key => {
-      if (updated[key] !== undefined && updated[key] !== null && updated[key] !== "") row[key] = Number(updated[key] || 0);
+      if (updated[key] !== undefined && updated[key] !== null && updated[key] !== "") {
+        row[key] = key === "change" ? Number(updated[key] || 0) : Math.abs(Number(updated[key] || 0));
+      }
     });
     row.security = normalizeSecurity(row.security);
     return true;

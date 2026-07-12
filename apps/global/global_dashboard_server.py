@@ -40,6 +40,10 @@ def clean_number(value, default: float = 0.0) -> float:
         return default
 
 
+def clean_abs_number(value, default: float = 0.0) -> float:
+    return abs(clean_number(value, default))
+
+
 def normalize_security(security: str) -> str:
     return " ".join(str(security or "").strip().split())
 
@@ -162,14 +166,14 @@ class KiwoomClient:
             "base_dt": datetime.now().strftime("%Y%m%d"),
         })
         day = (daily.get("result_list") or [{}])[0] or {}
-        price = clean_number(quote.get("cur_prc") or day.get("cur_prc"))
+        price = clean_abs_number(quote.get("cur_prc") or day.get("cur_prc"))
         pred_pre = clean_number(quote.get("pred_pre") or day.get("pred_pre"))
-        prev_close = clean_number(quote.get("base_close_pric")) or (price - pred_pre if price else 0)
+        prev_close = clean_abs_number(quote.get("base_close_pric")) or (price - pred_pre if price else 0)
         return {
-            "marketCap": clean_number(quote.get("mac")) * 1_000,
-            "avgTurnover3m": clean_number(day.get("trde_prica")) * 1_000,
+            "marketCap": clean_abs_number(quote.get("mac")) * 1_000,
+            "avgTurnover3m": clean_abs_number(day.get("trde_prica")) * 1_000,
             "price": price,
-            "prevClose": prev_close,
+            "prevClose": abs(prev_close),
             "change": clean_number(quote.get("flu_rt") or day.get("flu_rt")) / 100,
             "kiwoomExchange": exchange,
             "kiwoomExchangeName": KIWOOM_US_EXCHANGE_NAMES.get(exchange, exchange),
@@ -186,14 +190,14 @@ class KiwoomClient:
         rows = daily.get("daly_stkpc") or []
         today = datetime.now().strftime("%Y%m%d")
         day = next((row for row in rows if str(row.get("date") or "") < today), rows[0] if rows else {})
-        price = clean_number(quote.get("cur_prc") or day.get("close_pric"))
+        price = clean_abs_number(quote.get("cur_prc") or day.get("close_pric"))
         pred_pre = clean_number(quote.get("pred_pre") or day.get("pred_rt"))
-        prev_close = clean_number(quote.get("base_pric")) or (price - pred_pre if price else 0)
+        prev_close = clean_abs_number(quote.get("base_pric")) or (price - pred_pre if price else 0)
         return {
-            "marketCap": clean_number(quote.get("mac")) * 100_000_000,
-            "avgTurnover3m": clean_number(day.get("amt_mn")) * 1_000_000,
+            "marketCap": clean_abs_number(quote.get("mac")) * 100_000_000,
+            "avgTurnover3m": clean_abs_number(day.get("amt_mn")) * 1_000_000,
             "price": price,
-            "prevClose": prev_close,
+            "prevClose": abs(prev_close),
             "change": clean_number(quote.get("flu_rt") or day.get("flu_rt")) / 100,
         }
 
