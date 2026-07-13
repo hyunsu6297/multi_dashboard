@@ -168,18 +168,10 @@ class KiwoomClient:
         })
         rows = daily.get("result_list") or []
         day = rows[0] if rows else {}
-        price = clean_abs_number(quote.get("base_close_pric") or day.get("cur_prc") or quote.get("cur_prc"))
-        matched_day = next(
-            (
-                row
-                for row in rows
-                if price and abs(clean_abs_number(row.get("cur_prc")) - price) <= max(0.01, price * 0.00001)
-            ),
-            day,
-        ) or {}
-        pred_pre = clean_number(matched_day.get("pred_pre") or quote.get("pred_pre"))
-        prev_close = clean_abs_number(matched_day.get("base_pric")) or (price - pred_pre if price else 0)
-        change = clean_number(matched_day.get("flu_rt")) / 100
+        price = clean_abs_number(day.get("cur_prc") or quote.get("cur_prc"))
+        pred_pre = clean_number(day.get("pred_pre") or quote.get("pred_pre"))
+        prev_close = clean_abs_number(day.get("base_pric") or quote.get("base_close_pric")) or (price - pred_pre if price else 0)
+        change = clean_number(day.get("flu_rt") or quote.get("flu_rt")) / 100
         if not change and price and prev_close:
             change = (price / prev_close) - 1
         base_exrt = clean_abs_number(quote.get("base_exrt"))
@@ -191,8 +183,8 @@ class KiwoomClient:
             "price": price,
             "prevClose": abs(prev_close),
             "change": change,
-            "priceDate": matched_day.get("dt") or "",
-            "priceSource": "kiwoom_usa20100_base_close",
+            "priceDate": day.get("dt") or "",
+            "priceSource": "kiwoom_usa20590_latest_daily_close",
             "kiwoomExchange": exchange,
             "kiwoomExchangeName": KIWOOM_US_EXCHANGE_NAMES.get(exchange, exchange),
         }
