@@ -78,13 +78,47 @@ async function hydrateFromSupabase(){
       if(error)throw error; const quotes=new Map(data.map(x=>[x.code,x]));
       for(const h of window.MEZZ_DATA.holdings){const q=quotes.get(h.underlyingCode);if(!q)continue;h.underlyingPrice=Number(q.price);h.underlyingChange=q.change_rate==null?null:Number(q.change_rate)/100;h.parity=h._conversionPrice?h.underlyingPrice/h._conversionPrice:h.parity;h.estimatedPnl=h.lookthrough*(h.underlyingChange||0)*h.delta;}
     }
-    const securityCodes=[...new Set(window.MEZZ_DATA.holdings.map(x=>String(x.code||'').trim()).filter(Boolean))];
-    for(let start=0;start<securityCodes.length;start+=100){
-      const {data,error}=await client.from('mezzanine_delta_history').select('business_date,security_code,daily_delta,is_valid').in('security_code',securityCodes.slice(start,start+100)).order('business_date',{ascending:false}).limit(1000);
-      if(error)throw error; const grouped=new Map();
-      for(const x of data){if(!grouped.has(x.security_code))grouped.set(x.security_code,new Map());const dates=grouped.get(x.security_code);if(!dates.has(x.business_date))dates.set(x.business_date,[]);if(x.is_valid&&x.daily_delta!=null)dates.get(x.business_date).push(Number(x.daily_delta));}
-      for(const h of window.MEZZ_DATA.holdings){const dates=grouped.get(String(h.code||'').trim());if(!dates)continue;const recent=[...dates.entries()].slice(0,10),values=recent.flatMap(([,v])=>v);if(!values.length)continue;h.delta=values.reduce((a,b)=>a+b,0)/values.length;h.deltaExposure=h.lookthrough*h.delta;h.estimatedPnl=h.lookthrough*(h.underlyingChange||0)*h.delta;}
+    const instrumentByCode=new Map();
+    for(const item of [...window.MEZZ_DATA.securities,...window.MEZZ_DATA.holdings]){
+      if(item.code&&item.instrumentId)instrumentByCode.set(String(item.code).trim(),item.instrumentId);
     }
+    const securityCodes=[...new Set(window.MEZZ_DATA.holdings.map(x=>String(x.code||'').trim()).filter(Boolean))];
+    const deltaRows=[];
+    for(let start=0;start<securityCodes.length;start+=100){
+      const {data,error}=await client.from('mezzanine_delta_history').select('business_date,security_code,nav_return,underlying_change_rate,daily_delta,is_valid').in('security_code',securityCodes.slice(start,start+100)).order('business_date',{ascending:false});
+      if(error)throw error; deltaRows.push(...data);
+    }
+    const byInstrumentDate=new Map();
+    for(const row of deltaRows){
+      const iid=instrumentByCode.get(String(row.security_code||'').trim()); if(!iid||!row.business_date)continue;
+      const key=iid+'|'+String(row.business_date).slice(0,10);
+      if(!byInstrumentDate.has(key))byInstrumentDate.set(key,{iid,date:String(row.business_date).slice(0,10),valid:[],all:[],nav:[],under:[]});
+      const bucket=byInstrumentDate.get(key),dd=Number(row.daily_delta);
+      if(Number.isFinite(dd)){bucket.all.push(dd); if(row.is_valid===true&&dd>=0&&dd<=1)bucket.valid.push(dd);}
+      const nr=Number(row.nav_return),uc=Number(row.underlying_change_rate);
+      if(Number.isFinite(nr))bucket.nav.push(nr); if(Number.isFinite(uc))bucket.under.push(uc);
+    }
+    const byInstrument=new Map();
+    for(const bucket of byInstrumentDate.values()){
+      if(!byInstrument.has(bucket.iid))byInstrument.set(bucket.iid,[]);
+      const valid=bucket.valid.length>0, source=valid?bucket.valid:bucket.all;
+      byInstrument.get(bucket.iid).push({
+        date:bucket.date,
+        dailyDelta:source.length?source.reduce((a,b)=>a+b,0)/source.length:null,
+        valid,
+        sampleCount:bucket.valid.length,
+        navReturn:bucket.nav.length?bucket.nav.reduce((a,b)=>a+b,0)/bucket.nav.length:null,
+        underlyingChange:bucket.under.length?bucket.under.reduce((a,b)=>a+b,0)/bucket.under.length:null,
+      });
+    }
+    const deltaByInstrument=new Map();
+    for(const [iid,items] of byInstrument){
+      const observations=items.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
+      const valid=observations.filter(x=>x.valid&&x.dailyDelta!=null&&x.dailyDelta>=0&&x.dailyDelta<=1).map(x=>x.dailyDelta);
+      deltaByInstrument.set(iid,{delta:valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:0.40,samples:valid.length,history:observations});
+    }
+    for(const h of window.MEZZ_DATA.holdings){const d=deltaByInstrument.get(h.instrumentId); if(!d)continue;h.delta=d.delta;h.deltaSamples=d.samples;h.deltaHistory=d.history;h.deltaExposure=h.lookthrough*h.delta;h.estimatedPnl=h.lookthrough*(h.underlyingChange||0)*h.delta;}
+    for(const s of window.MEZZ_DATA.securities){const d=deltaByInstrument.get(s.instrumentId); if(!d)continue;s.delta=d.delta;s.deltaSamples=d.samples;s.deltaHistory=d.history;}
     render();
   }catch(error){console.warn('Supabase 메자닌 동기화 실패, 내장 스냅샷을 사용합니다.',error.message)}
 }

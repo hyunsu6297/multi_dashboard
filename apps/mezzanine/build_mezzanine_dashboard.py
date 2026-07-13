@@ -66,6 +66,14 @@ def number(value: object, default: float = 0.0) -> float:
         return default
 
 
+def finite_number(value: object) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
 def read_raw(name: str) -> pd.DataFrame:
     df = pd.read_excel(ROOT / name, header=1)
     df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
@@ -170,11 +178,10 @@ def database_deltas(aliases: pd.DataFrame) -> dict[str, tuple[float, int, list[d
     for row in raw:
         security_code = code(row.get("security_code"))
         business_date = str(row.get("business_date") or "")[:10]
-        value = row.get("daily_delta")
-        if not security_code or not business_date or value in (None, ""):
+        numeric = finite_number(row.get("daily_delta"))
+        if not security_code or not business_date or numeric is None:
             continue
         key = (security_code, business_date)
-        numeric = number(value)
         if bool(row.get("is_valid")) and 0 <= numeric <= 1:
             grouped.setdefault(key, []).append(numeric)
         else:
@@ -282,7 +289,7 @@ def build_data() -> dict:
         if clean(r.get("발행사명")) and code(r.get("발행코드"))
     }
     id_by_code = dict(zip(aliases["security_code"].map(code), aliases["instrument_id"]))
-    delta_by_instrument = database_deltas(aliases) or shared_deltas(master, aliases)
+    delta_by_instrument = database_deltas(aliases)
 
     security_rows = []
     delta_by_code: dict[str, float] = {}

@@ -152,7 +152,9 @@ def normalize_daily_prices(code: str, name: str, rows: list[dict], keep_days: in
 
 def read_current_nav() -> tuple[str, list[dict]]:
     frame = pd.read_excel(ROOT / "메자닌 기준가.xlsx", sheet_name="Data", header=1).dropna(how="all")
-    business_date = pd.to_datetime(frame["거래일"], errors="coerce").max().date().isoformat()
+    frame["_business_date"] = pd.to_datetime(frame["거래일"], errors="coerce").dt.date
+    frame = frame[frame["_business_date"].notna()]
+    business_date = frame["_business_date"].max().isoformat()
     rows = []
     for _, row in frame.iterrows():
         security_code = text(row.get("상품코드"))
@@ -160,7 +162,7 @@ def read_current_nav() -> tuple[str, list[dict]]:
         if not security_code or nav is None:
             continue
         rows.append({
-            "business_date": business_date,
+            "business_date": row["_business_date"].isoformat(),
             "security_code": security_code,
             "security_name": text(row.get("종목명")),
             "fund_name": text(row.get("펀드명")),
@@ -269,6 +271,7 @@ def run_update(
     request_delay: float = 0.7,
     timeout: float = 20.0,
     skip_backfill: bool = False,
+    use_current_quotes: bool = False,
 ) -> None:
     client = SupabaseRest()
     underlying_by_security, names = load_instrument_map()
@@ -304,7 +307,7 @@ def run_update(
                 if index < len(missing):
                     time.sleep(max(0.2, request_delay))
 
-    quote_rows = upsert_current_quotes(client, business_date, names)
+    quote_rows = upsert_current_quotes(client, business_date, names) if use_current_quotes else 0
     delta_rows = recalculate_deltas(client, underlying_by_security, current_nav)
     print(f"delta update complete: quote_rows={quote_rows}, delta_rows={delta_rows}")
 
@@ -316,6 +319,7 @@ def main() -> None:
     parser.add_argument("--request-delay", type=float, default=0.7)
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--skip-backfill", action="store_true")
+    parser.add_argument("--use-current-quotes", action="store_true")
     args = parser.parse_args()
     run_update(
         host=args.host,
@@ -323,6 +327,7 @@ def main() -> None:
         request_delay=args.request_delay,
         timeout=args.timeout,
         skip_backfill=args.skip_backfill,
+        use_current_quotes=args.use_current_quotes,
     )
 
 
