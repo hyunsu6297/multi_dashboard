@@ -20,6 +20,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = ROOT.parents[1]
 STOCK_DIR = REPOSITORY_ROOT / "apps" / "stock"
+DELTA_HISTORY_FILE = ROOT / "delta_history.json"
 if str(STOCK_DIR) not in sys.path:
     sys.path.insert(0, str(STOCK_DIR))
 
