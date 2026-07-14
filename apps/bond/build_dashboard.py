@@ -359,14 +359,16 @@ HTML_TEMPLATE = r"""<!doctype html>
 <style>
 :root{--ink:#073d35;--deep:#005542;--teal:#1f7569;--mint:#cfe9df;--line:#0b6657;--paper:#fbfdfc;--soft:#eef6f4;--blue:#24639a;--red:#d83b3b;--grid:#d9e4df}
 *{box-sizing:border-box}body{margin:0;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;background:#f6faf8;color:#102b28;font-size:13px}
-.app{display:grid;grid-template-columns:244px 1fr;grid-template-rows:auto 1fr;gap:0 10px;min-height:100vh}.topbar{grid-column:1/-1;display:grid;grid-template-columns:420px auto minmax(620px,780px) max-content;align-items:start;gap:14px;padding:6px 10px 0 0}.pageTitle{border-top:2px solid var(--line);border-bottom:12px solid var(--deep);color:var(--ink);font-size:28px;font-weight:800;letter-spacing:0;padding:7px 0 8px 10px;white-space:nowrap}.tabNav{display:flex;align-items:center;gap:6px;padding-top:14px}.tabBtn{border:1.5px solid var(--line);background:#eef7f4;color:var(--ink);border-radius:5px;padding:8px 18px;font-weight:800;cursor:pointer;min-width:74px}.tabBtn.active{background:var(--deep);color:white;box-shadow:inset 0 0 0 1px #b7d8cf}
+.app{display:grid;grid-template-columns:244px 1fr;grid-template-rows:auto 1fr;gap:0 10px;min-height:100vh}.topbar{grid-column:1/-1;display:grid;grid-template-columns:420px auto minmax(620px,780px) max-content;align-items:start;gap:14px;padding:6px 10px 0 0}.pageTitle{border-top:2px solid var(--line);border-bottom:12px solid var(--deep);color:var(--ink);font-size:28px;font-weight:800;letter-spacing:0;padding:7px 0 8px 10px;white-space:nowrap}.tabNav{display:flex;align-items:center;gap:6px;padding-top:14px}.tabBtn,.panelFilterOpen{border:1.5px solid var(--line);background:#eef7f4;color:var(--ink);border-radius:5px;padding:8px 18px;font-weight:800;cursor:pointer;min-width:74px}.tabBtn.active{background:var(--deep);color:white;box-shadow:inset 0 0 0 1px #b7d8cf}.panelFilterOpen{margin-top:14px;white-space:nowrap;background:var(--deep);color:white}
 .side{grid-column:1;grid-row:2;background:white;border-right:2px solid var(--line);padding:8px 8px 16px;position:sticky;top:0;height:calc(100vh - 76px);overflow:auto}
-.asof{display:grid;grid-template-columns:52px 1fr;gap:6px 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 2px;font-size:12px}.resetAll{grid-column:1/-1;border:1px solid var(--line);background:#eef7f4;color:var(--ink);border-radius:4px;padding:4px 8px;cursor:pointer;font-weight:700}.filter{border:1.5px solid var(--line);border-radius:5px;padding:6px;margin:8px 0;background:#fcfffe}.filterHead{display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;gap:4px}.filter h3{margin:0;color:var(--ink);font-size:12px;flex:1}.miniAll,.multiBtn{border:1px solid #b6d1ca;background:#e9f2ef;color:var(--ink);border-radius:3px;padding:2px 6px;font-size:10px;cursor:pointer}.multiBtn.active{background:var(--deep);border-color:var(--line);color:white}.chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.chip{border:0;background:#2a7569;color:white;border-radius:3px;padding:4px 6px;text-align:left;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.chip.active{background:#092f2a;color:#fff;box-shadow:inset 0 0 0 2px #9ad0c1}.chip.disabled{background:#d9e1de;color:#7b8f8a;cursor:not-allowed}.main{grid-column:2;grid-row:2;padding:6px 10px 18px;overflow:hidden}.memo,.filterInfo{border:1.5px solid var(--line);background:white;border-radius:0 0 6px 6px;min-height:54px}.filterInfo{padding:7px 9px;font-size:11px;line-height:1.45;width:max-content;max-width:560px}.filterInfo b{display:block;color:var(--ink);font-size:12px;margin-bottom:3px}.filterInfo span{display:block;white-space:nowrap}.memo table{width:100%;border-collapse:collapse;font-size:11px}.memo th{background:var(--deep);color:white;border:1px solid #111;padding:2px 5px}.memo td{border:1px solid #222;height:17px;text-align:center}.memoNote{border-top:1px solid #222;padding:5px 7px;font-size:11px;min-height:24px;text-align:left}
-.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:8px 0}.kpi{border:1.5px solid var(--line);border-radius:6px;background:white;padding:9px 12px;min-height:62px}.kpi span{display:block;color:var(--ink);font-weight:800;font-size:12px}.kpi b{display:block;text-align:right;color:#005042;font-size:21px;margin-top:10px}.tradeRange{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 8px;font-size:12px;color:var(--ink);font-weight:800}.dateInput{border:1px solid #9abeb6;border-radius:4px;padding:3px 7px;font-size:12px;color:#102b28;background:white}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}.detailGrid{grid-template-columns:1fr 1fr}.tabPane:not(.active){display:none}.tabPane.active.grid{display:grid}.panel{border:1.5px solid var(--line);border-radius:16px;background:white;padding:10px;min-width:0;overflow:hidden}.panel h2{margin:0 0 7px;color:var(--ink);font-size:13px;display:flex;align-items:center;gap:5px}.panel h2:before{content:"";width:18px;height:12px;background:linear-gradient(90deg,#458c7b,#b7d8cf);border:1px solid var(--line);border-radius:8px;display:inline-block}.wide{grid-column:1 / -1}.tablewrap{overflow:auto;max-height:310px}.topPanel{min-height:468px}.topPanel .tablewrap{overflow-x:auto;overflow-y:visible;max-height:none}.summaryTall{height:331px}.detailPanel{height:calc(100vh - 188px);min-height:720px;display:flex;flex-direction:column}.detailPanel .tablewrap{flex:1;min-height:0;max-height:none}.side .filter:nth-last-child(1) .chips{grid-template-columns:repeat(2,minmax(0,1fr))}
+.asof{display:grid;grid-template-columns:52px 1fr;gap:6px 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 2px;font-size:12px}.resetAll{grid-column:1/-1;border:1px solid var(--line);background:#eef7f4;color:var(--ink);border-radius:4px;padding:4px 8px;cursor:pointer;font-weight:700}.filter{border:1.5px solid var(--line);border-radius:5px;padding:6px;margin:8px 0;background:#fcfffe}.filterHead{display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;gap:4px}.filter h3{margin:0;color:var(--ink);font-size:12px;flex:1}.miniAll,.multiBtn{border:1px solid #b6d1ca;background:#e9f2ef;color:var(--ink);border-radius:3px;padding:2px 6px;font-size:10px;cursor:pointer}.multiBtn.active{background:var(--deep);border-color:var(--line);color:white}.chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.chip{border:0;background:#2a7569;color:white;border-radius:3px;padding:4px 6px;text-align:left;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.chip.active{background:#092f2a;color:#fff;box-shadow:inset 0 0 0 2px #9ad0c1}.chip.disabled{background:#d9e1de;color:#7b8f8a;cursor:not-allowed}.main{grid-column:2;grid-row:2;padding:6px 10px 18px;overflow:hidden}.memo{border:1.5px solid var(--line);background:white;border-radius:0 0 6px 6px;min-height:54px}.memo table{width:100%;border-collapse:collapse;font-size:11px}.memo th{background:var(--deep);color:white;border:1px solid #111;padding:2px 5px}.memo td{border:1px solid #222;height:17px;text-align:center}.memoNote{border-top:1px solid #222;padding:5px 7px;font-size:11px;min-height:24px;text-align:left}
+.panelFilterModal{position:fixed;inset:0;background:rgba(4,35,30,.55);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:5vh 18px}.panelFilterModal.open{display:flex}.panelFilterDialog{width:min(1120px,96vw);max-height:90vh;overflow:auto;background:#f8fbfa;border:2px solid var(--line);border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.25)}.panelFilterTop{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;padding:12px 14px;background:white;border-bottom:1px solid var(--grid)}.panelFilterTop h2{margin:0 auto 0 0;color:var(--ink);font-size:18px}.panelFilterTop button,.panelFilterActions button{border:1px solid var(--line);border-radius:5px;padding:7px 12px;background:#eef7f4;color:var(--ink);font-weight:800;cursor:pointer}.panelFilterTop .primary{background:var(--deep);color:white}.panelFilterGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}.panelFilterCard{background:white;border:1.5px solid var(--line);border-radius:8px;padding:10px}.panelFilterCard h3{margin:0 0 8px;color:var(--ink);font-size:14px}.panelFilterGroup{margin-top:8px}.panelFilterGroup b{display:block;margin-bottom:5px;font-size:12px}.panelFilterChoices{display:flex;flex-wrap:wrap;gap:5px}.panelFilterChoice{position:relative}.panelFilterChoice input{position:absolute;opacity:0;pointer-events:none}.panelFilterChoice span{display:block;border:1px solid #aac8c1;border-radius:4px;padding:4px 7px;background:#f3f8f6;color:#31524c;font-size:11px;cursor:pointer}.panelFilterChoice input:checked+span{background:var(--deep);border-color:var(--deep);color:white}.panelFilterActions{display:flex;gap:8px;margin-top:9px}.panelFilterActions button{padding:4px 8px;font-size:10px}.panelFilterStatus{padding:0 14px 12px;color:#45635e;font-size:11px}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:8px 0}.kpi{border:1.5px solid var(--line);border-radius:6px;background:white;padding:9px 12px;min-height:62px}.kpi span{display:block;color:var(--ink);font-weight:800;font-size:12px}.kpi b{display:block;text-align:right;color:#005042;font-size:21px;margin-top:10px}.tradeRange{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 8px;font-size:12px;color:var(--ink);font-weight:800}.dateInput{border:1px solid #9abeb6;border-radius:4px;padding:3px 7px;font-size:12px;color:#102b28;background:white}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}.detailGrid{grid-template-columns:minmax(0,1.75fr) minmax(340px,.75fr)}.tabPane:not(.active){display:none}.tabPane.active.grid{display:grid}.panel{border:1.5px solid var(--line);border-radius:16px;background:white;padding:10px;min-width:0;overflow:hidden}.panel h2{margin:0 0 7px;color:var(--ink);font-size:13px;display:flex;align-items:center;gap:5px}.panel h2:before{content:"";width:18px;height:12px;background:linear-gradient(90deg,#458c7b,#b7d8cf);border:1px solid var(--line);border-radius:8px;display:inline-block}.wide{grid-column:1 / -1}.tablewrap{overflow:auto;max-height:310px}.topPanel{min-height:468px}.topPanel .tablewrap{overflow-x:auto;overflow-y:visible;max-height:none}.summaryTall{height:331px}.detailPanel{height:calc(100vh - 188px);min-height:720px;display:flex;flex-direction:column}.detailPanel .tablewrap{flex:1;min-height:0;max-height:none}.tradeDetail .tablewrap{overflow-x:hidden}.tradeDetail table{table-layout:fixed;font-size:10px}.tradeDetail th,.tradeDetail td{padding-left:3px;padding-right:3px;overflow:hidden;text-overflow:ellipsis}.tradeDetail th:nth-child(1){width:68px}.tradeDetail th:nth-child(2){width:92px}.tradeDetail th:nth-child(3){width:54px}.tradeDetail th:nth-child(4){width:60px}.tradeDetail th:nth-child(5){width:62px}.tradeDetail th:nth-child(6){width:34px}.tradeDetail th:nth-child(7){width:104px}.tradeDetail th:nth-child(8){width:68px}.tradeDetail th:nth-child(9){width:44px}.tradeDetail th:nth-child(10){width:42px}.tradeDetail th:nth-child(11),.tradeDetail th:nth-child(12){width:68px}.tradeDetailControls{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}.tradeDetailControls .controls{margin:0}.tradeDetailControls .search{min-width:160px;width:210px}.side .filter:nth-last-child(1) .chips{grid-template-columns:repeat(2,minmax(0,1fr))}
 table.data{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}.data th{position:sticky;top:0;background:var(--teal);color:white;padding:3px 5px;border-right:1px solid #d8eee8;cursor:pointer;user-select:none}.data th.sortAsc:after{content:" ▲";font-size:9px}.data th.sortDesc:after{content:" ▼";font-size:9px}.data td{padding:2px 5px;border-bottom:1px solid #e6efec}.data tr:nth-child(even){background:#f7fbfa}.num{text-align:right}.neg{color:var(--red)}.tag{background:#064e43;color:white;border-radius:2px;padding:1px 4px}.chart{height:300px}.comboSvg{width:100%;height:360px}.kpiChart{width:100%;height:430px}.analysisPanel{min-height:560px}.analysisControls{display:flex;align-items:center;gap:10px;margin:4px 0 12px;font-weight:800;color:var(--ink)}.analysisControls label{display:flex;align-items:center;gap:6px}.bar{height:18px;margin:6px 0;position:relative}.bar i{display:block;height:100%;background:var(--deep)}.bar b{position:absolute;left:calc(var(--w,0%) + 6px);top:2px;background:transparent;color:var(--deep);font-size:10px;padding:1px 3px;white-space:nowrap}.ratingRow{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:8px;margin:9px 0;font-weight:700}.svgbox{width:100%;height:260px}.sectorPanel .svgbox{height:282px}.controls{display:flex;align-items:center;gap:8px;margin-bottom:6px;position:relative}.search{border:1px solid #9abeb6;border-radius:4px;padding:4px 7px;min-width:220px}.btn{border:1px solid var(--line);background:#eef7f4;color:var(--ink);border-radius:4px;padding:4px 8px;cursor:pointer}.suggestions{position:absolute;top:28px;left:0;right:70px;z-index:5;background:white;border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 10px rgba(0,0,0,.08);max-height:150px;overflow:auto}.suggestion{padding:5px 8px;font-size:11px;cursor:pointer}.suggestion.active,.suggestion:hover{background:var(--deep);color:white}.foot{margin-top:8px;color:#5a706c;font-size:11px;text-align:right}
 .panelTitleRow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px}.panelTitleRow h2{margin:0}.tradeRange.compact{margin:0;justify-content:flex-end;gap:6px;white-space:nowrap}.tradeRange.compact .dateInput{width:122px}.analysisGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}.analysisPanel{min-height:360px}.analysisPanel .kpiChart{height:310px}.analysisControls{margin:0;gap:6px;white-space:nowrap}.analysisControls .dateInput{width:122px}
+.tradeDetail th:nth-child(8){width:60px}.tradeDetail th:nth-child(9){width:38px}.tradeDetail th:nth-child(10){width:36px}.tradeDetail th:nth-child(11),.tradeDetail th:nth-child(12){width:60px}.holdingDetail .tablewrap{overflow-x:hidden}.holdingDetail table{table-layout:fixed;font-size:10px}.holdingDetail th,.holdingDetail td{min-width:0;padding-left:3px;padding-right:3px;overflow:hidden;text-overflow:ellipsis}.holdingDetail th:nth-child(1){width:25%}.holdingDetail th:nth-child(2){width:12%}.holdingDetail th:nth-child(3){width:15%}.holdingDetail th:nth-child(4){width:14%}.holdingDetail th:nth-child(5){width:11%}.holdingDetail th:nth-child(6){width:12%}.holdingDetail th:nth-child(7){width:11%}
 @media(max-width:1200px){.app{grid-template-columns:1fr;grid-template-rows:auto auto auto}.topbar{grid-template-columns:1fr;padding:6px}.pageTitle{font-size:22px;border-bottom-width:7px}.tabNav{padding:0 0 6px;overflow-x:auto}.tabBtn{flex:0 0 auto;padding:7px 11px}.side{grid-column:1;grid-row:2;position:relative;height:auto;border-right:0;border-bottom:2px solid var(--line)}.main{grid-column:1;grid-row:3;padding:6px}.grid,.detailGrid,.analysisGrid{grid-template-columns:1fr}.wide{grid-column:auto;grid-row:auto}.kpis{grid-template-columns:repeat(2,1fr)}.detailPanel{height:auto;min-height:620px}.panelTitleRow{align-items:flex-start;flex-wrap:wrap}.tradeRange.compact{width:100%;justify-content:flex-start;overflow-x:auto}.chips{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:560px){.kpis{grid-template-columns:1fr 1fr}.kpi{padding:7px;min-height:56px}.kpi b{font-size:17px;margin-top:7px}.tradeRange.compact .dateInput,.analysisControls .dateInput{width:118px}.panel{border-radius:8px;padding:7px}.filterInfo{width:100%;max-width:none}.tablewrap{max-width:100%;overflow:auto}}
+@media(max-width:560px){.kpis{grid-template-columns:1fr 1fr}.kpi{padding:7px;min-height:56px}.kpi b{font-size:17px;margin-top:7px}.tradeRange.compact .dateInput,.analysisControls .dateInput{width:118px}.panel{border-radius:8px;padding:7px}.tablewrap{max-width:100%;overflow:auto}.panelFilterGrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -376,10 +378,9 @@ table.data{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap
     <nav class="tabNav" aria-label="화면 선택">
       <button class="tabBtn active" data-tab="summary" type="button">요약</button>
       <button class="tabBtn" data-tab="detail" type="button">상세</button>
-      <button class="tabBtn" data-tab="analysis" type="button">시계열분석</button>
     </nav>
     <div class="memo"><table><thead><tr><th>펀드명</th><th>전략</th><th>AUM(억)</th><th>지분율</th><th>신규일</th><th>결산일</th><th>스왑만기</th><th>판매사</th><th>LP1</th><th>LP1비중</th><th>LP2</th><th>LP2비중</th></tr></thead><tbody id="fundMini"></tbody></table><div id="fundMemo" class="memoNote"></div></div>
-    <div class="filterInfo"><b>패널별 편입자산 기준</b><span>보유: 해외상품/선물옵션/채권차입/채권매도, FX스왑/국채선물/레포/해외파생, 국고채 제외</span><span>듀레이션·YTM: 어음/채권/현금성자산, CD/기업어음/일반/정기예금/현금 및 예금</span><span>중분류·신용등급·거래내역은 원본 기준별 별도 필터 적용</span></div>
+    <button id="openPanelFilters" class="panelFilterOpen" type="button">패널 필터 설정</button>
   </header>
   <aside class="side">
     <div class="asof"><b>기준일</b><span id="asOf"></span><button id="resetAll" class="resetAll">전체 초기화</button></div>
@@ -403,23 +404,43 @@ table.data{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap
       <div class="panel"><h2>발행사별 보유현황</h2><div class="controls"><input id="issuerSearch" class="search" placeholder="발행사 검색" autocomplete="off" /><button id="issuerRun" class="btn">검색</button><div id="issuerChoices" class="suggestions"></div></div><div class="tablewrap"><table class="data" id="issuerTbl"></table></div></div>
     </section>
     <section id="detailTab" class="grid detailGrid tabPane">
-      <div class="panel detailPanel"><div class="panelTitleRow"><h2>전체매매내역</h2><div class="tradeRange compact"><span>매매기간</span><input class="dateInput tradeStartInput" type="date" /><span>~</span><input class="dateInput tradeEndInput" type="date" /></div></div><div class="tablewrap"><table class="data" id="allTrade"></table></div></div>
-      <div class="panel detailPanel"><h2>전체보유내역</h2><div class="controls"><input id="search" class="search" placeholder="검색" /><button id="reset" class="btn">초기화</button></div><div class="tablewrap"><table class="data" id="allHold"></table></div></div>
-    </section>
-    <section id="analysisTab" class="analysisGrid tabPane">
-      <div class="panel analysisPanel" data-metric="total"><div class="panelTitleRow"><h2>총 익스포저</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="total" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="total" type="date" /></div></div><svg id="kpiChart_total" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
-      <div class="panel analysisPanel" data-metric="eval"><div class="panelTitleRow"><h2>당행 평가액</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="eval" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="eval" type="date" /></div></div><svg id="kpiChart_eval" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
-      <div class="panel analysisPanel" data-metric="lev"><div class="panelTitleRow"><h2>레버리지</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="lev" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="lev" type="date" /></div></div><svg id="kpiChart_lev" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
-      <div class="panel analysisPanel" data-metric="duration"><div class="panelTitleRow"><h2>듀레이션</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="duration" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="duration" type="date" /></div></div><svg id="kpiChart_duration" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
-      <div class="panel analysisPanel" data-metric="delta"><div class="panelTitleRow"><h2>델타</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="delta" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="delta" type="date" /></div></div><svg id="kpiChart_delta" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
-      <div class="panel analysisPanel" data-metric="ytm"><div class="panelTitleRow"><h2>YTM</h2><div class="analysisControls"><input class="dateInput kpiStartInput" data-metric="ytm" type="date" /><span>~</span><input class="dateInput kpiEndInput" data-metric="ytm" type="date" /></div></div><svg id="kpiChart_ytm" class="kpiChart" viewBox="0 0 1000 310"></svg></div>
+      <div class="panel detailPanel tradeDetail"><div class="panelTitleRow"><h2>전체매매내역</h2><div class="tradeRange compact"><span>매매기간</span><input class="dateInput tradeStartInput" type="date" /><span>~</span><input class="dateInput tradeEndInput" type="date" /></div></div><div class="tradeDetailControls"><div class="controls"><input id="tradeSearch" class="search" placeholder="매매내역 검색" /><button id="tradeSearchReset" class="btn">초기화</button></div></div><div class="tablewrap"><table class="data" id="allTrade"></table></div></div>
+      <div class="panel detailPanel holdingDetail"><h2>전체보유내역</h2><div class="controls"><input id="search" class="search" placeholder="검색" /><button id="reset" class="btn">초기화</button></div><div class="tablewrap"><table class="data" id="allHold"></table></div></div>
     </section>
     <div class="foot" id="foot"></div>
   </main>
 </div>
+<div id="panelFilterModal" class="panelFilterModal" role="dialog" aria-modal="true" aria-labelledby="panelFilterTitle">
+  <div class="panelFilterDialog">
+    <div class="panelFilterTop"><h2 id="panelFilterTitle">패널별 편입자산 설정</h2><button id="resetPanelDefaults" type="button">기본값 초기화</button><button id="savePanelDefaults" class="primary" type="button">현재값을 기본값으로 저장</button><button id="closePanelFilters" type="button">닫기</button></div>
+    <div id="panelFilterGrid" class="panelFilterGrid"></div><div id="panelFilterStatus" class="panelFilterStatus">선택 변경은 즉시 반영됩니다.</div>
+  </div>
+</div>
 <script>
 const DATA = __DATA__;
-const state = {type:[],strategy:[],mid:[],manager:[],fund:[],multi:{type:false,strategy:false,mid:false,manager:false,fund:false},search:"",issuerSearch:"롯데카드",selectedIssuer:"롯데카드",issuerIndex:0,activeTab:"summary",sorts:{}};
+const state = {type:[],strategy:[],mid:[],manager:[],fund:[],multi:{type:false,strategy:false,mid:false,manager:false,fund:false},search:"",tradeSearch:"",issuerSearch:"롯데카드",selectedIssuer:"롯데카드",issuerIndex:0,activeTab:"summary",sorts:{}};
+const panelDefs={duration:"듀레이션",delta:"델타",ytm:"YTM",sector:"중분류(섹터)",maturity:"만기 구조",rating:"신용등급"};
+const panelAssets=[...new Set(DATA.holdings.map(d=>d.asset).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
+const panelMarkets=[...new Set(DATA.holdings.map(d=>d.market).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
+const included=(all,excluded)=>all.filter(v=>!excluded.includes(v));
+const factoryPanelDefaults={
+  duration:{assets:["어음","채권","현금성자산"],markets:["CD","기업어음","일반","정기예금","현금 및 예금"]},
+  delta:{assets:["어음","채권","현금성자산"],markets:["CD","기업어음","일반","정기예금","현금 및 예금"]},
+  ytm:{assets:["어음","채권","현금성자산"],markets:["CD","기업어음","일반","정기예금","현금 및 예금"]},
+  sector:{assets:["어음","채권","현금성자산"],markets:["기업어음","일반"]},
+  maturity:{assets:included(panelAssets,["해외상품","선물옵션","선물옵션파생","채권차입","채권매도"]),markets:included(panelMarkets,["FX스왑","FX SWAP","국채선물","레포","해외파생"])},
+  rating:{assets:["어음","채권"],markets:["CD","기업어음","일반"]}
+};
+const clonePanelConfig=value=>JSON.parse(JSON.stringify(value));
+function validPanelConfig(value){
+  const out=clonePanelConfig(factoryPanelDefaults);
+  if(!value||typeof value!=="object") return out;
+  Object.keys(panelDefs).forEach(key=>{if(value[key]){out[key].assets=(Array.isArray(value[key].assets)?value[key].assets:out[key].assets).filter(v=>panelAssets.includes(v));out[key].markets=(Array.isArray(value[key].markets)?value[key].markets:out[key].markets).filter(v=>panelMarkets.includes(v));}});
+  return out;
+}
+function loadPanelDefaults(){try{return validPanelConfig(JSON.parse(localStorage.getItem("bondPanelFilterDefaultsV1")));}catch(_){return clonePanelConfig(factoryPanelDefaults);}}
+state.panelDefaults=loadPanelDefaults();
+state.panelFilters=clonePanelConfig(state.panelDefaults);
 function defaultTradeStart(end){
   if(!end) return "";
   const d=new Date(`${end}T00:00:00`);
@@ -466,6 +487,10 @@ function filtered(arr){
 function tradeDateBase(d){
   return (!state.tradeStart || d.date >= state.tradeStart) && (!state.tradeEnd || d.date <= state.tradeEnd);
 }
+function panelBase(key,d){
+  const cfg=state.panelFilters[key];
+  return cfg.assets.includes(d.asset)&&cfg.markets.includes(d.market);
+}
 const inSet = (v, items) => items.includes(v);
 const hasAny = (v, items) => items.some(x => String(v||"").includes(x));
 function holdingBase(d){
@@ -488,7 +513,7 @@ function ratingBase(d){
 }
 function tradeBase(d){
   return inSet(d.asset,["채권","어음","펀드","기타","해외상품","현금성자산"]) &&
-    d.market !== "레포";
+    d.market !== "레포" && (d.asset!=="해외상품"||d.market==="해외채권");
 }
 function matchesExcept(d, skipKey){
   return (skipKey==="type"||!state.type.length||state.type.includes(d.type))&&(skipKey==="strategy"||!state.strategy.length||state.strategy.includes(d.strategy))&&(skipKey==="mid"||!state.mid.length||state.mid.includes(d.mid))&&(skipKey==="manager"||!state.manager.length||state.manager.includes(d.manager))&&(skipKey==="fund"||!state.fund.length||state.fund.includes(d.fund));
@@ -559,12 +584,28 @@ function renderFilters(){
     render();
   });
 }
+function renderPanelFilters(){
+  const box=document.getElementById("panelFilterGrid");
+  const choices=(key,field,values)=>values.map(v=>`<label class="panelFilterChoice"><input type="checkbox" data-panel="${key}" data-field="${field}" value="${esc(v)}" ${state.panelFilters[key][field].includes(v)?"checked":""}><span>${esc(v)}</span></label>`).join("");
+  box.innerHTML=Object.entries(panelDefs).map(([key,title])=>`<section class="panelFilterCard"><h3>${title}</h3><div class="panelFilterGroup"><b>자산군</b><div class="panelFilterChoices">${choices(key,"assets",panelAssets)}</div></div><div class="panelFilterGroup"><b>시장구분</b><div class="panelFilterChoices">${choices(key,"markets",panelMarkets)}</div></div><div class="panelFilterActions"><button type="button" data-panel-action="all" data-panel="${key}">전체 선택</button><button type="button" data-panel-action="clear" data-panel="${key}">전체 해제</button></div></section>`).join("");
+  box.querySelectorAll("input").forEach(input=>input.onchange=()=>{
+    const list=state.panelFilters[input.dataset.panel][input.dataset.field], value=input.value;
+    if(input.checked&&!list.includes(value)) list.push(value);
+    if(!input.checked&&list.includes(value)) list.splice(list.indexOf(value),1);
+    render();
+  });
+  box.querySelectorAll("button").forEach(button=>button.onclick=()=>{
+    const key=button.dataset.panel, all=button.dataset.panelAction==="all";
+    state.panelFilters[key]={assets:all?[...panelAssets]:[],markets:all?[...panelMarkets]:[]};
+    renderPanelFilters();render();
+  });
+}
 function aggregate(){
-  const h=filtered(DATA.holdings).filter(holdingBase), dy=filtered(DATA.holdings).filter(dyBase), t=filtered(DATA.trades).filter(tradeBase);
+  const h=filtered(DATA.holdings).filter(holdingBase), durationRows=filtered(DATA.holdings).filter(d=>panelBase("duration",d)), deltaRows=filtered(DATA.holdings).filter(d=>panelBase("delta",d)), ytmRows=filtered(DATA.holdings).filter(d=>panelBase("ytm",d));
   const total=h.reduce((s,d)=>s+d.real,0), fundEval=[...new Map(filtered(DATA.funds).map(f=>[f.fund,f])).values()].reduce((s,f)=>s+f.eval,0);
-  const dyTotal=dy.reduce((s,d)=>s+d.real,0);
-  const dur=dyTotal?dy.reduce((s,d)=>s+d.real*d.duration,0)/dyTotal:0, ytm=dyTotal?dy.reduce((s,d)=>s+d.real*d.ytm,0)/dyTotal:0;
-  const delta=total*dur/10000;
+  const durationTotal=durationRows.reduce((s,d)=>s+d.real,0), deltaTotal=deltaRows.reduce((s,d)=>s+d.real,0), ytmTotal=ytmRows.reduce((s,d)=>s+d.real,0);
+  const dur=durationTotal?durationRows.reduce((s,d)=>s+d.real*d.duration,0)/durationTotal:0, deltaDuration=deltaTotal?deltaRows.reduce((s,d)=>s+d.real*d.duration,0)/deltaTotal:0, ytm=ytmTotal?ytmRows.reduce((s,d)=>s+d.real*d.ytm,0)/ytmTotal:0;
+  const delta=deltaTotal*deltaDuration/10000;
   document.getElementById("kTotal").textContent=KRWLong(total);
   document.getElementById("kEval").textContent=KRWLong(fundEval);
   document.getElementById("kLev").textContent=fundEval?`${Math.round(total/fundEval*100).toLocaleString("ko-KR")}%`:"-";
@@ -575,11 +616,12 @@ function aggregate(){
 function renderTables(){
   const h=filtered(DATA.holdings).filter(holdingBase), t=filtered(DATA.trades).filter(tradeBase).filter(tradeDateBase);
   const top=[...h].sort((a,b)=>(a.maturity||"9999").localeCompare(b.maturity||"9999")).slice(0,20);
-  table(document.getElementById("topHold"), [["만기일",d=>d.maturity],["펀드명",d=>d.fund],["자산군",d=>d.asset],["중분류",d=>d.mid],["발행사",d=>d.issuer],["등급",d=>d.rating],["실보유",d=>KRW(d.real),"num"],["펀드보유",d=>KRW(d.fundEval),"num"],["비중",d=>fmtPct(d.weight*100),"num"],["듀레이션",d=>one(d.duration),"num"],["YTM",d=>one(d.ytm),"num"]], top);
+  table(document.getElementById("topHold"), [["만기일",d=>d.maturity],["펀드명",d=>d.fund],["자산군",d=>d.asset],["중분류",d=>d.mid],["발행사",d=>d.issuer],["등급",d=>d.rating],["실보유",d=>KRW(d.real),"num"],["펀드보유",d=>KRW(d.eval),"num"],["비중",d=>fmtPct(d.weight*100),"num"],["듀레이션",d=>one(d.duration),"num"],["YTM",d=>one(d.ytm),"num"]], top);
   const latestTrade=[...t].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20);
   table(document.getElementById("tradeTbl"), [["기준일",d=>d.date],["펀드명",d=>d.fund],["자산구분",d=>d.asset],["발행사",d=>d.issuer],["거래",d=>d.side],["만기일",d=>d.maturity],["듀레이션",d=>one(d.duration),"num"],["금리",d=>one(d.ytm),"num"],["금액(실보유)",d=>`<span class="${d.real<0?"neg":""}">${KRW(d.real)}</span>`,"num"],["금액(원본)",d=>KRW(d.settle),"num"]], latestTrade);
-  const allTrade=[...t].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,500);
-  table(document.getElementById("allTrade"), [["기준일",d=>d.date],["펀드명",d=>d.fund],["자산구분",d=>d.asset],["중분류",d=>d.mid],["발행사",d=>d.issuer],["거래",d=>d.side],["종목명",d=>d.name],["만기일",d=>d.maturity],["듀레이션",d=>one(d.duration),"num"],["금리",d=>one(d.ytm),"num"],["금액(실보유)",d=>`<span class="${d.real<0?"neg":""}">${KRW(d.real)}</span>`,"num"],["금액(원본)",d=>KRW(d.settle),"num"]], allTrade);
+  const tq=state.tradeSearch.trim().toLowerCase();
+  const allTrade=[...t].filter(d=>!tq||[d.date,d.fund,d.asset,d.market,d.mid,d.issuer,d.side,d.name,d.maturity].join(" ").toLowerCase().includes(tq)).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,500);
+  table(document.getElementById("allTrade"), [["기준일",d=>d.date],["펀드명",d=>d.fund],["자산구분",d=>d.asset],["중분류",d=>d.mid],["발행사",d=>d.issuer],["거래",d=>d.side],["종목명",d=>`<span title="${esc(d.name)}">${esc(d.name)}</span>`],["만기일",d=>d.maturity],["듀레이션",d=>one(d.duration),"num"],["금리",d=>one(d.ytm),"num"],["금액(실보유)",d=>`<span class="${d.real<0?"neg":""}">${KRW(d.real)}</span>`,"num"],["금액(원본)",d=>KRW(d.settle),"num"]], allTrade);
   const q=state.search.toLowerCase();
   const all=h.filter(d=>!q||[d.fund,d.name,d.issuer,d.mid,d.rating].join(" ").toLowerCase().includes(q)).slice(0,500);
   table(document.getElementById("allHold"), [["펀드명",d=>d.fund],["자산군",d=>d.asset],["중분류",d=>`<b>${d.mid||""}</b>`],["발행사",d=>d.issuer],["신용등급",d=>d.rating],["만기일",d=>d.maturity],["실보유(억)",d=>KRW(d.real),"num"]], all);
@@ -590,7 +632,7 @@ function renderTables(){
 }
 function renderMaturity(){
   const order=["0.0~0.25","0.25~0.5","0.5~1","1.0~1.5","1.5~2","2.0~2.5","2.5~3","3+"];
-  const map=by(filtered(DATA.holdings).filter(holdingBase),d=>d.bucket), total=Object.values(map).reduce((a,b)=>a+b,0)||1, max=Math.max(...Object.values(map),1);
+  const map=by(filtered(DATA.holdings).filter(d=>panelBase("maturity",d)),d=>d.bucket), total=Object.values(map).reduce((a,b)=>a+b,0)||1, max=Math.max(...Object.values(map),1);
   const values=order.map(k=>map[k]||0), maxAmt=Math.max(...values,1), left=58, right=760, top=30, base=286, w=(right-left)/order.length, maxPct=Math.max(...values.map(v=>v/total),0.01);
   const yAmt=v=>base-(v/maxAmt)*(base-top), yPct=v=>base-((v/total)/maxPct)*(base-top), points=values.map((v,i)=>`${left+w*i+w/2},${yPct(v)}`).join(" ");
   let svg=`<line x1="${left}" y1="${base}" x2="${right}" y2="${base}" stroke="#9fb8b2"/><line x1="${left}" y1="${top}" x2="${left}" y2="${base}" stroke="#9fb8b2"/><line x1="${right}" y1="${top}" x2="${right}" y2="${base}" stroke="#9fb8b2"/>`;
@@ -602,7 +644,7 @@ function renderMaturity(){
 }
 function renderRating(){
   const order=["RF","AAA","AA+","AA","AA-","A1","미분류"];
-  const map=by(filtered(DATA.holdings).filter(ratingBase),d=>d.rating), total=Object.values(map).reduce((a,b)=>a+b,0)||1, max=Math.max(...order.map(k=>map[k]||0),1);
+  const map=by(filtered(DATA.holdings).filter(d=>panelBase("rating",d)),d=>d.rating), total=Object.values(map).reduce((a,b)=>a+b,0)||1, max=Math.max(...order.map(k=>map[k]||0),1);
   document.getElementById("rating").innerHTML=order.map(k=>{const v=map[k]||0, w=v/max*88; return `<div class="ratingRow"><span>${k}</span><div class="bar" style="--w:${w}%"><i style="width:${w}%"></i><b>${(v/total*100).toFixed(1)}%</b></div></div>`}).join("");
 }
 function renderIssuerPanel(rows){
@@ -614,7 +656,7 @@ function renderIssuerPanel(rows){
   document.querySelectorAll("#issuerChoices .suggestion").forEach(el=>el.onclick=()=>selectIssuer(el.dataset.issuer));
   const selected=state.selectedIssuer && issuers.includes(state.selectedIssuer) ? state.selectedIssuer : null;
   const issuerRows=selected ? rows.filter(d=>d.issuer===selected).sort((a,b)=>(a.maturity||"9999").localeCompare(b.maturity||"9999")).slice(0,20) : [];
-  table(document.getElementById("issuerTbl"), [["펀드명",d=>d.fund],["자산군",d=>d.asset],["만기일",d=>d.maturity],["듀레이션",d=>one(d.duration),"num"],["YTM",d=>one(d.ytm),"num"],["실보유",d=>KRW(d.real),"num"],["펀드보유액",d=>KRW(d.fundEval),"num"]], issuerRows);
+  table(document.getElementById("issuerTbl"), [["펀드명",d=>d.fund],["자산군",d=>d.asset],["만기일",d=>d.maturity],["듀레이션",d=>one(d.duration),"num"],["YTM",d=>one(d.ytm),"num"],["실보유",d=>KRW(d.real),"num"],["펀드보유액",d=>KRW(d.eval),"num"]], issuerRows);
 }
 function selectIssuer(name){
   state.selectedIssuer=name;
@@ -632,7 +674,7 @@ function runIssuerSearch(){
 }
 function piePath(cx,cy,r,a0,a1){const x0=cx+r*Math.cos(a0),y0=cy+r*Math.sin(a0),x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1);return `M${cx},${cy} L${x0},${y0} A${r},${r} 0 ${a1-a0>Math.PI?1:0} 1 ${x1},${y1} Z`;}
 function renderPie(){
-  const map=by(filtered(DATA.holdings).filter(sectorBase),d=>d.mid||"미분류"), entries=Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,7), total=entries.reduce((s,d)=>s+d[1],0)||1, colors=["#5d998d","#064f43","#38e0c5","#d8e3e0","#b7ddcf","#d9e9f7","#8bbfb1"];
+  const map=by(filtered(DATA.holdings).filter(d=>panelBase("sector",d)),d=>d.mid||"미분류"), entries=Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,7), total=entries.reduce((s,d)=>s+d[1],0)||1, colors=["#5d998d","#064f43","#38e0c5","#d8e3e0","#b7ddcf","#d9e9f7","#8bbfb1"];
   let a=-Math.PI/2; let svg="";
   entries.forEach(([k,v],i)=>{const a1=a+v/total*Math.PI*2, share=v/total, mid=(a+a1)/2, outside=share<0.075; const tx=180+(outside?132:82)*Math.cos(mid), ty=125+(outside?112:82)*Math.sin(mid), label=`${k}, ${(share*100).toFixed(1)}%`, w=Math.max(42,label.length*7.2); svg+=`<path d="${piePath(180,125,112,a,a1)}" fill="${colors[i%colors.length]}" stroke="white"/>`; if(outside){const x2=180+116*Math.cos(mid), y2=125+96*Math.sin(mid); svg+=`<line x1="${180+102*Math.cos(mid)}" y1="${125+102*Math.sin(mid)}" x2="${x2}" y2="${y2}" stroke="#005542"/><line x1="${x2}" y1="${y2}" x2="${tx}" y2="${ty}" stroke="#005542"/>`;} svg+=`<rect x="${tx-w/2}" y="${ty-13}" width="${w}" height="20" fill="#005542"/><text x="${tx}" y="${ty+1}" text-anchor="middle" fill="white" font-size="11" font-weight="700">${esc(label)}</text>`; a=a1;});
   document.getElementById("pie").innerHTML=svg;
@@ -643,13 +685,14 @@ function kpiRowsForMetric(metric){
   const grouped=new Map();
   rows.forEach(r=>{if(!grouped.has(r.date)) grouped.set(r.date,[]); grouped.get(r.date).push(r);});
   return [...grouped.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([date,daily])=>{
-    const h=daily.filter(holdingBase), dy=daily.filter(dyBase);
+    const h=daily.filter(holdingBase), durationRows=daily.filter(d=>panelBase("duration",d)), deltaRows=daily.filter(d=>panelBase("delta",d)), ytmRows=daily.filter(d=>panelBase("ytm",d));
     const total=h.reduce((s,d)=>s+Number(d.real||0),0);
     const fundEval=[...new Map(daily.map(d=>[d.fund,d.fundEval])).values()].reduce((s,v)=>s+Number(v||0),0);
-    const dyTotal=dy.reduce((s,d)=>s+Number(d.real||0),0);
-    const duration=dyTotal?dy.reduce((s,d)=>s+Number(d.real||0)*Number(d.duration||0),0)/dyTotal:0;
-    const ytm=dyTotal?dy.reduce((s,d)=>s+Number(d.real||0)*Number(d.ytm||0),0)/dyTotal:0;
-    return {date,total,eval:fundEval,lev:fundEval?total/fundEval*100:0,duration,delta:total*duration/10000,ytm};
+    const durationTotal=durationRows.reduce((s,d)=>s+Number(d.real||0),0), deltaTotal=deltaRows.reduce((s,d)=>s+Number(d.real||0),0), ytmTotal=ytmRows.reduce((s,d)=>s+Number(d.real||0),0);
+    const duration=durationTotal?durationRows.reduce((s,d)=>s+Number(d.real||0)*Number(d.duration||0),0)/durationTotal:0;
+    const deltaDuration=deltaTotal?deltaRows.reduce((s,d)=>s+Number(d.real||0)*Number(d.duration||0),0)/deltaTotal:0;
+    const ytm=ytmTotal?ytmRows.reduce((s,d)=>s+Number(d.real||0)*Number(d.ytm||0),0)/ytmTotal:0;
+    return {date,total,eval:fundEval,lev:fundEval?total/fundEval*100:0,duration,delta:deltaTotal*deltaDuration/10000,ytm};
   });
 }
 function renderKpiChart(metric){
@@ -670,7 +713,7 @@ function renderKpiCharts(){
   kpiMetrics.forEach(renderKpiChart);
 }
 function render(){
-  renderFilters(); aggregate(); renderTables(); renderMaturity(); renderRating(); renderPie(); renderKpiCharts();
+  renderFilters(); aggregate(); renderTables(); renderMaturity(); renderRating(); renderPie();
   document.getElementById("foot").textContent=`보유 ${DATA.summary.holdingRows.toLocaleString()}건 / 매매 ${DATA.summary.tradeRows.toLocaleString()}건 / 펀드 ${DATA.summary.funds.toLocaleString()}개 · 생성 ${DATA.generated}`;
 }
 function setTab(name){
@@ -678,7 +721,6 @@ function setTab(name){
   document.querySelectorAll(".tabBtn").forEach(btn=>btn.classList.toggle("active",btn.dataset.tab===name));
   document.getElementById("summaryTab").classList.toggle("active",name==="summary");
   document.getElementById("detailTab").classList.toggle("active",name==="detail");
-  document.getElementById("analysisTab").classList.toggle("active",name==="analysis");
 }
 document.getElementById("asOf").textContent=DATA.asOf;
 document.getElementById("issuerSearch").value=state.issuerSearch;
@@ -696,6 +738,8 @@ document.querySelectorAll(".kpiStartInput").forEach(el=>el.onchange=e=>{const m=
 document.querySelectorAll(".kpiEndInput").forEach(el=>el.onchange=e=>{const m=e.target.dataset.metric;state.kpiRanges[m].end=e.target.value;renderKpiChart(m);});
 document.getElementById("search").oninput=e=>{state.search=e.target.value;renderTables();};
 document.getElementById("reset").onclick=()=>{state.search="";document.getElementById("search").value="";renderTables();};
+document.getElementById("tradeSearch").oninput=e=>{state.tradeSearch=e.target.value;renderTables();};
+document.getElementById("tradeSearchReset").onclick=()=>{state.tradeSearch="";document.getElementById("tradeSearch").value="";renderTables();};
 document.getElementById("issuerSearch").oninput=e=>{state.issuerSearch=e.target.value;state.selectedIssuer=null;state.issuerIndex=0;renderTables();};
 document.getElementById("issuerSearch").onkeydown=e=>{
   const count=document.querySelectorAll("#issuerChoices .suggestion").length;
@@ -704,7 +748,14 @@ document.getElementById("issuerSearch").onkeydown=e=>{
   if(e.key==="Enter"){e.preventDefault();const item=document.querySelectorAll("#issuerChoices .suggestion")[state.issuerIndex]; if(item) selectIssuer(item.dataset.issuer); else runIssuerSearch();}
 };
 document.getElementById("issuerRun").onclick=runIssuerSearch;
-document.getElementById("resetAll").onclick=()=>{state.type=[];state.strategy=[];state.mid=[];state.manager=[];state.fund=[];state.multi={type:false,strategy:false,mid:false,manager:false,fund:false};state.search="";state.tradeEnd=DATA.tradeMax||DATA.asOf;state.tradeStart=defaultTradeStart(state.tradeEnd);state.kpiRanges=Object.fromEntries(kpiMetrics.map(k=>[k,{start:defaultTradeStart(DATA.kpiMax||DATA.asOf),end:DATA.kpiMax||DATA.asOf}]));state.issuerSearch="롯데카드";state.selectedIssuer="롯데카드";state.issuerIndex=0;document.getElementById("search").value="";syncTradeInputs();document.querySelectorAll(".kpiStartInput").forEach(el=>{const m=el.dataset.metric;el.value=state.kpiRanges[m].start;});document.querySelectorAll(".kpiEndInput").forEach(el=>{const m=el.dataset.metric;el.value=state.kpiRanges[m].end;});document.getElementById("issuerSearch").value=state.issuerSearch;render();};
+document.getElementById("resetAll").onclick=()=>{state.type=[];state.strategy=[];state.mid=[];state.manager=[];state.fund=[];state.multi={type:false,strategy:false,mid:false,manager:false,fund:false};state.panelFilters=clonePanelConfig(state.panelDefaults);state.search="";state.tradeSearch="";state.tradeEnd=DATA.tradeMax||DATA.asOf;state.tradeStart=defaultTradeStart(state.tradeEnd);state.kpiRanges=Object.fromEntries(kpiMetrics.map(k=>[k,{start:defaultTradeStart(DATA.kpiMax||DATA.asOf),end:DATA.kpiMax||DATA.asOf}]));state.issuerSearch="롯데카드";state.selectedIssuer="롯데카드";state.issuerIndex=0;document.getElementById("search").value="";document.getElementById("tradeSearch").value="";syncTradeInputs();document.getElementById("issuerSearch").value=state.issuerSearch;renderPanelFilters();render();};
+const panelFilterModal=document.getElementById("panelFilterModal"), panelFilterStatus=document.getElementById("panelFilterStatus");
+document.getElementById("openPanelFilters").onclick=()=>{renderPanelFilters();panelFilterModal.classList.add("open");};
+document.getElementById("closePanelFilters").onclick=()=>panelFilterModal.classList.remove("open");
+panelFilterModal.onclick=e=>{if(e.target===panelFilterModal)panelFilterModal.classList.remove("open");};
+document.addEventListener("keydown",e=>{if(e.key==="Escape")panelFilterModal.classList.remove("open");});
+document.getElementById("savePanelDefaults").onclick=()=>{state.panelDefaults=clonePanelConfig(state.panelFilters);localStorage.setItem("bondPanelFilterDefaultsV1",JSON.stringify(state.panelDefaults));panelFilterStatus.textContent="현재 선택값을 이 브라우저의 기본값으로 저장했습니다.";};
+document.getElementById("resetPanelDefaults").onclick=()=>{state.panelFilters=clonePanelConfig(state.panelDefaults);renderPanelFilters();render();panelFilterStatus.textContent="저장된 기본값으로 되돌렸습니다.";};
 async function hydrateManualData(){
   const client=window.parent!==window&&window.parent.dashboardSupabase;if(!client)return;
   const load=async key=>{let out=[];for(let start=0;;start+=1000){const {data,error}=await client.from("manual_file_rows").select("payload").eq("domain","bond").eq("file_key",key).order("row_no").range(start,start+999);if(error)throw error;out.push(...data.map(x=>x.payload));if(data.length<1000)return out;}};
