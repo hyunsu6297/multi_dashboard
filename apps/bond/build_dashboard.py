@@ -419,11 +419,16 @@ table.data{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap
 <script>
 const DATA = __DATA__;
 const state = {type:[],strategy:[],mid:[],manager:[],fund:[],multi:{type:false,strategy:false,mid:false,manager:false,fund:false},search:"",tradeSearch:"",issuerSearch:"롯데카드",selectedIssuer:"롯데카드",issuerIndex:0,activeTab:"summary",sorts:{}};
-const panelDefs={duration:"듀레이션",delta:"델타",ytm:"YTM",sector:"중분류(섹터)",maturity:"만기 구조",rating:"신용등급"};
+const panelDefs={exposure:"총 익스포저",trade:"매매내역",duration:"듀레이션",delta:"델타",ytm:"YTM",sector:"중분류(섹터)",maturity:"만기 구조",rating:"신용등급"};
 const panelAssets=[...new Set(DATA.holdings.map(d=>d.asset).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
 const panelMarkets=[...new Set(DATA.holdings.map(d=>d.market).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
+const panelMids=[...new Set(DATA.holdings.map(d=>d.mid||"미분류"))].sort((a,b)=>a.localeCompare(b,"ko"));
+const tradeAssets=[...new Set(DATA.trades.map(d=>d.asset).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
+const tradeMarkets=[...new Set(DATA.trades.map(d=>d.market).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ko"));
 const included=(all,excluded)=>all.filter(v=>!excluded.includes(v));
 const factoryPanelDefaults={
+  exposure:{assets:included(panelAssets,["해외상품","선물옵션","선물옵션파생","채권차입","채권매도"]),markets:included(panelMarkets,["FX스왑","FX SWAP","국채선물","레포","해외파생"]),mids:panelMids.filter(v=>!v.includes("국고채"))},
+  trade:{assets:["채권","어음","펀드","기타","해외상품","현금성자산"],markets:included(tradeMarkets,["레포"])},
   duration:{assets:["어음","채권","현금성자산"],markets:["CD","기업어음","일반","정기예금","현금 및 예금"]},
   delta:{assets:["어음","채권","현금성자산"],markets:["CD","기업어음","일반","정기예금","현금 및 예금"]},
   ytm:{assets:["어음","채권","현금성자산"],markets:["CD","기업어음","일반","정기예금","현금 및 예금"]},
@@ -435,7 +440,7 @@ const clonePanelConfig=value=>JSON.parse(JSON.stringify(value));
 function validPanelConfig(value){
   const out=clonePanelConfig(factoryPanelDefaults);
   if(!value||typeof value!=="object") return out;
-  Object.keys(panelDefs).forEach(key=>{if(value[key]){out[key].assets=(Array.isArray(value[key].assets)?value[key].assets:out[key].assets).filter(v=>panelAssets.includes(v));out[key].markets=(Array.isArray(value[key].markets)?value[key].markets:out[key].markets).filter(v=>panelMarkets.includes(v));}});
+  Object.keys(panelDefs).forEach(key=>{if(value[key]){const assets=key==="trade"?tradeAssets:panelAssets,markets=key==="trade"?tradeMarkets:panelMarkets;out[key].assets=(Array.isArray(value[key].assets)?value[key].assets:out[key].assets).filter(v=>assets.includes(v));out[key].markets=(Array.isArray(value[key].markets)?value[key].markets:out[key].markets).filter(v=>markets.includes(v));if(out[key].mids)out[key].mids=(Array.isArray(value[key].mids)?value[key].mids:out[key].mids).filter(v=>panelMids.includes(v));}});
   return out;
 }
 function loadPanelDefaults(){try{return validPanelConfig(JSON.parse(localStorage.getItem("bondPanelFilterDefaultsV1")));}catch(_){return clonePanelConfig(factoryPanelDefaults);}}
@@ -489,14 +494,12 @@ function tradeDateBase(d){
 }
 function panelBase(key,d){
   const cfg=state.panelFilters[key];
-  return cfg.assets.includes(d.asset)&&cfg.markets.includes(d.market);
+  return cfg.assets.includes(d.asset)&&cfg.markets.includes(d.market)&&(!cfg.mids||cfg.mids.includes(d.mid||"미분류"));
 }
 const inSet = (v, items) => items.includes(v);
 const hasAny = (v, items) => items.some(x => String(v||"").includes(x));
 function holdingBase(d){
-  return !inSet(d.asset,["해외상품","선물옵션","선물옵션파생","채권차입","채권매도"]) &&
-    !inSet(d.market,["FX스왑","FX SWAP","국채선물","레포","해외파생"]) &&
-    !hasAny(d.mid,["국고채"]);
+  return panelBase("exposure",d);
 }
 function dyBase(d){
   return inSet(d.asset,["어음","채권","현금성자산"]) &&
@@ -512,8 +515,7 @@ function ratingBase(d){
     inSet(d.market,["CD","기업어음","일반"]);
 }
 function tradeBase(d){
-  return inSet(d.asset,["채권","어음","펀드","기타","해외상품","현금성자산"]) &&
-    d.market !== "레포" && (d.asset!=="해외상품"||d.market==="해외채권");
+  return panelBase("trade",d);
 }
 function matchesExcept(d, skipKey){
   return (skipKey==="type"||!state.type.length||state.type.includes(d.type))&&(skipKey==="strategy"||!state.strategy.length||state.strategy.includes(d.strategy))&&(skipKey==="mid"||!state.mid.length||state.mid.includes(d.mid))&&(skipKey==="manager"||!state.manager.length||state.manager.includes(d.manager))&&(skipKey==="fund"||!state.fund.length||state.fund.includes(d.fund));
@@ -587,7 +589,7 @@ function renderFilters(){
 function renderPanelFilters(){
   const box=document.getElementById("panelFilterGrid");
   const choices=(key,field,values)=>values.map(v=>`<label class="panelFilterChoice"><input type="checkbox" data-panel="${key}" data-field="${field}" value="${esc(v)}" ${state.panelFilters[key][field].includes(v)?"checked":""}><span>${esc(v)}</span></label>`).join("");
-  box.innerHTML=Object.entries(panelDefs).map(([key,title])=>`<section class="panelFilterCard"><h3>${title}</h3><div class="panelFilterGroup"><b>자산군</b><div class="panelFilterChoices">${choices(key,"assets",panelAssets)}</div></div><div class="panelFilterGroup"><b>시장구분</b><div class="panelFilterChoices">${choices(key,"markets",panelMarkets)}</div></div><div class="panelFilterActions"><button type="button" data-panel-action="all" data-panel="${key}">전체 선택</button><button type="button" data-panel-action="clear" data-panel="${key}">전체 해제</button></div></section>`).join("");
+  box.innerHTML=Object.entries(panelDefs).map(([key,title])=>{const assets=key==="trade"?tradeAssets:panelAssets,markets=key==="trade"?tradeMarkets:panelMarkets,midGroup=key==="exposure"?`<div class="panelFilterGroup"><b>중분류</b><div class="panelFilterChoices">${choices(key,"mids",panelMids)}</div></div>`:"";return `<section class="panelFilterCard"><h3>${title}${key==="exposure"?" · 레버리지/보유내역 공통":""}</h3><div class="panelFilterGroup"><b>자산군</b><div class="panelFilterChoices">${choices(key,"assets",assets)}</div></div><div class="panelFilterGroup"><b>시장구분</b><div class="panelFilterChoices">${choices(key,"markets",markets)}</div></div>${midGroup}<div class="panelFilterActions"><button type="button" data-panel-action="all" data-panel="${key}">전체 선택</button><button type="button" data-panel-action="clear" data-panel="${key}">전체 해제</button></div></section>`;}).join("");
   box.querySelectorAll("input").forEach(input=>input.onchange=()=>{
     const list=state.panelFilters[input.dataset.panel][input.dataset.field], value=input.value;
     if(input.checked&&!list.includes(value)) list.push(value);
@@ -595,8 +597,8 @@ function renderPanelFilters(){
     render();
   });
   box.querySelectorAll("button").forEach(button=>button.onclick=()=>{
-    const key=button.dataset.panel, all=button.dataset.panelAction==="all";
-    state.panelFilters[key]={assets:all?[...panelAssets]:[],markets:all?[...panelMarkets]:[]};
+    const key=button.dataset.panel, all=button.dataset.panelAction==="all",assets=key==="trade"?tradeAssets:panelAssets,markets=key==="trade"?tradeMarkets:panelMarkets;
+    state.panelFilters[key]={assets:all?[...assets]:[],markets:all?[...markets]:[],...(key==="exposure"?{mids:all?[...panelMids]:[]}:{})};
     renderPanelFilters();render();
   });
 }
