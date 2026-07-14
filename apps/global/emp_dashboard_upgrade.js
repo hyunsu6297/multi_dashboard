@@ -254,6 +254,7 @@
           DATA.emp.principals[name] = Number(DATA.emp.principals[name] || 0);
         });
       }
+      applyEtfClassificationToRows();
       if (marketRows[0]?.payload) applyMarketData(marketRows[0].payload);
       globalDbReady = true;
       return true;
@@ -276,6 +277,7 @@
   }
   async function saveGlobalEtfs() {
     await replaceGlobalManualRows("etf_db", DATA.etfs.map(row => ({ ...row })), "Data");
+    applyEtfClassificationToRows();
     globalDbReady = true;
   }
   async function saveGlobalFunds() {
@@ -875,6 +877,63 @@
   function tickerKey(value) {
     return String(value || "").trim().toUpperCase().replace(/\s+/g, " ");
   }
+  function compactTickerKey(value) {
+    return tickerKey(value).replace(/\s+(US|KS)\s+EQUITY$/i, "");
+  }
+  function etfLookupKeys(etf) {
+    const keys = new Set();
+    [etf.isin, etf.ticker, etf.name, etf.koreanName, etf.fullName].forEach(value => {
+      const key = tickerKey(value);
+      if (!key) return;
+      keys.add(key);
+      keys.add(compactTickerKey(key));
+      const first = key.split(" ")[0];
+      if (first && first.length >= 2) keys.add(first);
+    });
+    return [...keys].filter(Boolean);
+  }
+  function rowLookupKeys(row) {
+    const keys = new Set();
+    [row.code, row.ticker, row.security, row.name].forEach(value => {
+      const key = tickerKey(value);
+      if (!key) return;
+      keys.add(key);
+      keys.add(compactTickerKey(key));
+      const first = key.split(" ")[0];
+      if (first && first.length >= 2) keys.add(first);
+    });
+    return [...keys].filter(Boolean);
+  }
+  function buildEtfLookup() {
+    const map = new Map();
+    DATA.etfs.forEach(etf => {
+      etfLookupKeys(etf).forEach(key => {
+        if (!map.has(key)) map.set(key, etf);
+      });
+    });
+    return map;
+  }
+  function findEtfForRow(row, lookup = buildEtfLookup()) {
+    for (const key of rowLookupKeys(row)) {
+      const meta = lookup.get(key);
+      if (meta) return meta;
+    }
+    return null;
+  }
+  function applyEtfClassificationToRows() {
+    const lookup = buildEtfLookup();
+    [...DATA.holdings, ...DATA.trades].forEach(row => {
+      const meta = findEtfForRow(row, lookup);
+      if (!meta) return;
+      row.country = meta.country || row.country || "미분류";
+      row.large = meta.large || row.large || "미분류";
+      row.mid = meta.mid || row.mid || "미분류";
+      row.small = meta.small || row.small || "미분류";
+      row.ticker = meta.name || row.ticker || "";
+      row.security = meta.ticker || row.security || row.ticker || row.code || "";
+      row.emp = meta.emp || row.emp || "";
+    });
+  }
   function unclassifiedCandidates() {
     const rows = [...DATA.holdings.map(row => ({ ...row, source: "fund" })), ...selectedEmpExposureRows()];
     const existing = new Set(DATA.etfs.flatMap(etf => [etf.ticker, etf.name, etf.isin].map(tickerKey)).filter(Boolean));
@@ -909,9 +968,7 @@
     renderEtfManager();
   }
   function tradeTicker(row) {
-    const code = tickerKey(row.code);
-    const name = tickerKey(row.name || row.ticker);
-    const meta = DATA.etfs.find(etf => tickerKey(etf.isin) === code || tickerKey(etf.name) === name || tickerKey(etf.koreanName) === name) || {};
+    const meta = findEtfForRow(row) || {};
     return meta.ticker || row.security || row.ticker || row.code || "";
   }
   function displayTicker(value) {
@@ -1344,6 +1401,7 @@
   document.getElementById("saveEtfChanges").onclick = async () => {
     await saveEtfs();
     clearEtfDirty();
+    render();
   };
   document.getElementById("addFundInfo").onclick = () => {
     DATA.funds.push({ manager: "", fund: "", depositCode: "", assocCode: "", joinDate: "", eval: 0, share: 0 });
