@@ -25,6 +25,7 @@ FIELDS = {
 
 KIWOOM_US_EXCHANGES = ("NY", "ND", "NA")
 KIWOOM_US_EXCHANGE_NAMES = {"NY": "NYSE", "ND": "NASDAQ", "NA": "AMEX"}
+KIWOOM_US_REGULAR_CLOSE_TIME = "160000"
 
 
 def clean_number(value, default: float = 0.0) -> float:
@@ -157,6 +158,33 @@ class KiwoomClient:
         detail = f" ({'; '.join(errors[:2])})" if errors else ""
         raise RuntimeError(f"{ticker}의 키움 미국주식 거래소구분을 찾지 못했습니다.{detail}")
 
+    def us_regular_close_row(self, exchange: str, ticker: str, trade_date: str) -> dict:
+        if not trade_date:
+            return {}
+        try:
+            chart = self.request_json("/api/us/chart", "usa06011", {
+                "stex_tp": exchange,
+                "stk_cd": ticker,
+                "strt_dt": trade_date,
+                "tic_scope": "5",
+            })
+        except Exception:
+            return {}
+        rows = [
+            row for row in (chart.get("result_list") or [])
+            if str(row.get("bus_dt") or "") == trade_date
+        ]
+        if not rows:
+            return {}
+        close_at = f"{trade_date}{KIWOOM_US_REGULAR_CLOSE_TIME}"
+        regular_rows = [
+            row for row in rows
+            if str(row.get("cntr_tm") or "") <= close_at
+        ]
+        if regular_rows:
+            return max(regular_rows, key=lambda row: str(row.get("cntr_tm") or ""))
+        return min(rows, key=lambda row: str(row.get("cntr_tm") or ""))
+
     def fetch_us(self, security: str) -> dict:
         ticker = security_code(security)
         exchange = self.us_exchange(ticker)
@@ -168,12 +196,15 @@ class KiwoomClient:
         })
         rows = daily.get("result_list") or []
         day = rows[0] if rows else {}
-        price = clean_abs_number(day.get("cur_prc") or quote.get("cur_prc"))
+        regular_close = self.us_regular_close_row(exchange, ticker, str(day.get("dt") or ""))
+        price = clean_abs_number(regular_close.get("cur_prc") or day.get("cur_prc") or quote.get("cur_prc"))
         pred_pre = clean_number(day.get("pred_pre") or quote.get("pred_pre"))
         prev_close = clean_abs_number(day.get("base_pric") or quote.get("base_close_pric")) or (price - pred_pre if price else 0)
-        change = clean_number(day.get("flu_rt") or quote.get("flu_rt")) / 100
-        if not change and price and prev_close:
+        change = 0.0
+        if price and prev_close:
             change = (price / prev_close) - 1
+        if not change:
+            change = clean_number(day.get("flu_rt") or quote.get("flu_rt")) / 100
         base_exrt = clean_abs_number(quote.get("base_exrt"))
         if 1_000 <= base_exrt <= 2_000:
             self.fx_candidates.append(base_exrt)
@@ -183,8 +214,9 @@ class KiwoomClient:
             "price": price,
             "prevClose": abs(prev_close),
             "change": change,
-            "priceDate": day.get("dt") or "",
-            "priceSource": "kiwoom_usa20590_latest_daily_close",
+            "priceDate": regular_close.get("bus_dt") or day.get("dt") or "",
+            "priceSource": "kiwoom_usa06011_regular_close",
+            "priceTime": regular_close.get("cntr_tm") or "",
             "kiwoomExchange": exchange,
             "kiwoomExchangeName": KIWOOM_US_EXCHANGE_NAMES.get(exchange, exchange),
         }

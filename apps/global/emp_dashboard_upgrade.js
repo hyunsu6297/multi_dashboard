@@ -2,7 +2,7 @@
   const style = document.createElement("style");
   style.textContent = `
     #dashboard .notice,#dashboard .kpis{display:none!important}#dashboard .grid{margin-top:0}
-    #emp .panel{border-radius:8px}#emp .empTableWrap{max-height:calc(100vh - 185px)!important}#empTable{font-size:10.5px;table-layout:fixed;white-space:normal}#empTable th{padding:5px 4px;line-height:1.2;text-align:center}#empTable td{padding:4px 4px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}#empTable th:nth-child(n+4),#empTable td:nth-child(n+4){text-align:center!important}#empTable .manualCell{background:#fff!important}.manualInput{width:56px;border:1px solid #b8cbc6;border-radius:3px;padding:2px 3px;text-align:right;background:#fff}.targetWeightInput{width:72px}.manualInput:focus{outline:2px solid #e0b323;background:#fff8d8}.manualChanged{background:#fff3b0!important}.manualChanged .manualInput{background:#fff8d8!important;border-color:#d09b00!important;font-weight:800}.rowCheck,.etfCheck{width:14px;height:14px;accent-color:#064e43}.empActions{flex-wrap:wrap}.empStatus.dirty{color:#b7791f;font-weight:800}.empTableMeta{caption-side:top;text-align:right;color:#6c7f7b;font-size:11px;font-weight:900;padding:0 2px 4px}.changeBarCell{padding:3px 4px!important}.changeBar{position:relative;height:15px;background:#e4efec;border-radius:3px;overflow:hidden}.changeBar:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(6,78,67,.28);z-index:2}.changeFill{position:absolute;top:0;bottom:0;left:50%;background:linear-gradient(90deg,#6fa99e,#064e43)}.changeFill.neg{left:auto;right:50%;background:linear-gradient(90deg,#c2413a,#f0a09b)}.changeBarText{position:absolute;inset:0;display:grid;place-items:center;font-weight:900;font-size:9px;color:#173a34;text-shadow:0 1px 2px rgba(255,255,255,.9);z-index:3}
+    #emp .panel{border-radius:8px}#emp .empTableWrap{max-height:calc(100vh - 185px)!important}#empTable{font-size:10.5px;table-layout:fixed;white-space:normal}#empTable th{padding:5px 4px;line-height:1.2;text-align:center}#empTable td{padding:4px 4px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}#empTable th:nth-child(n+4),#empTable td:nth-child(n+4){text-align:center!important}#empTable .manualCell{background:#fff!important}.manualInput{width:56px;border:1px solid #b8cbc6;border-radius:3px;padding:2px 3px;text-align:right;background:#fff}.targetWeightInput{width:72px}.manualInput:focus{outline:2px solid #e0b323;background:#fff8d8}.manualChanged{background:#fff3b0!important}.manualChanged .manualInput{background:#fff8d8!important;border-color:#d09b00!important;font-weight:800}.rowCheck,.etfCheck{width:14px;height:14px;accent-color:#064e43}.rowMove{display:inline-grid;grid-template-columns:1fr 1fr;gap:2px}.moveBtn{width:20px;height:20px;border:1px solid #b6d1ca;background:#e9f2ef;color:#064e43;border-radius:3px;font-size:10px;font-weight:900;line-height:1;cursor:pointer;padding:0}.moveBtn:disabled{opacity:.35;cursor:default}.empActions{flex-wrap:wrap}.empStatus.dirty{color:#b7791f;font-weight:800}.empTableMeta{caption-side:top;text-align:right;color:#6c7f7b;font-size:11px;font-weight:900;padding:0 2px 4px}.changeBarCell{padding:3px 4px!important}.changeBar{position:relative;height:15px;background:#e4efec;border-radius:3px;overflow:hidden}.changeBar:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(6,78,67,.28);z-index:2}.changeFill{position:absolute;top:0;bottom:0;left:50%;background:linear-gradient(90deg,#6fa99e,#064e43)}.changeFill.neg{left:auto;right:50%;background:linear-gradient(90deg,#c2413a,#f0a09b)}.changeBarText{position:absolute;inset:0;display:grid;place-items:center;font-weight:900;font-size:9px;color:#173a34;text-shadow:0 1px 2px rgba(255,255,255,.9);z-index:3}
     .subtotalRow{background:#dfeeea!important;font-weight:900;color:#064e43}.subtotalRow td{border-top:2px solid #609d91;border-bottom:1px solid #609d91}.totalRow{background:#064e43!important;color:white;font-weight:900}.totalRow td{border-top:2px solid #033b32}
     .picker{position:fixed;inset:0;background:rgba(3,31,27,.46);display:none;place-items:center;z-index:100}.picker.active{display:grid}.pickerBox{width:min(1100px,94vw);max-height:84vh;background:white;border-radius:12px;padding:14px;box-shadow:0 22px 70px rgba(0,0,0,.25)}.pickerHead{display:flex;gap:8px;align-items:center;margin-bottom:10px}.pickerHead h2{margin:0;min-width:170px}.pickerTable{max-height:64vh;overflow:auto}.pickBtn{border:0;background:#064e43;color:white;border-radius:3px;padding:4px 8px;cursor:pointer}.pickBtn.added{background:#8aa9a1;cursor:default}.pickerCheck{width:15px;height:15px;accent-color:#064e43}.pickerBulk{border:1px solid #064e43;background:#064e43;color:#fff;border-radius:4px;padding:6px 10px;font-weight:800;cursor:pointer;white-space:nowrap}.pickerTray{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 8px}.pickerChip{border:1px solid #b6d1ca;background:#e9f2ef;color:#173a34;border-radius:12px;padding:3px 8px;font-size:11px}.pickerChip button{border:0;background:transparent;color:#b42318;font-weight:900;cursor:pointer;margin-left:4px}
     .etfManageTools,.empInfoTools,.fundManageTools{display:flex;gap:8px;align-items:center;margin-bottom:8px}.etfManageTools .search{max-width:420px}.etfInput,.empInfoInput,.fundInput{width:100%;min-width:80px;border:1px solid #b8cbc6;border-radius:3px;padding:4px}.etfInput.wide,.fundInput.wide{min-width:190px}.empPrincipalInput,.fundNumericInput{text-align:right}.etfStatus,.empInfoStatus,.fundStatus{font-size:11px;color:#6c7f7b;font-weight:800;margin-left:auto}.etfStatus.dirty,.empInfoStatus.dirty,.fundStatus.dirty{color:#b7791f}
@@ -541,6 +541,23 @@
     renderEmp();
     return rows.slice(insertAt, insertAt + rowsToInsert.length);
   };
+  const moveEmpRow = (index, direction) => {
+    const rows = empRows();
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= rows.length) return;
+    const [row] = rows.splice(index, 1);
+    rows.splice(nextIndex, 0, row);
+    const movedSelection = new Set();
+    selectedRows.forEach(selected => {
+      if (selected === index) movedSelection.add(nextIndex);
+      else if (selected === nextIndex) movedSelection.add(index);
+      else movedSelection.add(selected);
+    });
+    selectedRows.clear();
+    movedSelection.forEach(selected => selectedRows.add(selected));
+    markEmpDirty("행 순서 변경됨 · 변경저장을 눌러 확정");
+    renderEmp();
+  };
   const activeDimensions = () => state.showMidDimension ? ["large", "mid", "small"] : ["large", "small"];
   const dimensionLabel = () => activeDimensions().map(key => dimensionDefs.find(def => def[0] === key)?.[1] || key).join(" → ");
   const selectedEmpNames = () => state.empSelection?.length ? state.empSelection : Object.keys(DATA.emp.portfolios);
@@ -1068,7 +1085,7 @@
 
     renderDashboardAssetCharts();
 
-    const headers = ["선택", "종목", "종목명", "상장", "투자국가", "대분류", "중분류", "소분류", "시총", "전일 거래대금", "보유수량", "종가", "평가금액", "등락율(전일)", "손익(원화)", "현재비중", "목표비중", "차이", "거래방향", "거래수량", "거래금액(전일종가)"];
+    const headers = ["선택", "순서", "종목", "종목명", "상장", "투자국가", "대분류", "중분류", "소분류", "시총", "전일 거래대금", "보유수량", "종가", "평가금액", "등락율(전일)", "손익(원화)", "현재비중", "목표비중", "차이", "거래방향", "거래수량", "거래금액(전일종가)"];
     const groups = {};
     rows.forEach((row, index) => {
       const meta = securityEtf(row.security);
@@ -1087,16 +1104,16 @@
       list.forEach(({ row, index: i, meta, metric: m }) => {
         const side = m.signedTradeQty > 0 ? "매수" : m.signedTradeQty < 0 ? "매도" : "유지";
         const targetValue = row.targetWeightDraft ?? formatPercentInput(m.target * 100);
-        body += `<tr><td><input class="rowCheck" type="checkbox" data-row-check="${i}" ${selectedRows.has(i) ? "checked" : ""}></td><td>${esc(row.security)}</td><td>${esc(meta.koreanName || meta.fullName || "")}</td><td>${esc(meta.listing || "")}</td><td>${esc(meta.country || "")}</td><td>${esc(meta.large || "미분류")}</td><td>${esc(meta.mid || "")}</td><td>${esc(meta.small || "")}</td><td class="num">${integerAmount(marketDisplayAmount(row.marketCap, row.security))}</td><td class="num">${integerAmount(marketDisplayAmount(row.avgTurnover3m, row.security))}</td><td class="manualCell"><input class="manualInput" data-i="${i}" data-key="quantity" inputmode="numeric" value="${Number(row.quantity || 0).toLocaleString("ko-KR")}"></td><td class="num">${amount(row.price)}</td><td class="num">${amount(m.value)}</td><td class="changeBarCell">${changeBar(row.change)}</td><td class="num ${m.pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(m.pnl)}</td><td class="num">${pct2(m.current)}</td><td class="manualCell ${row.targetTouched && Math.abs(m.gap) >= 0.00005 ? "manualChanged" : ""}"><input class="manualInput targetWeightInput" data-i="${i}" data-key="targetWeight" inputmode="decimal" value="${esc(targetValue)}"></td><td class="num ${m.gap < 0 ? "neg" : "pos"}">${pct(m.gap)}</td><td>${side}</td><td class="num">${m.tradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(m.tradeAmount)}</td></tr>`;
+        body += `<tr><td><input class="rowCheck" type="checkbox" data-row-check="${i}" ${selectedRows.has(i) ? "checked" : ""}></td><td><span class="rowMove"><button class="moveBtn" type="button" title="위로 이동" data-move-row="${i}" data-move-dir="-1" ${i === 0 ? "disabled" : ""}>▲</button><button class="moveBtn" type="button" title="아래로 이동" data-move-row="${i}" data-move-dir="1" ${i === rows.length - 1 ? "disabled" : ""}>▼</button></span></td><td>${esc(row.security)}</td><td>${esc(meta.koreanName || meta.fullName || "")}</td><td>${esc(meta.listing || "")}</td><td>${esc(meta.country || "")}</td><td>${esc(meta.large || "미분류")}</td><td>${esc(meta.mid || "")}</td><td>${esc(meta.small || "")}</td><td class="num">${integerAmount(marketDisplayAmount(row.marketCap, row.security))}</td><td class="num">${integerAmount(marketDisplayAmount(row.avgTurnover3m, row.security))}</td><td class="manualCell"><input class="manualInput" data-i="${i}" data-key="quantity" inputmode="numeric" value="${Number(row.quantity || 0).toLocaleString("ko-KR")}"></td><td class="num">${amount(row.price)}</td><td class="num">${amount(m.value)}</td><td class="changeBarCell">${changeBar(row.change)}</td><td class="num ${m.pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(m.pnl)}</td><td class="num">${pct2(m.current)}</td><td class="manualCell ${row.targetTouched && Math.abs(m.gap) >= 0.00005 ? "manualChanged" : ""}"><input class="manualInput targetWeightInput" data-i="${i}" data-key="targetWeight" inputmode="decimal" value="${esc(targetValue)}"></td><td class="num ${m.gap < 0 ? "neg" : "pos"}">${pct(m.gap)}</td><td>${side}</td><td class="num">${m.tradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(m.tradeAmount)}</td></tr>`;
       });
-      body += `<tr class="subtotalRow"><td></td><td colspan="9">${esc(large)} 소계</td><td class="num">${groupQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(groupValue)}</td><td></td><td class="num ${groupPnl < 0 ? "neg" : "pos"}">${krwMillionAmount(groupPnl)}</td><td class="num">${pct2(principal ? groupValue / principal : 0)}</td><td class="num">${pct(groupTarget)}</td><td></td><td></td><td class="num">${groupTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(groupTradeAmount)}</td></tr>`;
+      body += `<tr class="subtotalRow"><td></td><td></td><td colspan="9">${esc(large)} 소계</td><td class="num">${groupQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(groupValue)}</td><td></td><td class="num ${groupPnl < 0 ? "neg" : "pos"}">${krwMillionAmount(groupPnl)}</td><td class="num">${pct2(principal ? groupValue / principal : 0)}</td><td class="num">${pct(groupTarget)}</td><td></td><td></td><td class="num">${groupTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(groupTradeAmount)}</td></tr>`;
     });
     const totalQty = rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
     const totalTarget = metrics.reduce((sum, metric) => sum + metric.target, 0);
     const totalTradeQty = metrics.reduce((sum, metric) => sum + metric.tradeQty, 0);
     const totalTradeAmount = metrics.reduce((sum, metric) => sum + metric.tradeAmount, 0);
-    body += `<tr class="totalRow"><td></td><td colspan="9">총계</td><td class="num">${totalQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(total)}</td><td></td><td class="num ${pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(pnl)}</td><td class="num">${pct2(principal ? total / principal : 0)}</td><td class="num">${pct(totalTarget)}</td><td></td><td></td><td class="num">${totalTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(totalTradeAmount)}</td></tr>`;
-    const colWidths = [2, 5.5, 6, 3, 3.5, 3.5, 3.5, 3.5, 4.5, 4.5, 4.5, 3.5, 5, 3.8, 5.2, 4, 4, 3.5, 3.2, 4.2, 5.2];
+    body += `<tr class="totalRow"><td></td><td></td><td colspan="9">총계</td><td class="num">${totalQty.toLocaleString("ko-KR")}</td><td></td><td class="num">${amount(total)}</td><td></td><td class="num ${pnl < 0 ? "neg" : "pos"}">${krwMillionAmount(pnl)}</td><td class="num">${pct2(principal ? total / principal : 0)}</td><td class="num">${pct(totalTarget)}</td><td></td><td></td><td class="num">${totalTradeQty.toLocaleString("ko-KR")}</td><td class="num">${amount(totalTradeAmount)}</td></tr>`;
+    const colWidths = [2, 3, 5.5, 6, 3, 3.5, 3.5, 3.5, 3.5, 4.5, 4.5, 4.5, 3.5, 5, 3.8, 5.2, 4, 4, 3.5, 3.2, 4.2, 5.2];
     document.getElementById("empTable").innerHTML = `<caption class="empTableMeta">시총·전일 거래대금 단위: 미국 상장 ETF 백만불 / 한국 상장 ETF 백만원</caption><colgroup>${colWidths.map(width => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
     document.querySelectorAll("#empTable input[data-i][data-key]").forEach(input => {
       if (input.dataset.key === "targetWeight") {
@@ -1116,6 +1133,10 @@
       const index = Number(input.dataset.rowCheck);
       if (input.checked) selectedRows.add(index);
       else selectedRows.delete(index);
+    });
+    document.querySelectorAll("#empTable [data-move-row]").forEach(button => button.onclick = () => {
+      if (button.disabled) return;
+      moveEmpRow(Number(button.dataset.moveRow), Number(button.dataset.moveDir));
     });
   };
 
@@ -1489,14 +1510,16 @@
   async function waitForGlobalMarketRequest(id, options = {}) {
     const client = await getGlobalSupabase();
     const timeoutMs = options.timeoutMs || 120000;
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       const { data, error } = await client
         .from("global_market_refresh_requests")
-        .select("status,error,result")
+        .select("status,error,result,started_at,completed_at")
         .eq("id", id)
         .single();
       if (error) throw error;
+      if (onProgress) onProgress(data, Date.now() - started);
       if (data?.status === "done") {
         await hydrateGlobalMarketData({ force: true });
         return data.result || {};
@@ -1506,7 +1529,7 @@
       }
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
-    throw new Error("Market refresh request timed out. Check that the local Kiwoom receiver is running.");
+    throw new Error("시세 새로고침 요청이 시간 초과되었습니다. 로컬 Kiwoom 수신기(run_global_kiwoom_receiver)를 켜고, 수신기 창의 오류 메시지를 확인하세요.");
   }
   async function requestGlobalMarketRefresh(requestType, securities = [], options = {}) {
     const id = await createGlobalMarketRequest(requestType, securities);
@@ -1637,10 +1660,23 @@
     button.disabled = true;
     try {
       if (globalDbLoadPromise) await globalDbLoadPromise.catch(() => false);
-      const securities = allMarketSecurities();
+      const empSecurities = Object.values(DATA.emp.portfolios || {})
+        .flat()
+        .flatMap(row => securityRequests(row.security));
+      const securities = state.activeTab === "emp"
+        ? [...new Set(empSecurities.filter(Boolean))]
+        : allMarketSecurities();
       if (!securities.length) throw new Error("No securities to refresh.");
-      status.textContent = "Kiwoom refresh request queued. Waiting for local receiver...";
-      const result = await requestGlobalMarketRefresh("full", securities, { timeoutMs: 180000 });
+      status.textContent = `Kiwoom 요청 등록됨 · 로컬 수신기 대기 중 (${securities.length.toLocaleString("ko-KR")}종목)`;
+      const requestType = state.activeTab === "emp" ? "batch" : "full";
+      const result = await requestGlobalMarketRefresh(requestType, securities, {
+        timeoutMs: state.activeTab === "emp" ? 150000 : 300000,
+        onProgress: (request, elapsedMs) => {
+          const seconds = Math.floor(elapsedMs / 1000);
+          const statusLabel = request?.status === "processing" ? "수신기 처리 중" : "수신기 대기 중";
+          status.textContent = `${statusLabel} · ${seconds}초 경과 · ${securities.length.toLocaleString("ko-KR")}종목`;
+        }
+      });
       await hydrateGlobalMarketData({ force: true });
       const refreshedMarket = JSON.parse(localStorage.getItem("globalDashboard.market") || "null") || {};
       const map = refreshedMarket.securities || {};
