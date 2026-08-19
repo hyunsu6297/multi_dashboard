@@ -105,7 +105,7 @@ jobs:
         run: echo "Mezzanine delta refresh was unavailable; the last valid delta history will be used."
 
       - name: Build stock dashboard
-        run: python apps/stock/build_fund_dashboard.py --source supabase --start 2026-04-06 --static-data-bundle --recent-snapshots 3
+        run: python apps/stock/build_fund_dashboard.py --source supabase --start 2026-08-01 --static-data-bundle --recent-snapshots 3
 
       - name: Build bond dashboard
         run: python apps/bond/build_dashboard.py
