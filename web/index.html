@@ -530,7 +530,6 @@
       if (currentPageKey === "admin-members" && profile.role !== "admin") {
         await showPage("stock-dashboard");
       }
-      await refreshLiveStock(true);
     }
 
     function setAuthMode(mode) {
@@ -598,7 +597,6 @@
       }
       status.textContent = "";
       await handleAuthenticatedUser(data.user);
-      await refreshLiveStock(true);
     });
 
     document.getElementById("signupForm").addEventListener("submit", async (event) => {
@@ -669,7 +667,6 @@
       frame.title = page.title;
       openButton.href = page.src;
       location.hash = key;
-      if (key === "stock-dashboard") await refreshLiveStock(true);
     }
 
     document.querySelectorAll("[data-page]").forEach((button) => {
