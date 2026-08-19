@@ -316,6 +316,7 @@
           <div class="group-title">1. 주식 대시보드</div>
           <button type="button" class="sub active" data-page="stock-dashboard">대시보드</button>
           <button type="button" class="sub" data-page="stock-edit">정보수정</button>
+          <button type="button" class="sub" data-page="stock-fund-master">펀드마스터</button>
         </section>
         <section class="group">
           <div class="group-title">2. 채권대시보드</div>
@@ -383,8 +384,13 @@
       },
       "stock-edit": {
         title: "주식 대시보드 정보수정",
-        note: "주식 대시보드에서 엑셀로 관리하던 수기 입력 항목",
+        note: "주식보유현황과 업종 수기 입력 항목",
         src: "pages/manual-edit/index.html?domain=stock"
+      },
+      "stock-fund-master": {
+        title: "주식 펀드 마스터",
+        note: "수익증권 펀드코드, 유형, 약식명, 활성 상태 관리",
+        src: "pages/stock-fund-master/index.html"
       },
       "bond-dashboard": {
         title: "채권형수익증권 대시보드",
@@ -679,7 +685,6 @@
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) await handleAuthenticatedUser(session.user);
     else showLogin();
-    setInterval(() => refreshLiveStock(), 20000);
   </script>
 </body>
 </html>

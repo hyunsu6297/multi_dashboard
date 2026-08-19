@@ -26,6 +26,13 @@ def main() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         print(f"copied {source.name} -> {target.relative_to(DIST)}")
+    stock_data = ROOT / "apps" / "stock" / "data"
+    if stock_data.is_dir():
+        target = DIST / "pages" / "stock" / "data"
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(stock_data, target)
+        print(f"copied stock data -> {target.relative_to(DIST)}")
     global_script = ROOT / "apps" / "global" / "emp_dashboard_upgrade.js"
     if global_script.is_file():
         target = DIST / "pages" / "global" / "emp_dashboard_upgrade.js"

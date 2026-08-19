@@ -30,6 +30,7 @@ OPENAPI_STOCK_FUTURE_CODE_PATH = Path("C:/OpenAPI/data/sfcode.dat")
 DEFAULT_HOST = "https://api.kiwoom.com"
 DEFAULT_CYCLE_SECONDS = 20.0
 DEFAULT_BATCH_SIZE = 80
+DEFAULT_TOKEN_REFRESH_MINUTES = 50.0
 KOSPI200_PROXY_CODE = "069500"
 KOSDAQ150_PROXY_CODE = "229200"
 
@@ -190,9 +191,9 @@ def normalize_quote(data: dict[str, Any], fallback_name: str = "") -> dict[str, 
     }
 
 
-def collect_codes() -> dict[str, str]:
+def collect_codes(data_source: str = "excel", start_date: str | None = None, end_date: str | None = None) -> dict[str, str]:
     codes: dict[str, str] = {}
-    funds, _, holdings = read_inputs()
+    funds, _, holdings, _, _ = read_inputs(data_source, start_date, end_date)
     fund_codes = set(funds[COL_FUND_CODE].map(normalize_code))
     fund_code_col = COL_LOOKUP_FUND_CODE if COL_LOOKUP_FUND_CODE in holdings.columns else COL_ASSOC_FUND_CODE
     holdings = holdings[holdings[fund_code_col].map(normalize_code).isin(fund_codes)]
@@ -415,6 +416,14 @@ def run_refresh(args: argparse.Namespace, token: str, codes: dict[str, str]) -> 
     return quotes
 
 
+def usable_quote_count(quotes: dict[str, Any]) -> int:
+    return sum(
+        1
+        for item in quotes.get("stocks", {}).values()
+        if isinstance(item, dict) and item.get("price") not in (None, 0, 0.0)
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Continuously refresh Kiwoom REST API quotes.")
     parser.add_argument("--host", default=os.getenv("KIWOOM_HOST", DEFAULT_HOST))
@@ -424,18 +433,35 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--code", default=None)
     parser.add_argument("--output", type=Path, default=OUTPUT)
+    parser.add_argument("--source", choices=["excel", "supabase"], default=os.getenv("DASHBOARD_DATA_SOURCE", "excel"))
+    parser.add_argument("--start", default=os.getenv("DASHBOARD_START_DATE") or None)
+    parser.add_argument("--end", default=os.getenv("DASHBOARD_END_DATE") or None)
     parser.add_argument("--build-dashboard", action="store_true")
     parser.add_argument("--once", action="store_true", help="Run one refresh and exit.")
+    parser.add_argument("--token-refresh-minutes", type=float, default=DEFAULT_TOKEN_REFRESH_MINUTES)
     args = parser.parse_args()
 
     token = os.getenv("KIWOOM_ACCESS_TOKEN")
-    if not token:
-        appkey, secretkey = load_credentials()
-        if not appkey or not secretkey:
-            raise SystemExit("KIWOOM_APPKEY/KIWOOM_SECRETKEY or *_appkey.txt/*_secretkey.txt is required.")
-        token = request_token(args.host, appkey, secretkey, args.timeout)
+    token_from_env = bool(token)
+    appkey, secretkey = load_credentials()
+    if not token_from_env and (not appkey or not secretkey):
+        raise SystemExit("KIWOOM_APPKEY/KIWOOM_SECRETKEY or *_appkey.txt/*_secretkey.txt is required.")
+    token_issued_at = 0.0
 
-    codes = collect_codes()
+    def refresh_token(force: bool = False) -> str:
+        nonlocal token, token_issued_at
+        if token_from_env:
+            return str(token)
+        interval = max(0.0, args.token_refresh_minutes) * 60.0
+        if force or not token or (interval and time.monotonic() - token_issued_at >= interval):
+            token = request_token(args.host, str(appkey), str(secretkey), args.timeout)
+            token_issued_at = time.monotonic()
+            print("Kiwoom token refreshed.")
+        return str(token)
+
+    refresh_token(force=True)
+
+    codes = collect_codes(args.source, args.start, args.end)
     mezzanine_codes = collect_mezzanine_codes()
     codes.update(mezzanine_codes)
     print(f"quote universe: mezzanine_underlyings={len(mezzanine_codes)}, merged={len(codes)}")
@@ -444,7 +470,17 @@ def main() -> None:
 
     while True:
         started = time.monotonic()
-        run_refresh(args, token, codes)
+        refresh_token()
+        try:
+            quotes = run_refresh(args, str(token), codes)
+        except Exception:
+            if token_from_env:
+                raise
+            print("refresh failed; refreshing Kiwoom token and retrying once.")
+            quotes = run_refresh(args, refresh_token(force=True), codes)
+        if not token_from_env and usable_quote_count(quotes) == 0 and quotes.get("failed", 0):
+            print("no usable quotes; refreshing Kiwoom token and retrying once.")
+            run_refresh(args, refresh_token(force=True), codes)
         if args.once:
             break
         sleep_for = max(0.0, args.cycle_seconds - (time.monotonic() - started))

@@ -24,24 +24,6 @@
   },
   {
     "domain": "stock",
-    "file_key": "fund_info",
-    "file_label": "펀드 정보.xlsx",
-    "sheets": [
-      {
-        "name": "Sheet1",
-        "columns": [
-          "펀드코드",
-          "펀드명",
-          "지분율",
-          "유형",
-          "평가액"
-        ],
-        "row_count": 20
-      }
-    ]
-  },
-  {
-    "domain": "stock",
     "file_key": "stock_holding",
     "file_label": "주식보유현황.xlsx",
     "sheets": [
@@ -84,31 +66,6 @@
           "중분류"
         ],
         "row_count": 2554
-      }
-    ]
-  },
-  {
-    "domain": "stock",
-    "file_key": "mezzanine_nav",
-    "file_label": "메자닌 기준가.xlsx",
-    "sheets": [
-      {
-        "name": "Data",
-        "columns": [
-          "거래일",
-          "예탁원펀드코드",
-          "펀드명",
-          "유형코드(대)",
-          "유형코드(소)",
-          "상품코드",
-          "종목명",
-          "기준가",
-          "수량",
-          "등락율",
-          "평가금액",
-          "자산대분류코드"
-        ],
-        "row_count": 253
       }
     ]
   },

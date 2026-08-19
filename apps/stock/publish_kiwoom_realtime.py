@@ -21,6 +21,7 @@ from fetch_kiwoom_quotes import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CYCLE_SECONDS,
     DEFAULT_HOST,
+    DEFAULT_TOKEN_REFRESH_MINUTES,
     OUTPUT,
     collect_codes,
     collect_mezzanine_codes,
@@ -287,13 +288,26 @@ def main() -> None:
     parser.add_argument("--code", default=None)
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--token-refresh-minutes", type=float, default=DEFAULT_TOKEN_REFRESH_MINUTES)
     args = parser.parse_args()
     args.build_dashboard = False
 
     appkey, secretkey = load_credentials()
     if not appkey or not secretkey:
         raise SystemExit("KIWOOM_APPKEY and KIWOOM_SECRETKEY are required")
-    token = request_token(args.host, appkey, secretkey, args.timeout)
+    token = ""
+    token_issued_at = 0.0
+
+    def refresh_token(force: bool = False) -> str:
+        nonlocal token, token_issued_at
+        interval = max(0.0, args.token_refresh_minutes) * 60.0
+        if force or not token or (interval and time.monotonic() - token_issued_at >= interval):
+            token = request_token(args.host, appkey, secretkey, args.timeout)
+            token_issued_at = time.monotonic()
+            print("Kiwoom token refreshed.")
+        return token
+
+    refresh_token(force=True)
     stock_codes = collect_codes()
     mezzanine_codes = collect_mezzanine_codes()
     codes = {**stock_codes, **mezzanine_codes}
@@ -312,9 +326,13 @@ def main() -> None:
     while True:
         started = time.monotonic()
         try:
-            publish_cycle(publisher, args, token, codes)
+            publish_cycle(publisher, args, refresh_token(), codes)
         except Exception as exc:
             print(f"publish cycle failed: {exc}")
+            try:
+                publish_cycle(publisher, args, refresh_token(force=True), codes)
+            except Exception as retry_exc:
+                print(f"publish retry failed after token refresh: {retry_exc}")
         if args.once:
             break
         sleep_for = max(0.0, args.cycle_seconds - (time.monotonic() - started))
