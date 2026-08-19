@@ -30,7 +30,7 @@ permissions:
 
 concurrency:
   group: kfr-daily-source-import
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   download-build-deploy:
