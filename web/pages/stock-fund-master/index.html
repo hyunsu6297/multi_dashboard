@@ -5,257 +5,96 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>주식 펀드 마스터</title>
   <style>
-    :root {
-      --ink: #172026;
-      --muted: #65717d;
-      --line: #d9e1e8;
-      --panel: #ffffff;
-      --wash: #f4f7f8;
-      --soft: #eaf5f2;
-      --accent: #0f766e;
-      --danger: #b42318;
-      --warning: #9a6700;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: var(--wash);
-      color: var(--ink);
-      font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
-      font-size: 13px;
-    }
-
-    header {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 18px 22px 12px;
-      background: #fff;
-      border-bottom: 1px solid var(--line);
-    }
-
-    h1 {
-      margin: 0 0 4px;
-      font-size: 21px;
-      letter-spacing: 0;
-    }
-
-    .subtitle,
-    .status-text {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .header-actions,
-    .toolbar,
-    .left-tools,
-    .right-tools {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    main {
-      padding: 14px 18px 22px;
-    }
-
-    .panel {
-      overflow: hidden;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: 0 1px 4px rgba(15, 23, 42, .04);
-    }
-
-    .toolbar {
-      justify-content: space-between;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--line);
-      background: #fbfcfd;
-    }
-
-    button,
-    input {
-      height: 31px;
-      border: 1px solid #c8d1dc;
-      border-radius: 6px;
-      background: #fff;
-      color: var(--ink);
-      font: inherit;
-      font-size: 12px;
-    }
-
-    input {
-      width: 220px;
-      padding: 0 9px;
-    }
-
-    button {
-      padding: 0 10px;
-      font-weight: 800;
-      cursor: pointer;
-    }
-
-    button:hover { border-color: #82909f; }
-    button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
-    button.danger { border-color: #efc1bc; color: var(--danger); }
-    button:disabled { cursor: default; opacity: .48; }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      height: 25px;
-      padding: 0 8px;
-      border-radius: 5px;
-      background: var(--soft);
-      color: #0b615a;
-      font-size: 12px;
-      font-weight: 850;
-      white-space: nowrap;
-    }
-
-    .table-wrap {
-      min-height: 480px;
-      max-height: calc(100vh - 190px);
-      overflow: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #fff;
-      table-layout: fixed;
-      font-size: 12px;
-    }
-
-    th,
-    td {
-      height: 32px;
-      padding: 6px 8px;
-      border-right: 1px solid #edf1f4;
-      border-bottom: 1px solid #edf1f4;
-      vertical-align: middle;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      background: #eaf3f0;
-      color: #23323d;
-      font-weight: 850;
-      text-align: center;
-    }
-
-    td { text-align: center; }
-    td.name-cell { text-align: left; }
-
-    td[contenteditable="true"] {
-      outline: none;
-      cursor: text;
-    }
-
-    td[contenteditable="true"]:focus {
-      background: #f3fffc;
-      box-shadow: inset 0 0 0 2px var(--accent);
-    }
-
-    tr.dirty td {
-      background: #fff9e8;
-    }
-
-    .select-col {
-      width: 44px;
-      text-align: center;
-      background: #f8fafb;
-    }
-
-    .select-col input {
-      width: 16px;
-      min-width: 0;
-      height: 16px;
-      padding: 0;
-    }
-
-    .status-col { width: 78px; }
-    .code-col { width: 170px; }
-    .type-col { width: 120px; }
-    .name-col { width: 360px; }
-
-    .state-button {
-      width: 52px;
-      height: 24px;
-      padding: 0;
-      border-radius: 999px;
-      color: #fff;
-      font-size: 11px;
-      font-weight: 900;
-    }
-
-    .state-button.active { border-color: #07856f; background: #07856f; }
-    .state-button.inactive { border-color: #d92d20; background: #d92d20; }
-
-    .status {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 9px 12px;
-      border-top: 1px solid var(--line);
-      background: #fbfcfd;
-    }
-
-    .warn { color: var(--warning); }
-    .error { color: var(--danger); }
-
-    @media (max-width: 840px) {
-      header {
-        align-items: stretch;
-        flex-direction: column;
-        padding: 14px 12px 10px;
-      }
-
-      main { padding: 10px; }
-      input { width: 100%; }
-      .toolbar { align-items: stretch; }
-      .left-tools,
-      .right-tools { width: 100%; }
-      .right-tools button { flex: 1; }
-      .table-wrap { max-height: calc(100vh - 260px); }
+    :root { --hana:#008485; --ink:#172026; --muted:#65717d; --line:#d9e1e8; --panel:#fff; --wash:#f4f7f8; --soft:#eaf5f2; --danger:#b42318; --warning:#9a6700; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--wash); color:var(--ink); font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; font-size:12px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; height:52px; padding:0 16px; background:#fff; border-bottom:1px solid var(--line); }
+    h1 { margin:0; color:#0b3635; font-size:19px; letter-spacing:0; }
+    .header-actions { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px; white-space:nowrap; }
+    main { display:grid; grid-template-columns:230px minmax(0,1fr); gap:8px; min-height:calc(100vh - 52px); padding:8px; }
+    .panel { overflow:hidden; background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 3px rgba(15,23,42,.04); }
+    .panel-title { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:44px; padding:7px 9px; border-bottom:1px solid var(--line); }
+    .panel-title h2 { margin:0; color:#0b3635; font-size:14px; }
+    .left-title { align-items:flex-start; flex-direction:column; }
+    .date-tools,.tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    button,input { height:27px; border:1px solid #cbd5df; border-radius:6px; background:#fff; color:var(--ink); font:inherit; font-size:12px; }
+    button { padding:0 9px; font-weight:850; cursor:pointer; }
+    button:hover { border-color:#82909f; }
+    button.primary { border-color:var(--hana); background:var(--hana); color:#fff; }
+    button.danger { color:var(--danger); }
+    button:disabled { cursor:default; opacity:.48; }
+    input { padding:0 8px; }
+    input[type="date"] { width:128px; }
+    input[type="search"] { width:230px; }
+    .badge { display:inline-flex; align-items:center; height:24px; padding:0 8px; border-radius:5px; background:var(--soft); color:#0b615a; font-weight:850; }
+    .date-list { height:calc(100vh - 143px); overflow:auto; padding:6px; }
+    .date-button { width:100%; height:34px; margin-bottom:5px; padding:0 8px; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; text-align:left; border-color:transparent; background:#fff; }
+    .date-button:hover,.date-button.active { border-color:var(--hana); background:var(--soft); }
+    .date-button strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+    .date-button span { color:var(--muted); font-size:11px; font-weight:750; }
+    .date-status { padding:8px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; line-height:1.45; }
+    .count-pill { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:5px; background:var(--soft); color:#0b615a; font-weight:850; }
+    .table-wrap { max-height:calc(100vh - 139px); overflow:auto; }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    th,td { height:24px; padding:3px 7px; border-right:1px solid #edf2f2; border-bottom:1px solid #edf2f2; overflow:hidden; text-align:center; text-overflow:ellipsis; white-space:nowrap; }
+    th { position:sticky; top:0; z-index:2; background:#eaf3f0; color:#20323b; font-weight:900; user-select:none; cursor:pointer; }
+    td.name { text-align:left; }
+    td[contenteditable="true"] { outline:none; }
+    td[contenteditable="true"]:focus { background:#f3fffc; box-shadow:inset 0 0 0 2px var(--hana); }
+    tr.dirty td { background:#fff9e6; }
+    .select-col { width:38px; background:#f8fafb; }
+    .select-col input { width:14px; min-width:0; height:14px; padding:0; vertical-align:middle; }
+    .status-col { width:86px; }
+    .code-col { width:180px; }
+    .type-col { width:108px; }
+    .name-col { width:auto; }
+    .state-button { width:58px; height:20px; padding:0; border-radius:999px; font-size:11px; font-weight:900; }
+    .state-button.active { border-color:#0f766e; background:#e6f5f2; color:#047068; }
+    .state-button.inactive { border-color:#efc1bc; background:#fff0ee; color:#b42318; }
+    .status { display:flex; justify-content:space-between; gap:8px; padding:8px 10px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
+    .warn { color:var(--warning); }
+    .error { color:var(--danger); }
+    @media (max-width:900px) {
+      body { overflow:auto; }
+      header { height:auto; align-items:flex-start; flex-direction:column; padding:12px; }
+      main { grid-template-columns:1fr; }
+      .date-list,.table-wrap { max-height:none; height:auto; }
+      .panel-title { align-items:flex-start; flex-direction:column; }
+      .tools,input[type="search"] { width:100%; }
     }
   </style>
 </head>
 <body>
   <header>
-    <div>
-      <h1>주식 펀드 마스터</h1>
-      <div class="subtitle">Supabase의 주식 펀드 정보 테이블을 조회하고 수정합니다.</div>
-    </div>
+    <h1>주식 펀드 마스터</h1>
     <div class="header-actions">
       <span class="badge" id="sourceBadge">세션 확인 중</span>
-      <span class="status-text" id="userStatus">로그인 세션을 확인하고 있습니다.</span>
+      <span id="userStatus">로그인 세션을 확인하고 있습니다.</span>
     </div>
   </header>
-
   <main>
-    <section class="panel">
-      <div class="toolbar">
-        <div class="left-tools">
-          <input id="searchInput" type="search" placeholder="펀드명/펀드코드/유형 검색" aria-label="펀드 마스터 검색">
-          <button id="reloadButton" type="button">DB 다시 불러오기</button>
-          <button id="downloadButton" type="button">CSV 다운로드</button>
+    <aside class="panel">
+      <div class="panel-title left-title">
+        <h2>변경일자 이력</h2>
+        <div class="date-tools">
+          <input id="newDateInput" type="date" aria-label="새 기준일">
+          <button id="addDateButton" type="button" class="primary">추가</button>
+          <button id="deleteDateButton" class="danger" type="button">날짜 삭제</button>
         </div>
-        <div class="right-tools">
-          <button id="addButton" type="button">행 추가</button>
-          <button id="deleteButton" type="button" class="danger">행삭제</button>
-          <button id="saveButton" type="button" class="primary">변경 저장</button>
+      </div>
+      <div class="date-list" id="dateList"></div>
+      <div class="date-status" id="dateStatus"></div>
+    </aside>
+    <section class="panel">
+      <div class="panel-title">
+        <h2><span id="activeDateLabel">-</span> 펀드 리스트 <span class="count-pill" id="fundCount">0개</span></h2>
+        <div class="tools">
+          <input id="searchInput" type="search" placeholder="펀드명/코드/유형 검색">
+          <button id="reloadButton" type="button">DB 다시 불러오기</button>
+          <button id="addRowButton" type="button">행 추가</button>
+          <button id="deleteRowButton" class="danger" type="button">행삭제</button>
+          <button id="saveListButton" class="primary" type="button">펀드 리스트 저장</button>
+          <button id="downloadButton" type="button">CSV 다운로드</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -263,10 +102,10 @@
           <thead>
             <tr>
               <th class="select-col"><input id="selectAll" type="checkbox" aria-label="전체 선택"></th>
-              <th class="status-col">상태</th>
-              <th class="code-col">펀드코드</th>
-              <th class="type-col">유형</th>
-              <th class="name-col">펀드명(약식)</th>
+              <th class="status-col" data-sort="상태">상태</th>
+              <th class="code-col" data-sort="펀드코드">펀드코드</th>
+              <th class="type-col" data-sort="유형">유형</th>
+              <th class="name-col" data-sort="펀드명(약식)">펀드명(약식)</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -274,35 +113,32 @@
       </div>
       <div class="status">
         <span id="statusText">데이터를 불러오는 중입니다.</span>
-        <span id="countText" class="status-text"></span>
+        <span id="countText"></span>
       </div>
     </section>
   </main>
-
   <script type="module">
     const SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co";
     const SUPABASE_KEY = "sb_publishable_T0q_8mB9yzcitTL7HH0SuA_W4DUcVtP";
     const DOMAIN = "stock";
     const FILE_KEY = "fund_info";
     const FILE_LABEL = "펀드 정보.xlsx";
-    const SHEET_NAME = "Sheet1";
     const COLUMNS = ["상태", "펀드코드", "유형", "펀드명(약식)"];
-    const NUMBER_COLUMNS = new Set();
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
     let supabase = null;
     let currentUser = null;
-    let rows = [];
-    let selectedRows = new Set();
-    let dirtyRows = new Set();
-    let rewriteAllRows = false;
+    let versions = [];
+    let activeDate = "";
+    let selected = new Set();
+    let dirty = false;
+    let sortKey = "rowNo";
+    let sortDir = "asc";
 
     const $ = (id) => document.getElementById(id);
-    const escapeHtml = (value) => String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+    const fmt = new Intl.NumberFormat("ko-KR");
+    const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const escapeHtml = (value) => String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
 
     function setStatus(message, kind = "") {
       $("statusText").className = kind;
@@ -310,30 +146,54 @@
     }
 
     function normalizeCode(value) {
-      return String(value ?? "").trim();
+      const text = String(value ?? "").trim();
+      return text.endsWith(".0") ? text.slice(0, -2) : text;
     }
 
-    function normalizeNumber(value) {
-      const text = String(value ?? "").replaceAll(",", "").trim();
-      if (!text) return "";
-      const number = Number(text);
-      return Number.isFinite(number) ? number : value;
-    }
-
-    function normalizePayload(payload) {
+    function normalizeRow(row, index) {
       return {
-        "상태": ["활성", "비활성"].includes(String(payload["상태"] ?? "").trim()) ? String(payload["상태"]).trim() : "활성",
-        "펀드코드": normalizeCode(payload["펀드코드"]),
-        "유형": String(payload["유형"] ?? "").trim(),
-        "펀드명(약식)": String(payload["펀드명(약식)"] ?? payload["펀드명"] ?? "").trim()
+        rowNo: index + 1,
+        "상태": ["활성", "비활성"].includes(String(row["상태"] ?? "").trim()) ? String(row["상태"]).trim() : "활성",
+        "펀드코드": normalizeCode(row["펀드코드"]),
+        "유형": String(row["유형"] ?? "").trim() || "기타",
+        "펀드명(약식)": String(row["펀드명(약식)"] ?? row["펀드명"] ?? "").trim()
       };
     }
 
-    function displayValue(column, value) {
-      if (!NUMBER_COLUMNS.has(column)) return value ?? "";
-      const number = normalizeNumber(value);
-      if (number === "" || !Number.isFinite(Number(number))) return value ?? "";
-      return Number(number).toLocaleString("ko-KR", { maximumFractionDigits: 12 });
+    function normalizeVersion(version) {
+      const effectiveDate = String(version.effectiveDate || today()).slice(0, 10);
+      return {
+        effectiveDate,
+        sheetName: String(version.sheetName || effectiveDate).slice(0, 31),
+        legacy: Boolean(version.legacy),
+        rows: (version.rows || []).map(normalizeRow)
+      };
+    }
+
+    function sortVersions(items) {
+      return [...items].sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
+    }
+
+    function latestDate() {
+      return sortVersions(versions).at(-1)?.effectiveDate || today();
+    }
+
+    function activeVersion() {
+      let version = versions.find((item) => item.effectiveDate === activeDate);
+      if (!version) {
+        version = versions[0] || { effectiveDate: today(), sheetName: today(), rows: [], legacy: false };
+        activeDate = version.effectiveDate;
+      }
+      version.rows = version.rows.map(normalizeRow);
+      return version;
+    }
+
+    function activeRows() {
+      return activeVersion().rows;
+    }
+
+    function activeCount(rows) {
+      return rows.filter((row) => row["상태"] !== "비활성").length;
     }
 
     async function getSupabase() {
@@ -343,9 +203,7 @@
         return supabase;
       }
       const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-      supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true }
-      });
+      supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
       return supabase;
     }
 
@@ -378,217 +236,308 @@
       return true;
     }
 
-    async function loadRows() {
+    async function latestBusinessDate() {
+      const client = await getSupabase();
+      const { data } = await client.from("kfr_source_snapshots")
+        .select("business_date")
+        .eq("source_key", "fund_holdings")
+        .order("business_date", { ascending: false })
+        .limit(1);
+      return data?.[0]?.business_date || today();
+    }
+
+    async function loadVersions() {
       if (!(await checkSession())) {
-        rows = [];
-        render();
+        versions = [];
+        renderAll();
         return;
       }
       const client = await getSupabase();
-      setStatus("Supabase에서 펀드 마스터를 불러오는 중입니다.");
+      const fallbackDate = await latestBusinessDate();
+      setStatus("Supabase에서 변경일자별 펀드 마스터를 불러오는 중입니다.");
       const loaded = [];
       for (let start = 0; ; start += 1000) {
         const { data, error } = await client.from("manual_file_rows")
-          .select("row_no,payload")
+          .select("sheet_name,row_no,payload,updated_at")
           .eq("domain", DOMAIN)
           .eq("file_key", FILE_KEY)
-          .eq("sheet_name", SHEET_NAME)
+          .order("sheet_name")
           .order("row_no")
           .range(start, start + 999);
         if (error) throw error;
         loaded.push(...data);
         if (data.length < 1000) break;
       }
-      rows = loaded.map((row) => ({
-        row_no: row.row_no,
-        payload: normalizePayload(row.payload)
-      }));
-      selectedRows.clear();
-      dirtyRows.clear();
-      rewriteAllRows = false;
-      render();
-      setStatus(`펀드 마스터 ${rows.length.toLocaleString()}건을 불러왔습니다.`);
+      const groups = new Map();
+      for (const row of loaded) {
+        const sheetName = String(row.sheet_name || "Sheet1");
+        if (!groups.has(sheetName)) groups.set(sheetName, []);
+        groups.get(sheetName).push(row);
+      }
+      const nextVersions = [];
+      for (const [sheetName, items] of groups.entries()) {
+        if (DATE_RE.test(sheetName)) {
+          nextVersions.push({ effectiveDate: sheetName, sheetName, legacy: false, rows: rowsFromItems(items) });
+        }
+      }
+      if (!nextVersions.length && groups.has("Sheet1")) {
+        nextVersions.push({ effectiveDate: fallbackDate, sheetName: "Sheet1", legacy: true, rows: rowsFromItems(groups.get("Sheet1")) });
+      }
+      versions = sortVersions(nextVersions.length ? nextVersions : [{ effectiveDate: fallbackDate, sheetName: fallbackDate, rows: [], legacy: false }]);
+      activeDate = latestDate();
+      selected.clear();
+      dirty = false;
+      renderAll();
+      setStatus(`변경일자 ${fmt.format(versions.length)}개를 불러왔습니다. 저장 시 선택한 기준일이 DB에 반영됩니다.`);
+    }
+
+    function rowsFromItems(items) {
+      return [...items].sort((a, b) => Number(a.row_no || 0) - Number(b.row_no || 0)).map((row, index) => normalizeRow(row.payload || {}, index));
     }
 
     function filteredRows() {
       const keyword = $("searchInput").value.trim().toLowerCase();
-      if (!keyword) return rows;
-      return rows.filter((row) => COLUMNS.some((column) =>
-        String(row.payload[column] ?? "").toLowerCase().includes(keyword)
-      ));
+      let result = activeRows();
+      if (keyword) {
+        result = result.filter((row) => COLUMNS.some((column) => String(row[column] ?? "").toLowerCase().includes(keyword)));
+      }
+      return [...result].sort((a, b) => {
+        const statusOrder = (a["상태"] === "비활성" ? 1 : 0) - (b["상태"] === "비활성" ? 1 : 0);
+        if (statusOrder !== 0) return statusOrder;
+        const av = sortKey === "rowNo" ? a.rowNo : a[sortKey];
+        const bv = sortKey === "rowNo" ? b.rowNo : b[sortKey];
+        const order = sortKey === "rowNo" ? Number(av || 0) - Number(bv || 0) : String(av ?? "").localeCompare(String(bv ?? ""), "ko", { numeric: true });
+        return sortDir === "asc" ? order : -order;
+      });
     }
 
-    function render() {
-      const visible = filteredRows().slice().sort((a, b) => {
-        const statusOrder = (a.payload["상태"] === "비활성" ? 1 : 0) - (b.payload["상태"] === "비활성" ? 1 : 0);
-        if (statusOrder !== 0) return statusOrder;
-        return Number(a.row_no || 0) - Number(b.row_no || 0);
+    function renderDates() {
+      const sorted = sortVersions(versions).reverse();
+      $("dateList").innerHTML = sorted.map((version) => `
+        <button type="button" class="date-button ${version.effectiveDate === activeDate ? "active" : ""}" data-date="${escapeHtml(version.effectiveDate)}">
+          <strong>${escapeHtml(version.effectiveDate)}${version.legacy ? " · 기존" : ""}</strong>
+          <span>활성 ${fmt.format(activeCount(version.rows))}개</span>
+        </button>`).join("");
+      $("dateList").querySelectorAll("[data-date]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeDate = button.dataset.date;
+          selected.clear();
+          $("searchInput").value = "";
+          renderAll();
+        });
       });
+      $("newDateInput").value = latestDate();
+      $("dateStatus").textContent = `최신 적용일 ${latestDate()} · 이력 ${fmt.format(versions.length)}개`;
+    }
+
+    function renderTable() {
+      const visible = filteredRows();
+      $("activeDateLabel").textContent = activeDate;
       $("tableBody").innerHTML = visible.map((row) => {
-        const checked = selectedRows.has(row.row_no) ? "checked" : "";
-        const dirtyClass = dirtyRows.has(row.row_no) ? " class=\"dirty\"" : "";
-        const stateClass = row.payload["상태"] === "비활성" ? "inactive" : "active";
-        return `<tr data-row-no="${row.row_no}"${dirtyClass}>
-          <td class="select-col"><input class="row-selector" type="checkbox" ${checked} aria-label="행 선택"></td>
-          <td><button type="button" class="state-button ${stateClass}" data-state-row="${row.row_no}">${escapeHtml(row.payload["상태"])}</button></td>
-          ${COLUMNS.map((column) => {
-            if (column === "상태") return "";
-            const nameClass = column === "펀드명(약식)" ? " class=\"name-cell\"" : "";
-            return `<td${nameClass} contenteditable="${currentUser ? "true" : "false"}" data-column="${escapeHtml(column)}" title="${escapeHtml(displayValue(column, row.payload[column]))}">${escapeHtml(displayValue(column, row.payload[column]))}</td>`;
-          }).join("")}
+        const checked = selected.has(row.rowNo) ? "checked" : "";
+        const dirtyClass = dirty ? " class=\"dirty\"" : "";
+        const stateClass = row["상태"] === "비활성" ? "inactive" : "active";
+        return `<tr data-row-no="${row.rowNo}"${dirtyClass}>
+          <td class="select-col"><input class="row-check" type="checkbox" ${checked}></td>
+          <td><button type="button" class="state-button ${stateClass}" data-state-row="${row.rowNo}">${escapeHtml(row["상태"])}</button></td>
+          <td contenteditable="${currentUser ? "true" : "false"}" data-col="펀드코드" title="${escapeHtml(row["펀드코드"])}">${escapeHtml(row["펀드코드"])}</td>
+          <td contenteditable="${currentUser ? "true" : "false"}" data-col="유형">${escapeHtml(row["유형"])}</td>
+          <td class="name" contenteditable="${currentUser ? "true" : "false"}" data-col="펀드명(약식)" title="${escapeHtml(row["펀드명(약식)"])}">${escapeHtml(row["펀드명(약식)"])}</td>
         </tr>`;
       }).join("");
-
-      $("tableBody").querySelectorAll(".row-selector").forEach((checkbox) => {
+      $("tableBody").querySelectorAll(".row-check").forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
           const rowNo = Number(checkbox.closest("tr").dataset.rowNo);
-          if (checkbox.checked) selectedRows.add(rowNo);
-          else selectedRows.delete(rowNo);
-          updateButtons();
+          if (checkbox.checked) selected.add(rowNo);
+          else selected.delete(rowNo);
+          renderStatus();
         });
       });
-
       $("tableBody").querySelectorAll("[data-state-row]").forEach((button) => {
         button.addEventListener("click", () => {
-          const rowNo = Number(button.dataset.stateRow);
-          const row = rows.find((item) => item.row_no === rowNo);
+          const row = activeRows().find((item) => item.rowNo === Number(button.dataset.stateRow));
           if (!row) return;
-          row.payload["상태"] = row.payload["상태"] === "비활성" ? "활성" : "비활성";
-          dirtyRows.add(rowNo);
-          render();
-          setStatus("상태를 변경했습니다. 변경 저장을 눌러 Supabase에 반영하세요.", "warn");
+          row["상태"] = row["상태"] === "비활성" ? "활성" : "비활성";
+          markDirty(`${activeDate} ${row["펀드명(약식)"] || row["펀드코드"] || "신규 행"} 상태를 ${row["상태"]}으로 변경했습니다.`);
+          renderAll();
         });
       });
-
       $("tableBody").querySelectorAll("td[contenteditable='true']").forEach((cell) => {
         cell.addEventListener("input", () => {
-          const rowNo = Number(cell.parentElement.dataset.rowNo);
-          const row = rows.find((item) => item.row_no === rowNo);
-          row.payload[cell.dataset.column] = cell.textContent.trim();
-          dirtyRows.add(rowNo);
-          cell.parentElement.classList.add("dirty");
-          updateButtons();
+          const row = activeRows().find((item) => item.rowNo === Number(cell.closest("tr").dataset.rowNo));
+          if (!row) return;
+          row[cell.dataset.col] = cell.textContent.trim();
+          cell.closest("tr").classList.add("dirty");
+          markDirty("수정 내용이 있습니다. 펀드 리스트 저장을 눌러 Supabase에 반영하세요.");
         });
         cell.addEventListener("blur", () => {
-          const rowNo = Number(cell.parentElement.dataset.rowNo);
-          const row = rows.find((item) => item.row_no === rowNo);
-          row.payload = normalizePayload(row.payload);
-          cell.textContent = displayValue(cell.dataset.column, row.payload[cell.dataset.column]);
-          cell.title = cell.textContent;
+          const version = activeVersion();
+          version.rows = version.rows.map(normalizeRow);
+          renderAll();
         });
       });
+      $("selectAll").checked = visible.length > 0 && visible.every((row) => selected.has(row.rowNo));
+      renderStatus();
+    }
 
-      const visibleRows = filteredRows();
-      $("selectAll").checked = visibleRows.length > 0 && visibleRows.every((row) => selectedRows.has(row.row_no));
-      const activeCount = rows.filter((row) => row.payload["상태"] !== "비활성").length;
-      $("countText").textContent = `표시 ${visible.length.toLocaleString()}건 / 활성 ${activeCount.toLocaleString()}건 · 전체 ${rows.length.toLocaleString()}건`;
+    function renderStatus() {
+      const visible = filteredRows().length;
+      const rows = activeRows();
+      const active = activeCount(rows);
+      $("fundCount").textContent = `활성 ${fmt.format(active)}개`;
+      $("countText").textContent = `표시 ${fmt.format(visible)}건 / 활성 ${fmt.format(active)}건 · 전체 ${fmt.format(rows.length)}건 · 선택 ${fmt.format(selected.size)}건`;
       updateButtons();
+    }
+
+    function renderAll() {
+      versions = sortVersions(versions.map(normalizeVersion));
+      renderDates();
+      renderTable();
     }
 
     function updateButtons() {
       const canEdit = Boolean(currentUser);
+      const version = versions.find((item) => item.effectiveDate === activeDate);
       $("reloadButton").disabled = false;
-      $("downloadButton").disabled = rows.length === 0;
-      $("addButton").disabled = !canEdit;
-      $("deleteButton").disabled = !canEdit || selectedRows.size === 0;
-      $("saveButton").disabled = !canEdit || (!rewriteAllRows && dirtyRows.size === 0);
+      $("downloadButton").disabled = activeRows().length === 0;
+      $("addDateButton").disabled = !canEdit;
+      $("deleteDateButton").disabled = !canEdit || versions.length <= 1 || Boolean(version?.legacy);
+      $("addRowButton").disabled = !canEdit;
+      $("deleteRowButton").disabled = !canEdit || selected.size === 0;
+      $("saveListButton").disabled = !canEdit || !dirty;
     }
 
-    function renumberRows() {
-      rows.forEach((row, index) => {
-        row.row_no = index + 1;
-        row.payload = normalizePayload(row.payload);
-      });
-      dirtyRows = new Set(rows.map((row) => row.row_no));
-      rewriteAllRows = true;
+    function markDirty(message) {
+      dirty = true;
+      setStatus(message, "warn");
+      updateButtons();
     }
 
-    async function saveRows() {
+    function cloneRows(rows) {
+      return rows.map((row, index) => normalizeRow({ ...row }, index));
+    }
+
+    function addDate() {
+      const nextDate = $("newDateInput").value;
+      if (!nextDate) return;
+      if (versions.some((version) => version.effectiveDate === nextDate)) {
+        activeDate = nextDate;
+        selected.clear();
+        renderAll();
+        return;
+      }
+      versions.push({ effectiveDate: nextDate, sheetName: nextDate, legacy: false, rows: cloneRows(activeRows()) });
+      activeDate = nextDate;
+      selected.clear();
+      markDirty(`${nextDate} 기준일을 추가했습니다. 필요한 펀드 리스트를 수정한 뒤 저장하세요.`);
+      renderAll();
+    }
+
+    async function deleteDate() {
+      if (!currentUser || versions.length <= 1) return;
+      const version = activeVersion();
+      if (version.legacy) return;
+      if (!confirm(`${activeDate} 기준일을 삭제하시겠습니까?`)) return;
+      const client = await getSupabase();
+      const { error } = await client.from("manual_file_rows").delete().eq("domain", DOMAIN).eq("file_key", FILE_KEY).eq("sheet_name", activeDate);
+      if (error) throw error;
+      versions = versions.filter((item) => item.effectiveDate !== activeDate);
+      activeDate = latestDate();
+      selected.clear();
+      dirty = false;
+      renderAll();
+      setStatus(`${version.effectiveDate} 기준일을 삭제했습니다.`);
+    }
+
+    async function saveFundList() {
       if (!currentUser) return;
       const client = await getSupabase();
-      setStatus("변경 내용을 Supabase에 저장하는 중입니다.");
-      const changed = rows
-        .filter((row) => rewriteAllRows || dirtyRows.has(row.row_no))
-        .map((row) => ({
-          domain: DOMAIN,
-          file_key: FILE_KEY,
-          file_label: FILE_LABEL,
-          sheet_name: SHEET_NAME,
-          row_no: row.row_no,
-          payload: normalizePayload(row.payload),
-          created_by: currentUser.id,
-          updated_at: new Date().toISOString()
-        }));
-
-      for (let start = 0; start < changed.length; start += 500) {
-        const { error } = await client.from("manual_file_rows")
-          .upsert(changed.slice(start, start + 500), { onConflict: "domain,file_key,sheet_name,row_no" });
+      const version = activeVersion();
+      const sheetName = activeDate;
+      version.rows = version.rows.map(normalizeRow);
+      setStatus(`${sheetName} 펀드 리스트를 Supabase에 저장하는 중입니다.`);
+      const payload = version.rows.map((row, index) => ({
+        domain: DOMAIN,
+        file_key: FILE_KEY,
+        file_label: FILE_LABEL,
+        sheet_name: sheetName,
+        row_no: index + 1,
+        payload: normalizeRow(row, index),
+        created_by: currentUser.id,
+        updated_at: new Date().toISOString()
+      }));
+      for (let start = 0; start < payload.length; start += 500) {
+        const { error } = await client.from("manual_file_rows").upsert(payload.slice(start, start + 500), { onConflict: "domain,file_key,sheet_name,row_no" });
         if (error) throw error;
       }
+      const { error: deleteError } = await client.from("manual_file_rows").delete().eq("domain", DOMAIN).eq("file_key", FILE_KEY).eq("sheet_name", sheetName).gt("row_no", payload.length);
+      if (deleteError) throw deleteError;
+      version.sheetName = sheetName;
+      version.legacy = false;
+      dirty = false;
+      selected.clear();
+      renderAll();
+      setStatus(`${sheetName} 펀드 리스트 저장을 완료했습니다.`);
+    }
 
-      if (rewriteAllRows) {
-        const { error } = await client.from("manual_file_rows").delete()
-          .eq("domain", DOMAIN)
-          .eq("file_key", FILE_KEY)
-          .eq("sheet_name", SHEET_NAME)
-          .gt("row_no", rows.length);
-        if (error) throw error;
-      }
+    function addRow() {
+      const rows = activeRows();
+      const selectedRowNos = [...selected].sort((a, b) => a - b);
+      const insertAfterRowNo = selectedRowNos.at(-1);
+      const insertIndex = insertAfterRowNo ? Math.max(0, rows.findIndex((row) => row.rowNo === insertAfterRowNo) + 1) : rows.length;
+      rows.splice(insertIndex, 0, normalizeRow({}, insertIndex));
+      activeVersion().rows = rows.map(normalizeRow);
+      selected.clear();
+      markDirty(insertAfterRowNo ? "선택한 행 아래에 새 행을 추가했습니다." : "마지막에 새 행을 추가했습니다.");
+      renderAll();
+    }
 
-      dirtyRows.clear();
-      selectedRows.clear();
-      rewriteAllRows = false;
-      await loadRows();
-      setStatus("Supabase 저장을 완료했습니다.");
+    function deleteRows() {
+      const version = activeVersion();
+      version.rows = version.rows.filter((row) => !selected.has(row.rowNo)).map(normalizeRow);
+      selected.clear();
+      markDirty("선택 행을 삭제 표시했습니다. 저장해야 DB에 반영됩니다.");
+      renderAll();
     }
 
     function downloadCsv() {
       const lines = [COLUMNS.join(",")];
       for (const row of filteredRows()) {
-        lines.push(COLUMNS.map((column) => {
-          const text = String(row.payload[column] ?? "").replaceAll('"', '""');
-          return `"${text}"`;
-        }).join(","));
+        lines.push(COLUMNS.map((column) => `"${String(row[column] ?? "").replaceAll('"', '""')}"`).join(","));
       }
-      const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+      const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type:"text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "stock_fund_master.csv";
+      anchor.download = `stock_fund_master_${activeDate || "data"}.csv`;
       anchor.click();
       URL.revokeObjectURL(url);
     }
 
-    $("searchInput").addEventListener("input", render);
-    $("reloadButton").addEventListener("click", () => loadRows().catch((error) => setStatus(`DB 조회 실패: ${error.message}`, "error")));
-    $("downloadButton").addEventListener("click", downloadCsv);
-    $("addButton").addEventListener("click", () => {
-      const selectedRowNos = [...selectedRows].sort((a, b) => a - b);
-      const insertAfter = selectedRowNos.at(-1);
-      const insertIndex = insertAfter ? Math.max(0, rows.findIndex((row) => row.row_no === insertAfter) + 1) : rows.length;
-      rows.splice(insertIndex, 0, { row_no: insertIndex + 1, payload: normalizePayload({}) });
-      renumberRows();
-      selectedRows.clear();
-      render();
-      setStatus(insertAfter ? "선택한 행 아래에 새 행을 추가했습니다. 변경 저장을 눌러 Supabase에 반영하세요." : "마지막에 새 행을 추가했습니다. 변경 저장을 눌러 Supabase에 반영하세요.", "warn");
+    document.querySelectorAll("th[data-sort]").forEach((header) => {
+      header.addEventListener("click", () => {
+        const next = header.dataset.sort;
+        if (sortKey === next) sortDir = sortDir === "asc" ? "desc" : "asc";
+        else { sortKey = next; sortDir = "asc"; }
+        renderTable();
+      });
     });
-    $("deleteButton").addEventListener("click", () => {
-      rows = rows.filter((row) => !selectedRows.has(row.row_no));
-      selectedRows.clear();
-      renumberRows();
-      render();
-      setStatus("선택 행을 삭제 표시했습니다. 변경 저장을 눌러 Supabase에 반영하세요.", "warn");
-    });
-    $("saveButton").addEventListener("click", () => saveRows().catch((error) => setStatus(`Supabase 저장 실패: ${error.message}`, "error")));
+    $("searchInput").addEventListener("input", renderTable);
     $("selectAll").addEventListener("change", () => {
       for (const row of filteredRows()) {
-        if ($("selectAll").checked) selectedRows.add(row.row_no);
-        else selectedRows.delete(row.row_no);
+        if ($("selectAll").checked) selected.add(row.rowNo);
+        else selected.delete(row.rowNo);
       }
-      render();
+      renderTable();
     });
-
-    loadRows().catch((error) => setStatus(`초기화 실패: ${error.message}`, "error"));
+    $("reloadButton").addEventListener("click", () => loadVersions().catch((error) => setStatus(`DB 조회 실패: ${error.message}`, "error")));
+    $("addDateButton").addEventListener("click", addDate);
+    $("deleteDateButton").addEventListener("click", () => deleteDate().catch((error) => setStatus(`기준일 삭제 실패: ${error.message}`, "error")));
+    $("addRowButton").addEventListener("click", addRow);
+    $("deleteRowButton").addEventListener("click", deleteRows);
+    $("saveListButton").addEventListener("click", () => saveFundList().catch((error) => setStatus(`Supabase 저장 실패: ${error.message}`, "error")));
+    $("downloadButton").addEventListener("click", downloadCsv);
+    loadVersions().catch((error) => setStatus(`초기화 실패: ${error.message}`, "error"));
   </script>
 </body>
 </html>

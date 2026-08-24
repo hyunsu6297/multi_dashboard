@@ -260,6 +260,72 @@ def fetch_manual_file_rows(client: SupabaseRest, domain: str, file_key: str) -> 
     return pd.DataFrame(rows)
 
 
+def is_effective_sheet_name(value: object) -> bool:
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(value or "").strip()))
+
+
+def normalize_date_label(value: object) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return ""
+    return parsed.strftime("%Y-%m-%d")
+
+
+def choose_effective_sheet(sheet_names: list[str], as_of_date: str | None) -> str | None:
+    dated = sorted(name for name in sheet_names if is_effective_sheet_name(name))
+    if dated:
+        target = normalize_date_label(as_of_date) if as_of_date else ""
+        if target:
+            eligible = [name for name in dated if name <= target]
+            return eligible[-1] if eligible else dated[0]
+        return dated[-1]
+    if "Sheet1" in sheet_names:
+        return "Sheet1"
+    return sorted(sheet_names)[0] if sheet_names else None
+
+
+def fetch_stock_fund_info_rows(client: SupabaseRest, as_of_date: str | None = None) -> pd.DataFrame:
+    records: list[dict[str, object]] = []
+    offset = 0
+    while True:
+        query = urllib.parse.urlencode(
+            {
+                "select": "sheet_name,row_no,payload",
+                "domain": "eq.stock",
+                "file_key": "eq.fund_info",
+                "order": "sheet_name.asc,row_no.asc",
+                "limit": "1000",
+                "offset": str(offset),
+            },
+            safe=".,()",
+        )
+        batch = client.get(f"manual_file_rows?{query}")
+        if not batch:
+            break
+        records.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for item in records:
+        sheet_name = str(item.get("sheet_name") or "Sheet1")
+        grouped.setdefault(sheet_name, []).append(item)
+
+    chosen = choose_effective_sheet(list(grouped), as_of_date)
+    if not chosen:
+        return pd.DataFrame()
+
+    chosen_rows = sorted(grouped.get(chosen, []), key=lambda row: int(row.get("row_no") or 0))
+    rows: list[dict[str, object]] = []
+    for item in chosen_rows:
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        rows.append(dict(payload))
+    df = pd.DataFrame(rows)
+    df.attrs["fund_master_sheet_name"] = chosen
+    return df
+
+
 def read_fund_info_from_excel() -> pd.DataFrame:
     return (
         pd.read_excel(INPUTS["fund_info"], header=3)
@@ -365,9 +431,10 @@ def read_inputs(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object], dict[str, pd.DataFrame]]:
     client = supabase_client() if data_source == "supabase" else None
     if client:
-        funds = fetch_manual_file_rows(client, "stock", "fund_info")
+        funds = fetch_stock_fund_info_rows(client, end_date)
         if funds.empty:
             raise RuntimeError("Supabase manual_file_rows에 stock/fund_info 데이터가 없습니다.")
+        fund_master_sheet = str(funds.attrs.get("fund_master_sheet_name") or "")
         if "펀드명" not in funds.columns and "펀드명(약식)" in funds.columns:
             funds["펀드명"] = funds["펀드명(약식)"]
         for column, default in {
@@ -395,8 +462,9 @@ def read_inputs(
     if data_source == "supabase":
         fund_master = {
             **(fund_master if isinstance(fund_master, dict) else {}),
-            "source": "supabase:manual_file_rows/stock/fund_info",
+            "source": f"supabase:manual_file_rows/stock/fund_info/{fund_master_sheet}",
             "rows": int(len(funds)),
+            "effective_date": fund_master_sheet if is_effective_sheet_name(fund_master_sheet) else "",
         }
 
     source_frames: dict[str, pd.DataFrame] = {}

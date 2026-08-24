@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -89,6 +90,19 @@ def write_workbook(
     workbook.save(path)
 
 
+def is_effective_sheet_name(value: object) -> bool:
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(value or "").strip()))
+
+
+def choose_latest_manual_sheet(sheets: dict[str, list[dict[str, Any]]]) -> str:
+    dated = sorted(name for name in sheets if is_effective_sheet_name(name))
+    if dated:
+        return dated[-1]
+    if "Sheet1" in sheets:
+        return "Sheet1"
+    return sorted(sheets)[0]
+
+
 def restore_kfr_json(client: SupabaseRest, output_dir: Path) -> None:
     snapshots = client.get_all(
         "kfr_source_snapshots",
@@ -171,9 +185,12 @@ def restore_manual(client: SupabaseRest, stock_dir: Path, bond_dir: Path) -> Non
         sheets: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
             sheets[row["sheet_name"]].append(row)
+        if domain == "stock" and file_key == "fund_info":
+            sheet_name = choose_latest_manual_sheet(sheets)
+            sheets = {"Sheet1": sheets[sheet_name]}
         target_dir = stock_dir if domain == "stock" else bond_dir
         write_workbook(target_dir / file_name, sheets, header_row=header_row)
-        print(f"restored {domain}/{file_key}: rows={len(rows)}")
+        print(f"restored {domain}/{file_key}: rows={sum(len(sheet_rows) for sheet_rows in sheets.values())}")
 
 
 def restore_mezzanine_manual(client: SupabaseRest, mezzanine_dir: Path) -> None:
