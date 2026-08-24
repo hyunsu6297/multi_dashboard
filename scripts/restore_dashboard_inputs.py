@@ -5,23 +5,23 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+KFR_MODULE_DIR = REPO_ROOT / "automation" / "kfr"
+if str(KFR_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(KFR_MODULE_DIR))
+from kfr_api import SOURCE_TO_API_NAME, api_shape_rows  # noqa: E402
 
-KFR_TARGETS = {
-    "fund_trades": "전체펀드 매매현황.xlsx",
-    "fund_holdings": "전체펀드 보유현황.xlsx",
-    "mezzanine_price": "메자닌 기준가.xlsx",
-}
 
 MANUAL_TARGETS = {
     ("stock", "fund_info"): ("펀드 정보.xlsx", 4),
@@ -89,27 +89,29 @@ def write_workbook(
     workbook.save(path)
 
 
-def restore_kfr(
-    client: SupabaseRest,
-    stock_dir: Path,
-    bond_dir: Path,
-    mezzanine_dir: Path,
-    global_dir: Path | None = None,
-) -> None:
+def restore_kfr_json(client: SupabaseRest, output_dir: Path) -> None:
     snapshots = client.get_all(
         "kfr_source_snapshots",
-        {"select": "id,source_key,business_date,downloaded_at", "order": "business_date.desc,downloaded_at.desc"},
+        {
+            "select": "id,source_key,business_date,downloaded_at,file_name,row_count,source_format",
+            "order": "business_date.desc,downloaded_at.desc",
+        },
     )
     latest: dict[str, dict[str, Any]] = {}
     for snapshot in snapshots:
         latest.setdefault(snapshot["source_key"], snapshot)
 
-    for source_key, file_name in KFR_TARGETS.items():
+    output_dir.mkdir(parents=True, exist_ok=True)
+    manifest: dict[str, Any] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "datasets": {},
+    }
+    for source_key, api_name in SOURCE_TO_API_NAME.items():
         snapshot = latest.get(source_key)
         if not snapshot:
-            raise RuntimeError(f"No KFR snapshot found for {source_key}")
+            raise RuntimeError(f"No KFR Partner API JSON snapshot found for {source_key}")
         source_snapshots = [snapshot]
-        if source_key == "fund_trades":
+        if source_key in {"fund_prices", "fund_holdings", "fund_trades"}:
             latest_date = date.fromisoformat(snapshot["business_date"])
             cutoff = latest_date - timedelta(days=31)
             seen_dates = {snapshot["business_date"]}
@@ -121,10 +123,7 @@ def restore_kfr(
                     continue
                 seen_dates.add(candidate["business_date"])
                 source_snapshots.append(candidate)
-        sheets: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        row_count = 0
-        # Trade snapshots are daily files. Combining recent retained snapshots
-        # makes the static dashboards capable of filtering the DB history.
+        entries = []
         for snapshot in reversed(source_snapshots):
             rows = client.get_all(
                 "kfr_source_rows",
@@ -134,16 +133,26 @@ def restore_kfr(
                     "order": "sheet_name.asc,row_no.asc",
                 },
             )
-            row_count += len(rows)
-            for row in rows:
-                sheets[row["sheet_name"]].append(row)
-        target_dirs = [stock_dir, bond_dir, mezzanine_dir]
-        if global_dir and global_dir.exists():
-            target_dirs.append(global_dir)
-        for target_dir in target_dirs:
-            write_workbook(target_dir / file_name, sheets, header_row=2)
-        snapshot_label = ",".join(str(item["id"]) for item in source_snapshots)
-        print(f"restored {source_key}: snapshots={snapshot_label}, rows={row_count}")
+            content = api_shape_rows(source_key, [row["payload"] for row in rows])
+            business_date = str(snapshot["business_date"])
+            file_name = f"{api_name}_{business_date}.json"
+            (output_dir / file_name).write_text(
+                json.dumps({"content": content, "total_elements": len(content)}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            entries.append({
+                "business_date": business_date,
+                "file": file_name,
+                "row_count": len(content),
+                "snapshot_id": int(snapshot["id"]),
+                "downloaded_at": str(snapshot["downloaded_at"]),
+                "source_format": str(snapshot.get("source_format") or "legacy_excel"),
+            })
+        manifest["datasets"][source_key] = entries
+        print(f"restored {source_key}: snapshots={len(entries)}, rows={sum(x['row_count'] for x in entries)}")
+    (output_dir / "index.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def restore_manual(client: SupabaseRest, stock_dir: Path, bond_dir: Path) -> None:
@@ -299,9 +308,10 @@ def main() -> None:
     parser.add_argument("--bond-dir", default="apps/bond")
     parser.add_argument("--mezzanine-dir", default="apps/mezzanine")
     parser.add_argument("--global-dir", default="apps/global")
+    parser.add_argument("--kfr-json-dir", default="data/kfr")
     args = parser.parse_args()
     client = SupabaseRest(required_env("SUPABASE_URL"), required_env("SUPABASE_SERVICE_ROLE_KEY"))
-    restore_kfr(client, Path(args.stock_dir), Path(args.bond_dir), Path(args.mezzanine_dir), Path(args.global_dir))
+    restore_kfr_json(client, Path(args.kfr_json_dir))
     restore_manual(client, Path(args.stock_dir), Path(args.bond_dir))
     restore_mezzanine_manual(client, Path(args.mezzanine_dir))
     restore_global_manual(client, Path(args.global_dir))

@@ -20,9 +20,13 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = ROOT.parents[1]
 STOCK_DIR = REPOSITORY_ROOT / "apps" / "stock"
+KFR_MODULE_DIR = REPOSITORY_ROOT / "automation" / "kfr"
+KFR_DATA_DIR = Path(os.getenv("KFR_JSON_DIR", str(REPOSITORY_ROOT / "data" / "kfr")))
 DELTA_HISTORY_FILE = ROOT / "delta_history.json"
 if str(STOCK_DIR) not in sys.path:
     sys.path.insert(0, str(STOCK_DIR))
+if str(KFR_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(KFR_MODULE_DIR))
 
 from fetch_kiwoom_quotes import (  # noqa: E402
     DEFAULT_HOST,
@@ -30,6 +34,7 @@ from fetch_kiwoom_quotes import (  # noqa: E402
     post_json,
     request_token,
 )
+from kfr_api import load_frame as load_kfr_frame  # noqa: E402
 
 
 def required_env(name: str) -> str:
@@ -152,7 +157,9 @@ def normalize_daily_prices(code: str, name: str, rows: list[dict], keep_days: in
 
 
 def read_current_nav() -> tuple[str, list[dict]]:
-    frame = pd.read_excel(ROOT / "메자닌 기준가.xlsx", sheet_name="Data", header=1).dropna(how="all")
+    frame = load_kfr_frame(KFR_DATA_DIR, "mezzanine_price", latest_only=True).drop(
+        columns=["스냅샷일", "원천파일"], errors="ignore"
+    )
     frame["_business_date"] = pd.to_datetime(frame["거래일"], errors="coerce").dt.date
     frame = frame[frame["_business_date"].notna()]
     business_date = frame["_business_date"].max().isoformat()

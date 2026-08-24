@@ -2,25 +2,29 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parent
+REPO_ROOT = ROOT.parents[1]
+KFR_MODULE_DIR = REPO_ROOT / "automation" / "kfr"
+if str(KFR_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(KFR_MODULE_DIR))
+from kfr_api import load_frame as load_kfr_frame  # noqa: E402
+
+KFR_DATA_DIR = Path(os.getenv("KFR_JSON_DIR", str(REPO_ROOT / "data" / "kfr")))
 TRADE_PARQUET_DIR = ROOT / "parquet_history" / "trades"
 HOLDING_PARQUET_DIR = ROOT / "parquet_history" / "holdings"
 
 
-def read_raw_xlsx(path: str) -> pd.DataFrame:
-    return read_raw_xlsx_file(ROOT / path)
-
-
-def read_raw_xlsx_file(path: Path) -> pd.DataFrame:
-    df = pd.read_excel(path, sheet_name=0, header=1)
-    df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
-    df = df.dropna(how="all").reset_index(drop=True)
-    return df
+def read_kfr(dataset: str, *, latest_only: bool = False) -> pd.DataFrame:
+    return load_kfr_frame(KFR_DATA_DIR, dataset, latest_only=latest_only).drop(
+        columns=["스냅샷일", "원천파일"], errors="ignore"
+    )
 
 
 def as_date(series: pd.Series) -> pd.Series:
@@ -274,11 +278,12 @@ def build_data() -> dict:
     fund_by_k = fund.set_index("펀드코드").to_dict("index")
     fund_by_assoc = fund.set_index("협회코드").to_dict("index")
 
-    holding_rows, base_date = process_holding_frame(read_raw_xlsx("전체펀드 보유현황.xlsx"), fund_by_k, issuer_rules)
+    raw_holdings = read_kfr("fund_holdings", latest_only=True)
+    holding_rows, base_date = process_holding_frame(raw_holdings, fund_by_k, issuer_rules)
 
     trade_rows = read_trade_parquet_rows()
     if not trade_rows:
-        trade_rows = process_trade_frame(read_raw_xlsx("전체펀드 매매현황.xlsx"), fund_by_assoc, issuer_rules)
+        trade_rows = process_trade_frame(read_kfr("fund_trades"), fund_by_assoc, issuer_rules)
 
     fund_rows = []
     for _, row in fund.iterrows():
@@ -344,7 +349,7 @@ def build_data() -> dict:
             "holdingRows": len(holding_rows),
             "tradeRows": len(trade_rows),
             "funds": len(fund_rows),
-            "rawHoldingRows": int(len(read_raw_xlsx("전체펀드 보유현황.xlsx"))),
+            "rawHoldingRows": int(len(raw_holdings)),
             "rawTradeRows": len(trade_rows),
         },
     }

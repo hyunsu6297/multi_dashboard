@@ -1,5 +1,7 @@
 """
-Download fund data from KFR K-FROMS.
+Legacy browser downloader retained only for historical troubleshooting.
+
+Production uses kfr_partner_api_download.py and does not call this module.
 
 Setup once:
   python -m pip install playwright

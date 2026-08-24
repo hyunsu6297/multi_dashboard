@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,6 +16,15 @@ import pandas as pd
 
 
 BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parents[1]
+KFR_MODULE_DIR = REPO_ROOT / "automation" / "kfr"
+if str(KFR_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(KFR_MODULE_DIR))
+from kfr_api import available_dates as available_kfr_dates  # noqa: E402
+from kfr_api import load_frame as load_kfr_frame  # noqa: E402
+from kfr_api import normalize_rows as normalize_kfr_rows  # noqa: E402
+
+KFR_DATA_DIR = Path(os.getenv("KFR_JSON_DIR", str(REPO_ROOT / "data" / "kfr")))
 
 
 def pick_input(default_name: str, *patterns: str) -> Path:
@@ -31,8 +41,6 @@ def pick_input(default_name: str, *patterns: str) -> Path:
 
 INPUTS = {
     "fund_info": BASE_DIR / "펀드 정보.xlsx",
-    "trades": pick_input("전체펀드 매매현황.xlsx", "*매매현황*7월27*8월4일*.xlsx", "*매매현황*8월4일*.xlsx", "*매매현황*8월3일*.xlsx"),
-    "holdings": pick_input("전체펀드 보유현황.xlsx", "*보유현황*8월4일*.xlsx", "*보유현황*8월3일*.xlsx"),
     "direct_stocks": BASE_DIR / "주식보유현황.xlsx",
     "industry": BASE_DIR / "업종.xlsx",
 }
@@ -163,6 +171,7 @@ def fetch_kfr_snapshots(
         "select": "id,business_date,row_count,file_name,downloaded_at",
         "source_key": f"eq.{source_key}",
         "order": "business_date.desc,downloaded_at.desc" if latest_only else "business_date.asc,downloaded_at.asc",
+        "source_format": "eq.kfr_partner_api_json",
     }
     if start_date:
         filters["business_date"] = f"gte.{start_date}"
@@ -216,7 +225,8 @@ def fetch_kfr_rows(
                 break
             for item in batch:
                 payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
-                rows.append({**payload, "스냅샷일": business_date, "원천파일": snapshot.get("file_name", "")})
+                normalized = normalize_kfr_rows(source_key, [payload])[0]
+                rows.append({**normalized, "스냅샷일": business_date, "원천파일": snapshot.get("file_name", "")})
             if len(batch) < 1000:
                 break
             offset += 1000
@@ -396,24 +406,19 @@ def read_inputs(
         trades = fetch_kfr_rows(client, "fund_trades", start_date=start_date, end_date=end_date)
         holdings = fetch_kfr_rows(client, "fund_holdings", start_date=start_date, end_date=end_date, latest_only=True)
         source_frames = {"holdings_ts": holdings_ts, "trades_ts": trades}
+    elif data_source == "json":
+        holdings_ts = load_kfr_frame(
+            KFR_DATA_DIR, "fund_holdings", start_date=start_date, end_date=end_date
+        )
+        trades = load_kfr_frame(
+            KFR_DATA_DIR, "fund_trades", start_date=start_date, end_date=end_date
+        )
+        holdings = load_kfr_frame(
+            KFR_DATA_DIR, "fund_holdings", start_date=start_date, end_date=end_date, latest_only=True
+        )
+        source_frames = {"holdings_ts": holdings_ts, "trades_ts": trades}
     else:
-        trade_frames = []
-        trade_paths = time_series_input_files("trades") or [INPUTS["trades"]]
-        for trade_path in trade_paths:
-            try:
-                trade_frames.append(read_data_sheet(trade_path))
-            except Exception:
-                continue
-        trades = pd.concat(trade_frames, ignore_index=True).drop_duplicates() if trade_frames else (
-            pd.read_excel(INPUTS["trades"], sheet_name="Data", header=1)
-            .drop(columns=["Unnamed: 0"], errors="ignore")
-            .dropna(how="all")
-        )
-        holdings = (
-            pd.read_excel(INPUTS["holdings"], sheet_name="Data", header=1)
-            .drop(columns=["Unnamed: 0"], errors="ignore")
-            .dropna(how="all")
-        )
+        raise ValueError(f"지원하지 않는 KFR 데이터 소스입니다: {data_source}")
 
     for df in (trades, holdings):
         for col in [c for c, dtype in df.dtypes.items() if str(dtype) in {"object", "string"}]:
@@ -449,37 +454,6 @@ def read_inputs(
         trades = trades[trades["협회펀드코드"].isin(active_codes)].copy()
         holdings = holdings[holdings["협회펀드코드"].isin(active_codes)].copy()
     return funds, trades, holdings, fund_master, source_frames
-
-
-def read_data_sheet(path: Path) -> pd.DataFrame:
-    df = (
-        pd.read_excel(path, sheet_name="Data", header=1)
-        .drop(columns=["Unnamed: 0"], errors="ignore")
-        .dropna(how="all")
-    )
-    for col in [c for c, dtype in df.dtypes.items() if str(dtype) in {"object", "string"}]:
-        df[col] = df[col].astype(str).str.strip()
-    return df
-
-
-def filename_date(path: Path) -> pd.Timestamp | None:
-    korean = re.search(r"(\d{1,2})월\s*(\d{1,2})일", path.name)
-    if korean:
-        month, day = map(int, korean.groups())
-        return pd.Timestamp(year=2026, month=month, day=day)
-    compact = re.search(r"\b(26)(\d{2})(\d{2})\b", path.stem)
-    if compact:
-        _, month, day = compact.groups()
-        return pd.Timestamp(year=2026, month=int(month), day=int(day))
-    return None
-
-
-def time_series_input_files(kind: str) -> list[Path]:
-    if kind == "holdings":
-        files = [p for p in BASE_DIR.glob("*보유현황*.xlsx") if not p.name.startswith("~$") and p.name != "주식보유현황.xlsx" and filename_date(p) is not None]
-    else:
-        files = [p for p in BASE_DIR.glob("*매매현황*.xlsx") if not p.name.startswith("~$")]
-    return sorted(files, key=lambda path: filename_date(path) or pd.Timestamp.min)
 
 
 def prepare_holdings_frame(
@@ -1508,21 +1482,6 @@ def build_time_series(
             frame["스냅샷일"] = pd.to_datetime(snapshot_date, errors="coerce")
             frame["원천파일"] = raw["원천파일"].iloc[0] if "원천파일" in raw and not raw.empty else "supabase"
             holding_frames.append(frame)
-    else:
-        for path in time_series_input_files("holdings"):
-            snapshot_date = filename_date(path)
-            if snapshot_date is None:
-                continue
-            try:
-                raw = read_data_sheet(path)
-            except Exception:
-                continue
-            frame = prepare_holdings_frame(raw, funds, industry_large_by_code, industry_mid_by_code)
-            if frame.empty:
-                continue
-            frame["스냅샷일"] = snapshot_date
-            frame["원천파일"] = path.name
-            holding_frames.append(frame)
     if holding_frames:
         ts_holdings = pd.concat(holding_frames, ignore_index=True)
     else:
@@ -1548,17 +1507,6 @@ def build_time_series(
         )
         if not frame.empty:
             frame["원천파일"] = "supabase"
-            trade_frames.append(frame)
-    else:
-        for path in time_series_input_files("trades"):
-            try:
-                raw = read_data_sheet(path)
-            except Exception:
-                continue
-            frame = prepare_trades_frame(raw, funds, fund_share_by_code, fund_investment_by_code, industry_large_by_code, industry_mid_by_code)
-            if frame.empty:
-                continue
-            frame["원천파일"] = path.name
             trade_frames.append(frame)
     ts_trades = pd.concat(trade_frames, ignore_index=True) if trade_frames else pd.DataFrame()
 
@@ -1624,8 +1572,8 @@ def build_time_series(
         "fund_daily": fund_daily,
         "stock_daily": stock_daily_by_name,
         "files": {
-            "holdings": ["supabase"] if "holdings_ts" in source_frames and not source_frames["holdings_ts"].empty else [p.name for p in time_series_input_files("holdings")],
-            "trades": ["supabase"] if "trades_ts" in source_frames and not source_frames["trades_ts"].empty else [p.name for p in time_series_input_files("trades")],
+            "holdings": sorted(set(source_frames.get("holdings_ts", pd.DataFrame()).get("원천파일", pd.Series(dtype=str)).dropna().astype(str))),
+            "trades": sorted(set(source_frames.get("trades_ts", pd.DataFrame()).get("원천파일", pd.Series(dtype=str)).dropna().astype(str))),
         },
     }
 
@@ -2210,8 +2158,8 @@ def build_dashboard(
         "trade_stock_related_rows": int(len(stock_trades)),
         "quote_source": quote_source,
         "quote_count": len(quotes),
-        "holding_source_file": "supabase:kfr_source_snapshots/fund_holdings" if data_source == "supabase" else INPUTS["holdings"].name,
-        "trade_source_file": "supabase:kfr_source_snapshots/fund_trades" if data_source == "supabase" else INPUTS["trades"].name,
+        "holding_source_file": f"{data_source}:KFR Partner API JSON/fund_holdings",
+        "trade_source_file": f"{data_source}:KFR Partner API JSON/fund_trades",
         "direct_stock_file": INPUTS["direct_stocks"].name if INPUTS["direct_stocks"].exists() else "없음",
         "time_series_holding_files": time_series.get("files", {}).get("holdings", []),
         "time_series_trade_files": time_series.get("files", {}).get("trades", []),
@@ -3808,6 +3756,13 @@ def available_supabase_holding_dates(start_date: str | None = None, end_date: st
     return sorted({str(snapshot["business_date"]) for snapshot in snapshots})
 
 
+def available_holding_dates(data_source: str, start_date: str | None = None, end_date: str | None = None) -> list[str]:
+    if data_source == "supabase":
+        return available_supabase_holding_dates(start_date, end_date)
+    dates = available_kfr_dates(KFR_DATA_DIR, "fund_holdings")
+    return [date for date in dates if (not start_date or date >= start_date) and (not end_date or date <= end_date)]
+
+
 def _extract_json_const(script: str, name: str, next_name: str | None) -> object:
     start_match = re.search(rf"(?:^|\n)\s*(?:const|let) {re.escape(name)} = ", script)
     if not start_match:
@@ -3866,22 +3821,20 @@ def write_dashboard_shell_from_inline_html(html_path: Path, output_path: Path = 
 
 
 def build_static_data_bundle(
-    data_source: str = "supabase",
+    data_source: str = "json",
     start_date: str | None = None,
     end_date: str | None = None,
     selected_dates: list[str] | None = None,
     recent_snapshots: int | None = None,
 ) -> Path:
-    if data_source != "supabase":
-        raise RuntimeError("정적 데이터 번들은 Supabase 소스에서만 생성할 수 있습니다.")
-    dates = available_supabase_holding_dates(start_date, end_date)
+    dates = available_holding_dates(data_source, start_date, end_date)
     if not dates:
-        raise RuntimeError("생성할 Supabase 보유 스냅샷이 없습니다.")
+        raise RuntimeError("생성할 KFR API 보유 스냅샷이 없습니다.")
     if selected_dates:
         requested = {date.strip() for date in selected_dates if date.strip()}
         missing = sorted(requested - set(dates))
         if missing:
-            raise RuntimeError(f"Supabase 보유 스냅샷에 없는 기준일입니다: {', '.join(missing)}")
+            raise RuntimeError(f"KFR API 보유 스냅샷에 없는 기준일입니다: {', '.join(missing)}")
         dates = [date for date in dates if date in requested]
         if not dates:
             raise RuntimeError("선택한 기준일이 없습니다.")
@@ -3909,7 +3862,7 @@ def build_static_data_bundle(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", choices=["excel", "supabase"], default=os.getenv("DASHBOARD_DATA_SOURCE", "excel"))
+    parser.add_argument("--source", choices=["json", "supabase"], default=os.getenv("DASHBOARD_DATA_SOURCE", "json"))
     parser.add_argument("--start", default=os.getenv("DASHBOARD_START_DATE") or None)
     parser.add_argument("--end", default=os.getenv("DASHBOARD_END_DATE") or None)
     parser.add_argument("--date-versions", action="store_true", help="Supabase 보유 스냅샷별 HTML 파일을 함께 생성합니다.")
@@ -3922,9 +3875,7 @@ if __name__ == "__main__":
         selected_dates = [date.strip() for date in args.dates.split(",") if date.strip()] if args.dates else None
         print(build_static_data_bundle(args.source, args.start, args.end, selected_dates, args.recent_snapshots or None))
     elif args.date_versions:
-        if args.source != "supabase":
-            raise SystemExit("--date-versions는 --source supabase에서만 사용할 수 있습니다.")
-        dates = available_supabase_holding_dates(args.start, args.end)
+        dates = available_holding_dates(args.source, args.start, args.end)
         for date in dates:
             target = OUTPUT if date == dates[-1] else BASE_DIR / f"fund_dashboard_{date}.html"
             if target.exists() and date != dates[-1] and not args.force_date_versions:

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +13,13 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parent
+REPO_ROOT = ROOT.parents[1]
+KFR_MODULE_DIR = REPO_ROOT / "automation" / "kfr"
+if str(KFR_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(KFR_MODULE_DIR))
+from kfr_api import load_frame as load_kfr_frame  # noqa: E402
+
+KFR_DATA_DIR = Path(os.getenv("KFR_JSON_DIR", str(REPO_ROOT / "data" / "kfr")))
 OUTPUT = ROOT / "메자닌_대시보드.html"
 ALIAS_FILE = ROOT / "instrument_aliases.csv"
 ADDITIONS_FILE = ROOT / "instrument_additions.json"
@@ -74,10 +83,10 @@ def finite_number(value: object) -> float | None:
     return result if math.isfinite(result) else None
 
 
-def read_raw(name: str) -> pd.DataFrame:
-    df = pd.read_excel(ROOT / name, header=1)
-    df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
-    return df.dropna(how="all")
+def read_raw(dataset: str, *, latest_only: bool = False) -> pd.DataFrame:
+    return load_kfr_frame(KFR_DATA_DIR, dataset, latest_only=latest_only).drop(
+        columns=["스냅샷일", "원천파일"], errors="ignore"
+    )
 
 
 def read_master() -> pd.DataFrame:
@@ -241,9 +250,9 @@ def records(df: pd.DataFrame) -> list[dict]:
 
 def build_data() -> dict:
     funds = pd.read_excel(ROOT / "펀드정보.xlsx", dtype={"펀드코드": str, "협회코드": str}).fillna("")
-    holdings = read_raw("전체펀드 보유현황.xlsx")
-    trades = read_raw("전체펀드 매매현황.xlsx")
-    kfr = read_raw("메자닌 기준가.xlsx")
+    holdings = read_raw("fund_holdings", latest_only=True)
+    trades = read_raw("fund_trades")
+    kfr = read_raw("mezzanine_price", latest_only=True)
     master = read_master().astype(object)
     if ADDITIONS_FILE.exists():
         try:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +14,12 @@ ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
 REPO_ROOT = PROJECT_ROOT.parent
 OUTPUT = ROOT / "index.html"
+KFR_MODULE_DIR = REPO_ROOT / "automation" / "kfr"
+if str(KFR_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(KFR_MODULE_DIR))
+from kfr_api import load_frame as load_kfr_frame  # noqa: E402
+
+KFR_DATA_DIR = Path(os.getenv("KFR_JSON_DIR", str(REPO_ROOT / "data" / "kfr")))
 
 
 def clean(value: object) -> str:
@@ -47,26 +55,6 @@ def read_table(path: Path, header: int = 0) -> pd.DataFrame:
     return frame.dropna(axis=1, how="all").dropna(how="all").reset_index(drop=True)
 
 
-def find_shared(name: str) -> Path | None:
-    candidates = [ROOT / name, PROJECT_ROOT / name]
-    candidates += list((PROJECT_ROOT / "apps").glob(f"*/{name}"))
-    return next((path for path in candidates if path.is_file()), None)
-
-
-def find_shared_matches(fragment: str) -> list[Path]:
-    roots = [ROOT, PROJECT_ROOT]
-    roots += [path for path in (PROJECT_ROOT / "apps").glob("*") if path.is_dir()]
-    seen, matches = set(), []
-    for root in roots:
-        for path in root.glob("*.xlsx"):
-            if path.name.startswith("~$"):
-                continue
-            if fragment in path.name and path not in seen:
-                seen.add(path)
-                matches.append(path)
-    return sorted(matches, key=lambda path: path.name)
-
-
 def load_funds() -> list[dict]:
     rows = []
     for _, row in read_table(ROOT / "펀드정보.xlsx").iterrows():
@@ -96,11 +84,10 @@ def load_etfs() -> list[dict]:
     return rows
 
 
-def read_shared(path: Path | None) -> pd.DataFrame:
-    if path is None:
-        return pd.DataFrame()
-    frame = pd.read_excel(path, sheet_name="Data", header=1)
-    return frame.drop(columns=["Unnamed: 0"], errors="ignore").dropna(how="all")
+def read_kfr(dataset: str, *, latest_only: bool = False) -> pd.DataFrame:
+    return load_kfr_frame(KFR_DATA_DIR, dataset, latest_only=latest_only).drop(
+        columns=["스냅샷일", "원천파일"], errors="ignore"
+    )
 
 
 def match_etf(row: pd.Series, by_isin: dict, by_ticker: dict) -> dict:
@@ -111,7 +98,7 @@ def match_etf(row: pd.Series, by_isin: dict, by_ticker: dict) -> dict:
 
 
 def load_holdings(funds: list[dict], etfs: list[dict]) -> list[dict]:
-    frame = read_shared(find_shared("전체펀드 보유현황.xlsx"))
+    frame = read_kfr("fund_holdings", latest_only=True)
     if frame.empty:
         return []
     fund_map = {f["assocCode"]: f for f in funds}
@@ -146,10 +133,7 @@ def load_holdings(funds: list[dict], etfs: list[dict]) -> list[dict]:
 
 
 def load_trades(funds: list[dict], etfs: list[dict]) -> list[dict]:
-    trade_paths = find_shared_matches("매매현황")
-    frames = [read_shared(path) for path in trade_paths]
-    frames = [frame for frame in frames if not frame.empty]
-    frame = pd.concat(frames, ignore_index=True).drop_duplicates() if frames else pd.DataFrame()
+    frame = read_kfr("fund_trades").drop_duplicates()
     if frame.empty:
         return []
     fund_map = {f["assocCode"]: f for f in funds}
@@ -237,8 +221,8 @@ def build_data() -> dict:
         "asOf": max(dates) if dates else "원천데이터 미연결",
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "sources": {
-            "holdings": str(find_shared("전체펀드 보유현황.xlsx") or ""),
-            "trades": "; ".join(str(path) for path in find_shared_matches("매매현황")),
+            "holdings": "KFR Partner API JSON: fund_holdings",
+            "trades": "KFR Partner API JSON: fund_trades",
         },
     }
 

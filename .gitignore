@@ -1,4 +1,6 @@
 dist/
+data/kfr/
+tmp/
 __pycache__/
 *.py[cod]
 .env

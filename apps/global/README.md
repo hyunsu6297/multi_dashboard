@@ -19,8 +19,8 @@ Bloomberg Terminal 로그인 및 Desktop API(`localhost:8194`) 연결이 필요�
 - `EMP보유현황.xlsx`: EMP1~4 원금 및 초기 보유 종목/수량
 - `펀드정보.xlsx`: 글로벌 펀드 기준정보
 - `ETF정보.xlsx`: ETF 분류 기준정보
-- `전체펀드 보유현황.xlsx`: 임시 보유 원천데이터
-- `전체펀드 매매현황.xlsx`: 임시 매매 원천데이터
+- `../../data/kfr/holdings_YYYY-MM-DD.json`: KFR API 보유 원천데이터
+- `../../data/kfr/trades_YYYY-MM-DD.json`: KFR API 매매 원천데이터
 - `EMP유니버스(260522).xlsx`: EMP 참고 유니버스
 
 향후 보유현황·매매현황과 펀드·ETF 기준정보는 Supabase 데이터로 전환할 예정입니다.
