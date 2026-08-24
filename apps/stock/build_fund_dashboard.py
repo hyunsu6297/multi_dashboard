@@ -285,6 +285,22 @@ def choose_effective_sheet(sheet_names: list[str], as_of_date: str | None) -> st
 
 
 def fetch_stock_fund_info_rows(client: SupabaseRest, as_of_date: str | None = None) -> pd.DataFrame:
+    grouped = fetch_stock_fund_info_versions(client)
+    chosen = choose_effective_sheet(list(grouped), as_of_date)
+    if not chosen:
+        return pd.DataFrame()
+
+    chosen_rows = sorted(grouped.get(chosen, []), key=lambda row: int(row.get("row_no") or 0))
+    rows: list[dict[str, object]] = []
+    for item in chosen_rows:
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        rows.append(dict(payload))
+    df = pd.DataFrame(rows)
+    df.attrs["fund_master_sheet_name"] = chosen
+    return df
+
+
+def fetch_stock_fund_info_versions(client: SupabaseRest) -> dict[str, list[dict[str, object]]]:
     records: list[dict[str, object]] = []
     offset = 0
     while True:
@@ -311,19 +327,7 @@ def fetch_stock_fund_info_rows(client: SupabaseRest, as_of_date: str | None = No
     for item in records:
         sheet_name = str(item.get("sheet_name") or "Sheet1")
         grouped.setdefault(sheet_name, []).append(item)
-
-    chosen = choose_effective_sheet(list(grouped), as_of_date)
-    if not chosen:
-        return pd.DataFrame()
-
-    chosen_rows = sorted(grouped.get(chosen, []), key=lambda row: int(row.get("row_no") or 0))
-    rows: list[dict[str, object]] = []
-    for item in chosen_rows:
-        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
-        rows.append(dict(payload))
-    df = pd.DataFrame(rows)
-    df.attrs["fund_master_sheet_name"] = chosen
-    return df
+    return grouped
 
 
 def read_fund_info_from_excel() -> pd.DataFrame:
@@ -332,6 +336,40 @@ def read_fund_info_from_excel() -> pd.DataFrame:
         .dropna(axis=1, how="all")
         .dropna(how="all")
     )[["펀드코드", "펀드명", "지분율", "유형", "평가액"]].copy()
+
+
+def normalize_fund_info_frame(funds: pd.DataFrame) -> pd.DataFrame:
+    funds = funds.copy()
+    if "펀드명" not in funds.columns and "펀드명(약식)" in funds.columns:
+        funds["펀드명"] = funds["펀드명(약식)"]
+    for column, default in {
+        "펀드코드": "",
+        "펀드명": "",
+        "지분율": 1,
+        "유형": "기타",
+        "평가액": 0,
+        "상태": "활성",
+    }.items():
+        if column not in funds.columns:
+            funds[column] = default
+    funds = funds[funds["상태"].fillna("활성").astype(str).str.strip().ne("비활성")].copy()
+    funds = funds[["펀드코드", "펀드명", "지분율", "유형", "평가액"]].copy()
+    funds["펀드코드"] = funds["펀드코드"].map(normalize_code)
+    funds["펀드명"] = funds["펀드명"].astype(str).str.strip()
+    funds["유형"] = funds["유형"].fillna("기타").astype(str).str.strip()
+    funds["지분율"] = pd.to_numeric(funds["지분율"], errors="coerce").fillna(1)
+    funds.loc[funds["지분율"] > 1, "지분율"] = funds.loc[funds["지분율"] > 1, "지분율"] / 100
+    funds["평가액"] = pd.to_numeric(funds["평가액"], errors="coerce")
+    funds["평가액원"] = funds["평가액"] * 1_000_000
+    return funds
+
+
+def fund_info_from_version_records(records: list[dict[str, object]]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for item in sorted(records, key=lambda row: int(row.get("row_no") or 0)):
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        rows.append(dict(payload))
+    return normalize_fund_info_frame(pd.DataFrame(rows))
 
 
 def parse_float(value: object, default: float | None = 0.0) -> float | None:
@@ -428,36 +466,19 @@ def read_inputs(
     data_source: str = "excel",
     start_date: str | None = None,
     end_date: str | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object], dict[str, pd.DataFrame]]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object], dict[str, object]]:
     client = supabase_client() if data_source == "supabase" else None
+    fund_master_versions: dict[str, list[dict[str, object]]] = {}
     if client:
+        fund_master_versions = fetch_stock_fund_info_versions(client)
         funds = fetch_stock_fund_info_rows(client, end_date)
         if funds.empty:
             raise RuntimeError("Supabase manual_file_rows에 stock/fund_info 데이터가 없습니다.")
         fund_master_sheet = str(funds.attrs.get("fund_master_sheet_name") or "")
-        if "펀드명" not in funds.columns and "펀드명(약식)" in funds.columns:
-            funds["펀드명"] = funds["펀드명(약식)"]
-        for column, default in {
-            "펀드코드": "",
-            "펀드명": "",
-            "지분율": 1,
-            "유형": "기타",
-            "평가액": 0,
-            "상태": "활성",
-        }.items():
-            if column not in funds.columns:
-                funds[column] = default
-        funds = funds[funds["상태"].fillna("활성").astype(str).str.strip().ne("비활성")].copy()
-        funds = funds[["펀드코드", "펀드명", "지분율", "유형", "평가액"]].copy()
+        funds = normalize_fund_info_frame(funds)
     else:
         funds = read_fund_info_from_excel()
-    funds["펀드코드"] = funds["펀드코드"].map(normalize_code)
-    funds["펀드명"] = funds["펀드명"].astype(str).str.strip()
-    funds["유형"] = funds["유형"].fillna("기타").astype(str).str.strip()
-    funds["지분율"] = pd.to_numeric(funds["지분율"], errors="coerce").fillna(1)
-    funds.loc[funds["지분율"] > 1, "지분율"] = funds.loc[funds["지분율"] > 1, "지분율"] / 100
-    funds["평가액"] = pd.to_numeric(funds["평가액"], errors="coerce")
-    funds["평가액원"] = funds["평가액"] * 1_000_000
+        funds = normalize_fund_info_frame(funds)
     funds, fund_master = apply_fund_master(funds)
     if data_source == "supabase":
         fund_master = {
@@ -467,13 +488,15 @@ def read_inputs(
             "effective_date": fund_master_sheet if is_effective_sheet_name(fund_master_sheet) else "",
         }
 
-    source_frames: dict[str, pd.DataFrame] = {}
+    source_frames: dict[str, object] = {}
     if data_source == "supabase":
         assert client is not None
         holdings_ts = fetch_kfr_rows(client, "fund_holdings", start_date=start_date, end_date=end_date)
         trades = fetch_kfr_rows(client, "fund_trades", start_date=start_date, end_date=end_date)
         holdings = fetch_kfr_rows(client, "fund_holdings", start_date=start_date, end_date=end_date, latest_only=True)
         source_frames = {"holdings_ts": holdings_ts, "trades_ts": trades}
+        if fund_master_versions:
+            source_frames["fund_master_versions"] = fund_master_versions
     elif data_source == "json":
         holdings_ts = load_kfr_frame(
             KFR_DATA_DIR, "fund_holdings", start_date=start_date, end_date=end_date
@@ -1533,15 +1556,26 @@ def build_time_series(
     funds: pd.DataFrame,
     industry_large_by_code: dict[str, str],
     industry_mid_by_code: dict[str, str],
-    source_frames: dict[str, pd.DataFrame] | None = None,
+    source_frames: dict[str, object] | None = None,
 ) -> dict[str, object]:
     holding_frames = []
     source_frames = source_frames or {}
-    if "holdings_ts" in source_frames and not source_frames["holdings_ts"].empty:
-        for snapshot_date, raw in source_frames["holdings_ts"].groupby("스냅샷일", dropna=False):
+    fund_versions = source_frames.get("fund_master_versions")
+
+    def funds_for_snapshot(snapshot_date: object) -> pd.DataFrame:
+        if isinstance(fund_versions, dict) and fund_versions:
+            chosen = choose_effective_sheet(list(fund_versions), normalize_date_label(snapshot_date))
+            if chosen and fund_versions.get(chosen):
+                return fund_info_from_version_records(fund_versions[chosen])
+        return funds
+
+    holdings_ts = source_frames.get("holdings_ts")
+    if isinstance(holdings_ts, pd.DataFrame) and not holdings_ts.empty:
+        for snapshot_date, raw in holdings_ts.groupby("스냅샷일", dropna=False):
+            snapshot_funds = funds_for_snapshot(snapshot_date)
             frame = prepare_holdings_frame(
                 raw.drop(columns=["스냅샷일", "원천파일"], errors="ignore"),
-                funds,
+                snapshot_funds,
                 industry_large_by_code,
                 industry_mid_by_code,
             )
@@ -1563,8 +1597,9 @@ def build_time_series(
     fund_investment_by_code = latest_holdings.groupby("협회펀드코드", dropna=False)["우리순자산"].sum()
 
     trade_frames = []
-    if "trades_ts" in source_frames and not source_frames["trades_ts"].empty:
-        raw = source_frames["trades_ts"]
+    trades_ts = source_frames.get("trades_ts")
+    if isinstance(trades_ts, pd.DataFrame) and not trades_ts.empty:
+        raw = trades_ts
         frame = prepare_trades_frame(
             raw.drop(columns=["스냅샷일", "원천파일"], errors="ignore"),
             funds,
@@ -1640,8 +1675,8 @@ def build_time_series(
         "fund_daily": fund_daily,
         "stock_daily": stock_daily_by_name,
         "files": {
-            "holdings": sorted(set(source_frames.get("holdings_ts", pd.DataFrame()).get("원천파일", pd.Series(dtype=str)).dropna().astype(str))),
-            "trades": sorted(set(source_frames.get("trades_ts", pd.DataFrame()).get("원천파일", pd.Series(dtype=str)).dropna().astype(str))),
+            "holdings": sorted(set(holdings_ts.get("원천파일", pd.Series(dtype=str)).dropna().astype(str))) if isinstance(holdings_ts, pd.DataFrame) else [],
+            "trades": sorted(set(trades_ts.get("원천파일", pd.Series(dtype=str)).dropna().astype(str))) if isinstance(trades_ts, pd.DataFrame) else [],
         },
     }
 
@@ -2567,18 +2602,7 @@ def build_dashboard(
         <button type="button" data-tab="timeseries">시계열</button>
       </div>
       <div class="quote-controls">
-        <button type="button" id="refreshQuotes" class="refresh-button">시세 갱신</button>
-        <select id="quoteRefreshInterval" aria-label="시세 자동갱신 주기">
-          <option value="off">OFF</option>
-          <option value="30000">30초</option>
-          <option value="60000">1분</option>
-        </select>
         <span id="quoteStatus" class="quote-status">시세 대기</span>
-      </div>
-      <div class="snapshot-control">
-        <label for="snapshotDate">기준일</label>
-        <select id="snapshotDate"></select>
-        <button type="button" id="latestSnapshot">최신</button>
       </div>
     </div>
     <div class="caption"><span>작업 폴더 raw 데이터 · 지분율 반영 · 주식/주식관련 분석</span><small id="periodCaption"></small></div>
@@ -2649,6 +2673,7 @@ def build_dashboard(
     let multiFund = false;
     let activeTab = initialTabFromLocation();
     let tsRangeState = null;
+    let tsActiveSubtab = "overview";
     function normalizeFundCode(value) {{
       const text = String(value ?? "").trim().replace(/,/g, "");
       if (!text || text.toLowerCase() === "nan") return "";
@@ -2656,26 +2681,7 @@ def build_dashboard(
       return /^\\d+$/.test(text) ? text.padStart(6, "0") : text;
     }}
     function loadLocalFundMaster() {{
-      try {{
-        const versions = JSON.parse(localStorage.getItem(FUND_MASTER_STORAGE_KEY) || "[]");
-        if (!Array.isArray(versions) || !versions.length) return null;
-        const latest = [...versions].sort((a, b) => String(a.effectiveDate || "").localeCompare(String(b.effectiveDate || ""))).at(-1);
-        const byCode = new Map();
-        (latest?.rows || []).forEach((row, index) => {{
-          const code = normalizeFundCode(row["펀드코드"]);
-          if (!code) return;
-          byCode.set(code, {{
-            name: String(row["펀드명(약식)"] || row["펀드명"] || "").trim(),
-            type: String(row["유형"] || "기타").trim() || "기타",
-            status: String(row["상태"] || "활성").trim() || "활성",
-            order: index,
-          }});
-        }});
-        return {{ effectiveDate: latest?.effectiveDate || "", byCode }};
-      }} catch (error) {{
-        console.warn("펀드 마스터 로컬 저장값을 읽지 못했습니다.", error);
-        return null;
-      }}
+      return null;
     }}
     function masterInfoFor(key) {{
       return loadLocalFundMaster()?.byCode.get(normalizeFundCode(key));
@@ -3023,14 +3029,11 @@ def build_dashboard(
         if (manual) console.warn("시세 갱신 실패", error);
       }}
     }}
-    function setQuoteAutoRefresh(value) {{
+    function setQuoteAutoRefresh() {{
       if (quoteRefreshTimer) window.clearInterval(quoteRefreshTimer);
       quoteRefreshTimer = null;
-      const ms = Number(value);
-      if (Number.isFinite(ms) && ms > 0) {{
-        refreshQuotes(false);
-        quoteRefreshTimer = window.setInterval(() => refreshQuotes(false), ms);
-      }}
+      refreshQuotes(false);
+      quoteRefreshTimer = window.setInterval(() => refreshQuotes(false), 30000);
     }}
     function snapshotFileName(date) {{
       return "fund_dashboard.html";
@@ -3450,11 +3453,16 @@ def build_dashboard(
     }}
     function bindTimeSeriesSubtabs() {{
       const panel = dashboard.querySelector('[data-panel="timeseries"]');
-      if (!panel || panel.dataset.subtabsBound === "1") return;
+      if (!panel) return;
+      panel.querySelectorAll("[data-ts-subtab]").forEach((item) => item.classList.toggle("active", item.dataset.tsSubtab === tsActiveSubtab));
+      panel.querySelectorAll("[data-ts-subpanel]").forEach((item) => item.classList.toggle("active", item.dataset.tsSubpanel === tsActiveSubtab));
+      if (tsActiveSubtab === "stock") bindTimeSeriesStockWidgets(true);
+      if (panel.dataset.subtabsBound === "1") return;
       panel.dataset.subtabsBound = "1";
       panel.querySelectorAll("[data-ts-subtab]").forEach((button) => {{
         button.addEventListener("click", () => {{
           const target = button.dataset.tsSubtab;
+          tsActiveSubtab = target;
           panel.querySelectorAll("[data-ts-subtab]").forEach((item) => item.classList.toggle("active", item === button));
           panel.querySelectorAll("[data-ts-subpanel]").forEach((item) => item.classList.toggle("active", item.dataset.tsSubpanel === target));
           if (target === "stock") bindTimeSeriesStockWidgets(true);
@@ -3511,6 +3519,7 @@ def build_dashboard(
       activeTab = tab || "summary";
       dashboard.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === activeTab));
       document.querySelectorAll(".quick-nav button").forEach((button) => button.classList.toggle("active", button.dataset.tab === activeTab));
+      if (activeTab === "summary") refreshQuotes(false);
       if (activeTab === "holdings") renderHoldingTables();
       if (activeTab === "trades") renderTradeHistory();
       if (activeTab === "timeseries") {{
@@ -3787,8 +3796,6 @@ def build_dashboard(
       if (event.key === "Escape") setHoldingFundModal(false);
     }});
     document.getElementById("refreshPage")?.addEventListener("click", () => location.reload());
-    document.getElementById("refreshQuotes")?.addEventListener("click", () => refreshQuotes(true));
-    document.getElementById("quoteRefreshInterval")?.addEventListener("change", (event) => setQuoteAutoRefresh(event.target.value));
     document.getElementById("multiFundToggle")?.addEventListener("click", () => {{
       multiFund = !multiFund;
       if (!multiFund && selectedFundKeys.length > 1) selectedFundKeys = [selectedFundKeys[0]];
@@ -3804,6 +3811,7 @@ def build_dashboard(
         bindSnapshotSelector();
         drawList();
         render("ALL");
+        setQuoteAutoRefresh();
       }} catch (error) {{
         console.error(error);
         dashboard.innerHTML = `<div class="empty">대시보드 데이터를 불러오지 못했습니다. ${{escHtml(error.message || error)}}</div>`;
