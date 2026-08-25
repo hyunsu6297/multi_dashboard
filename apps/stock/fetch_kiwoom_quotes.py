@@ -191,7 +191,7 @@ def normalize_quote(data: dict[str, Any], fallback_name: str = "") -> dict[str, 
     }
 
 
-def collect_codes(data_source: str = "excel", start_date: str | None = None, end_date: str | None = None) -> dict[str, str]:
+def collect_codes(data_source: str = "json", start_date: str | None = None, end_date: str | None = None) -> dict[str, str]:
     codes: dict[str, str] = {}
     funds, _, holdings, _, _ = read_inputs(data_source, start_date, end_date)
     fund_codes = set(funds[COL_FUND_CODE].map(normalize_code))
@@ -433,7 +433,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--code", default=None)
     parser.add_argument("--output", type=Path, default=OUTPUT)
-    parser.add_argument("--source", choices=["excel", "supabase"], default=os.getenv("DASHBOARD_DATA_SOURCE", "excel"))
+    parser.add_argument("--source", choices=["json", "supabase"], default=os.getenv("DASHBOARD_DATA_SOURCE", "json"))
     parser.add_argument("--start", default=os.getenv("DASHBOARD_START_DATE") or None)
     parser.add_argument("--end", default=os.getenv("DASHBOARD_END_DATE") or None)
     parser.add_argument("--build-dashboard", action="store_true")
