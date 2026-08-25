@@ -169,6 +169,16 @@ def restore_kfr_json(client: SupabaseRest, output_dir: Path) -> None:
     )
 
 
+def restore_kfr(
+    client: SupabaseRest,
+    stock_dir: Path | None = None,
+    bond_dir: Path | None = None,
+    mezzanine_dir: Path | None = None,
+) -> None:
+    """Backward-compatible KFR restore entrypoint for live publishers."""
+    restore_kfr_json(client, REPO_ROOT / "data" / "kfr")
+
+
 def restore_manual(client: SupabaseRest, stock_dir: Path, bond_dir: Path) -> None:
     for (domain, file_key), (file_name, header_row) in MANUAL_TARGETS.items():
         rows = client.get_all(
