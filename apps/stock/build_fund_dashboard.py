@@ -335,7 +335,8 @@ def read_fund_info_from_excel() -> pd.DataFrame:
         pd.read_excel(INPUTS["fund_info"], header=3)
         .dropna(axis=1, how="all")
         .dropna(how="all")
-    )[["펀드코드", "펀드명", "지분율", "유형", "평가액"]].copy()
+        .copy()
+    )
 
 
 def normalize_fund_info_frame(funds: pd.DataFrame) -> pd.DataFrame:
