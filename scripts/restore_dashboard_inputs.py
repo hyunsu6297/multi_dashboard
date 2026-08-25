@@ -125,7 +125,7 @@ def restore_kfr_json(client: SupabaseRest, output_dir: Path) -> None:
         if not snapshot:
             raise RuntimeError(f"No KFR Partner API JSON snapshot found for {source_key}")
         source_snapshots = [snapshot]
-        if source_key in {"fund_prices", "fund_holdings", "fund_trades"}:
+        if source_key in {"fund_prices", "fund_holdings", "fund_trades", "mezzanine_price"}:
             latest_date = date.fromisoformat(snapshot["business_date"])
             cutoff = latest_date - timedelta(days=31)
             seen_dates = {snapshot["business_date"]}

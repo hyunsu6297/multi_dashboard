@@ -156,13 +156,7 @@ def normalize_daily_prices(code: str, name: str, rows: list[dict], keep_days: in
     return output[-keep_days:]
 
 
-def read_current_nav() -> tuple[str, list[dict]]:
-    frame = load_kfr_frame(KFR_DATA_DIR, "mezzanine_price", latest_only=True).drop(
-        columns=["스냅샷일", "원천파일"], errors="ignore"
-    )
-    frame["_business_date"] = pd.to_datetime(frame["거래일"], errors="coerce").dt.date
-    frame = frame[frame["_business_date"].notna()]
-    business_date = frame["_business_date"].max().isoformat()
+def nav_rows_from_frame(frame: pd.DataFrame) -> list[dict]:
     rows = []
     for _, row in frame.iterrows():
         security_code = text(row.get("상품코드"))
@@ -176,9 +170,86 @@ def read_current_nav() -> tuple[str, list[dict]]:
             "fund_name": text(row.get("펀드명")),
             "nav": nav,
             "source": "kfr_daily",
+            "source_snapshot_id": row.get("source_snapshot_id"),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
-    return business_date, rows
+    return rows
+
+
+def read_nav(
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    latest_only: bool = False,
+) -> tuple[str, list[dict]]:
+    frame = load_kfr_frame(
+        KFR_DATA_DIR,
+        "mezzanine_price",
+        start_date=start_date,
+        end_date=end_date,
+        latest_only=latest_only,
+    ).drop(
+        columns=["스냅샷일", "원천파일"], errors="ignore"
+    )
+    frame["_business_date"] = pd.to_datetime(frame["거래일"], errors="coerce").dt.date
+    frame = frame[frame["_business_date"].notna()]
+    if frame.empty:
+        raise RuntimeError("No mezzanine NAV rows were found in KFR JSON data")
+    business_date = frame["_business_date"].max().isoformat()
+    return business_date, nav_rows_from_frame(frame)
+
+
+def read_current_nav() -> tuple[str, list[dict]]:
+    return read_nav(latest_only=True)
+
+
+def expected_nav_counts(rows: list[dict]) -> dict[str, int]:
+    keys_by_date: dict[str, set[tuple[str, str]]] = {}
+    for row in rows:
+        keys_by_date.setdefault(row["business_date"], set()).add((row["security_code"], row["fund_name"]))
+    return {business_date: len(keys) for business_date, keys in keys_by_date.items()}
+
+
+def find_missing_delta_dates(
+    client: SupabaseRest,
+    nav_rows: list[dict],
+) -> list[str]:
+    expected = expected_nav_counts(nav_rows)
+    if not expected:
+        return []
+    start_date = min(expected)
+    end_date = max(expected)
+    history = client.get_all("mezzanine_delta_history", {
+        "select": "business_date,security_code,fund_name",
+        "business_date": f"gte.{start_date}",
+        "order": "business_date.asc",
+    })
+    actual_keys: dict[str, set[tuple[str, str]]] = {}
+    for row in history:
+        business_date = str(row.get("business_date") or "")
+        if business_date > end_date or business_date not in expected:
+            continue
+        actual_keys.setdefault(business_date, set()).add((text(row.get("security_code")), text(row.get("fund_name"))))
+    missing = []
+    for business_date, count in expected.items():
+        if len(actual_keys.get(business_date, set())) < count:
+            missing.append(business_date)
+    return sorted(missing)
+
+
+def restore_inputs_from_supabase() -> None:
+    scripts_dir = REPOSITORY_ROOT / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    from restore_dashboard_inputs import (  # noqa: E402
+        SupabaseRest as RestoreSupabaseRest,
+        restore_kfr_json,
+        restore_mezzanine_manual,
+    )
+
+    client = RestoreSupabaseRest(required_env("SUPABASE_URL"), required_env("SUPABASE_SERVICE_ROLE_KEY"))
+    restore_kfr_json(client, KFR_DATA_DIR)
+    restore_mezzanine_manual(client, ROOT)
 
 
 def upsert_current_quotes(client: SupabaseRest, business_date: str, names: dict[str, str]) -> int:
@@ -280,10 +351,25 @@ def run_update(
     timeout: float = 20.0,
     skip_backfill: bool = False,
     use_current_quotes: bool = False,
+    missing_only: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> None:
     client = SupabaseRest()
     underlying_by_security, names = load_instrument_map()
-    business_date, current_nav = read_current_nav()
+    if missing_only or start_date or end_date:
+        business_date, nav_rows = read_nav(start_date=start_date, end_date=end_date)
+        missing_dates = find_missing_delta_dates(client, nav_rows) if missing_only else sorted({row["business_date"] for row in nav_rows})
+        if not missing_dates:
+            print("delta update skipped: no missing mezzanine delta dates")
+            return
+        target_dates = set(missing_dates)
+        current_nav = [row for row in nav_rows if row["business_date"] in target_dates]
+        business_date = max(missing_dates)
+        print(f"delta target dates: {', '.join(missing_dates)}")
+    else:
+        business_date, current_nav = read_current_nav()
+        missing_dates = [business_date]
 
     if not skip_backfill:
         cutoff = (date.fromisoformat(business_date) - timedelta(days=history_days * 2)).isoformat()
@@ -297,9 +383,10 @@ def run_update(
             if row.get("source") == "ka10081" and row.get("change_rate") not in (None, "", "0", "0.0", 0, 0.0):
                 counts[row["code"]] = counts.get(row["code"], 0) + 1
                 valid_daily.add((row["code"], row["business_date"]))
+        target_dates = set(missing_dates)
         missing = [
             code for code in sorted(names)
-            if counts.get(code, 0) < 10 or (code, business_date) not in valid_daily
+            if counts.get(code, 0) < 10 or any((code, target_date) not in valid_daily for target_date in target_dates)
         ]
         if missing:
             if not token:
@@ -328,7 +415,13 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--skip-backfill", action="store_true")
     parser.add_argument("--use-current-quotes", action="store_true")
+    parser.add_argument("--missing-only", action="store_true", help="Update only KFR dates missing from mezzanine_delta_history.")
+    parser.add_argument("--start-date", default=None)
+    parser.add_argument("--end-date", default=None)
+    parser.add_argument("--restore-inputs", action="store_true", help="Restore KFR JSON and mezzanine manual files from Supabase before updating.")
     args = parser.parse_args()
+    if args.restore_inputs:
+        restore_inputs_from_supabase()
     run_update(
         host=args.host,
         history_days=args.history_days,
@@ -336,6 +429,9 @@ def main() -> None:
         timeout=args.timeout,
         skip_backfill=args.skip_backfill,
         use_current_quotes=args.use_current_quotes,
+        missing_only=args.missing_only,
+        start_date=args.start_date,
+        end_date=args.end_date,
     )
 
 
