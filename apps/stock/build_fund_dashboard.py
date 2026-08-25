@@ -462,6 +462,42 @@ def hana_color(i: int) -> str:
     return palette[i % len(palette)]
 
 
+HOLDING_DUPLICATE_KEY_COLUMNS = [
+    "스냅샷일",
+    "원천파일",
+    "보유일",
+    "예탁원코드",
+    "협회펀드코드",
+    "펀드명",
+    "자산군",
+    "자산구분",
+    "시장구분",
+    "종목코드",
+    "종목코드정규",
+    "종목명",
+    "수량",
+    "평가가격",
+    "평가금",
+    "취득가액",
+    "순자산",
+    "지분율",
+    "포지션",
+]
+
+
+def remove_exact_holding_duplicates(holdings: pd.DataFrame) -> pd.DataFrame:
+    if holdings.empty:
+        return holdings
+    key_cols = [col for col in HOLDING_DUPLICATE_KEY_COLUMNS if col in holdings.columns]
+    if not key_cols:
+        return holdings
+    before = len(holdings)
+    deduped = holdings.drop_duplicates(subset=key_cols, keep="first").copy()
+    deduped.attrs.update(holdings.attrs)
+    deduped.attrs["exact_duplicate_rows_removed"] = before - len(deduped)
+    return deduped
+
+
 def read_inputs(
     data_source: str = "excel",
     start_date: str | None = None,
@@ -540,6 +576,7 @@ def read_inputs(
     holdings["협회펀드코드"] = holdings["협회펀드코드"].map(normalize_code)
     trades["종목코드정규"] = trades["종목코드"].map(normalize_code)
     holdings["종목코드정규"] = holdings["종목코드"].map(normalize_code)
+    holdings = remove_exact_holding_duplicates(holdings)
     active_codes = set(funds["펀드코드"])
     if active_codes:
         trades = trades[trades["협회펀드코드"].isin(active_codes)].copy()
@@ -563,6 +600,7 @@ def prepare_holdings_frame(
             holdings[col] = pd.to_numeric(holdings[col], errors="coerce")
     holdings["협회펀드코드"] = holdings["협회펀드코드"].map(normalize_code)
     holdings["종목코드정규"] = holdings["종목코드"].map(normalize_code)
+    holdings = remove_exact_holding_duplicates(holdings)
     if not allow_unknown_funds:
         holdings = holdings[holdings["협회펀드코드"].isin(codes)].copy()
     holdings["보유펀드명"] = holdings["협회펀드코드"].map(info["펀드명"]).fillna(holdings["펀드명"])
