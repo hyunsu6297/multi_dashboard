@@ -173,45 +173,47 @@ def shared_deltas(master: pd.DataFrame, aliases: pd.DataFrame) -> dict[str, tupl
     return result
 
 
-def database_deltas(aliases: pd.DataFrame) -> dict[str, tuple[float, int, list[dict]]]:
+def database_deltas(
+    aliases: pd.DataFrame,
+    fallback: dict[str, tuple[float, int, list[dict]]] | None = None,
+) -> dict[str, tuple[float, int, list[dict]]]:
     """Calculate the latest 10-day valid-delta average from persisted daily observations."""
     if not DELTA_HISTORY_FILE.exists():
-        return {}
+        return fallback or {}
     try:
         raw = json.loads(DELTA_HISTORY_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {}
+        return fallback or {}
     id_by_code = dict(zip(aliases["security_code"].map(code), aliases["instrument_id"]))
     grouped: dict[tuple[str, str], list[float]] = {}
     invalid: set[tuple[str, str]] = set()
     for row in raw:
         security_code = code(row.get("security_code"))
+        instrument_id = id_by_code.get(security_code, "")
         business_date = str(row.get("business_date") or "")[:10]
         numeric = finite_number(row.get("daily_delta"))
-        if not security_code or not business_date or numeric is None:
+        if not instrument_id or not business_date:
             continue
-        key = (security_code, business_date)
-        if bool(row.get("is_valid")) and 0 <= numeric <= 1:
+        key = (instrument_id, business_date)
+        if numeric is not None and bool(row.get("is_valid")) and 0 <= numeric <= 1:
             grouped.setdefault(key, []).append(numeric)
         else:
             invalid.add(key)
-    by_code: dict[str, list[dict]] = {}
+    by_instrument: dict[str, list[dict]] = {}
     keys = set(grouped) | invalid
-    for security_code, business_date in keys:
-        values = grouped.get((security_code, business_date), [])
-        by_code.setdefault(security_code, []).append({
+    for instrument_id, business_date in keys:
+        values = grouped.get((instrument_id, business_date), [])
+        by_instrument.setdefault(instrument_id, []).append({
             "date": business_date,
             "dailyDelta": sum(values) / len(values) if values else None,
             "valid": bool(values),
         })
-    result: dict[str, tuple[float, int, list[dict]]] = {}
-    for security_code, observations in by_code.items():
+    result: dict[str, tuple[float, int, list[dict]]] = dict(fallback or {})
+    for instrument_id, observations in by_instrument.items():
         latest = sorted(observations, key=lambda item: item["date"], reverse=True)[:10]
         valid_values = [item["dailyDelta"] for item in latest if item["valid"]]
-        delta = sum(valid_values) / len(valid_values) if valid_values else 0.40
-        instrument_id = id_by_code.get(security_code, "")
-        if instrument_id and (instrument_id not in result or len(latest) > len(result[instrument_id][2])):
-            result[instrument_id] = (delta, len(valid_values), latest)
+        if valid_values:
+            result[instrument_id] = (sum(valid_values) / len(valid_values), len(valid_values), latest)
     return result
 
 
@@ -298,7 +300,8 @@ def build_data() -> dict:
         if clean(r.get("발행사명")) and code(r.get("발행코드"))
     }
     id_by_code = dict(zip(aliases["security_code"].map(code), aliases["instrument_id"]))
-    delta_by_instrument = database_deltas(aliases)
+    manual_delta_by_instrument = shared_deltas(master, aliases)
+    delta_by_instrument = database_deltas(aliases, manual_delta_by_instrument)
 
     security_rows = []
     delta_by_code: dict[str, float] = {}

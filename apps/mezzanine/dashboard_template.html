@@ -82,11 +82,19 @@ async function hydrateFromSupabase(){
     for(const item of [...window.MEZZ_DATA.securities,...window.MEZZ_DATA.holdings]){
       if(item.code&&item.instrumentId)instrumentByCode.set(String(item.code).trim(),item.instrumentId);
     }
-    const securityCodes=[...new Set(window.MEZZ_DATA.holdings.map(x=>String(x.code||'').trim()).filter(Boolean))];
+    const fallbackDeltaByInstrument=new Map();
+    for(const item of [...window.MEZZ_DATA.securities,...window.MEZZ_DATA.holdings]){
+      if(item.instrumentId&&Number.isFinite(Number(item.delta))&&!fallbackDeltaByInstrument.has(item.instrumentId)){
+        fallbackDeltaByInstrument.set(item.instrumentId,Number(item.delta));
+      }
+    }
+    const securityCodes=[...new Set([...window.MEZZ_DATA.securities,...window.MEZZ_DATA.holdings].map(x=>String(x.code||'').trim()).filter(Boolean))];
     const deltaRows=[];
     for(let start=0;start<securityCodes.length;start+=100){
-      const {data,error}=await client.from('mezzanine_delta_history').select('business_date,security_code,nav_return,underlying_change_rate,daily_delta,is_valid').in('security_code',securityCodes.slice(start,start+100)).order('business_date',{ascending:false});
-      if(error)throw error; deltaRows.push(...data);
+      for(let offset=0;;offset+=1000){
+        const {data,error}=await client.from('mezzanine_delta_history').select('business_date,security_code,nav_return,underlying_change_rate,daily_delta,is_valid').in('security_code',securityCodes.slice(start,start+100)).order('business_date',{ascending:false}).range(offset,offset+999);
+        if(error)throw error; deltaRows.push(...data); if(data.length<1000)break;
+      }
     }
     const byInstrumentDate=new Map();
     for(const row of deltaRows){
@@ -115,7 +123,8 @@ async function hydrateFromSupabase(){
     for(const [iid,items] of byInstrument){
       const observations=items.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
       const valid=observations.filter(x=>x.valid&&x.dailyDelta!=null&&x.dailyDelta>=0&&x.dailyDelta<=1).map(x=>x.dailyDelta);
-      deltaByInstrument.set(iid,{delta:valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:0.40,samples:valid.length,history:observations});
+      const fallback=fallbackDeltaByInstrument.has(iid)?fallbackDeltaByInstrument.get(iid):0.40;
+      deltaByInstrument.set(iid,{delta:valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:fallback,samples:valid.length,history:observations});
     }
     for(const h of window.MEZZ_DATA.holdings){const d=deltaByInstrument.get(h.instrumentId); if(!d)continue;h.delta=d.delta;h.deltaSamples=d.samples;h.deltaHistory=d.history;h.deltaExposure=h.lookthrough*h.delta;h.estimatedPnl=h.lookthrough*(h.underlyingChange||0)*h.delta;}
     for(const s of window.MEZZ_DATA.securities){const d=deltaByInstrument.get(s.instrumentId); if(!d)continue;s.delta=d.delta;s.deltaSamples=d.samples;s.deltaHistory=d.history;}
