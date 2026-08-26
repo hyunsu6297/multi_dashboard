@@ -657,15 +657,18 @@
       if (key === "admin-members" && currentProfile?.role !== "admin") key = "stock-dashboard";
       const page = pages[key];
       if (!page) return;
+      const pageSrc = key === "mezzanine-dashboard"
+        ? `${page.src}?v=${Date.now()}`
+        : page.src;
       currentPageKey = key;
       document.querySelectorAll("[data-page]").forEach((button) => {
         button.classList.toggle("active", button.dataset.page === key);
       });
       pageTitle.textContent = `멀티에셋운용팀 | ${page.title}`;
       pageNote.textContent = page.note;
-      frame.src = page.src;
+      frame.src = pageSrc;
       frame.title = page.title;
-      openButton.href = page.src;
+      openButton.href = pageSrc;
       location.hash = key;
     }
 
