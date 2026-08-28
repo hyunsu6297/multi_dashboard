@@ -164,10 +164,11 @@ def main() -> int:
     for name in ("prices", "trades", "mezzanine-portfolio"):
         rows = payloads[name]["content"]
         trade_days = sorted({str(row.get("trade_day") or "")[:10] for row in rows})
+        dated_trade_days = [value for value in trade_days if value]
         print(f"{name}: fetched rows={len(rows)} trade_days={trade_days}")
         if not rows:
             no_data_reasons.append(f"{name}: empty response")
-        elif set(trade_days) != {args.date}:
+        elif set(dated_trade_days) != {args.date}:
             no_data_reasons.append(f"{name}: expected trade_day={args.date}, found={trade_days}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     marker = args.output_dir / f"no_data_{args.date}.json"

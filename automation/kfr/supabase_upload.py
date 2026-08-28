@@ -53,9 +53,10 @@ def validate_business_date(source_key: str, rows: list[dict[str, Any]], business
     if not date_field:
         return
     expected = business_date.isoformat()
-    found = {str(row.get(date_field, ""))[:10] for row in rows}
-    if found != {expected}:
-        raise RuntimeError(f"{source_key}: expected {date_field}={expected}, found={sorted(found)}")
+    found = sorted({str(row.get(date_field, ""))[:10] for row in rows})
+    dated = [value for value in found if value]
+    if set(dated) != {expected}:
+        raise RuntimeError(f"{source_key}: expected {date_field}={expected}, found={found}")
 
 
 def upload_payload(client: SupabaseRest, source_key: str, path: Path, business_date: date) -> tuple[int, int, bool]:
