@@ -66,10 +66,19 @@ jobs:
         id: kfr_date
         shell: bash
         run: |
-          if [[ -n "${{ inputs.business_date }}" ]]; then
-            business_date="${{ inputs.business_date }}"
+          requested_date="${{ github.event.inputs.business_date }}"
+          if [[ -n "$requested_date" ]]; then
+            business_date="$requested_date"
           else
-            business_date="$(python -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; day = datetime.now(ZoneInfo("Asia/Seoul")).date() - timedelta(days=1); exec("while day.weekday() >= 5:\\n    day -= timedelta(days=1)"); print(day.isoformat())')"
+            business_date="$(python - <<'PY'
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          day = datetime.now(ZoneInfo("Asia/Seoul")).date() - timedelta(days=1)
+          while day.weekday() >= 5:
+              day -= timedelta(days=1)
+          print(day.isoformat())
+          PY
+          )"
           fi
           echo "business_date=${business_date}" >> "$GITHUB_OUTPUT"
           echo "KFR business date: ${business_date}"
