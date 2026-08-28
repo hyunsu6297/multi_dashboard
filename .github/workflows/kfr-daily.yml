@@ -18,7 +18,7 @@ on:
       refresh_sources:
         description: Download KFR data and upload it to Supabase before building
         required: false
-        default: false
+        default: true
         type: boolean
       business_date:
         description: Business date (YYYY-MM-DD). Leave empty for previous weekday.
@@ -62,36 +62,39 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r automation/kfr/requirements.txt
 
+      - name: Resolve KFR business date
+        id: kfr_date
+        shell: bash
+        run: |
+          if [[ -n "${{ inputs.business_date }}" ]]; then
+            business_date="${{ inputs.business_date }}"
+          else
+            business_date="$(python -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; day = datetime.now(ZoneInfo("Asia/Seoul")).date() - timedelta(days=1); exec("while day.weekday() >= 5:\\n    day -= timedelta(days=1)"); print(day.isoformat())')"
+          fi
+          echo "business_date=${business_date}" >> "$GITHUB_OUTPUT"
+          echo "KFR business date: ${business_date}"
+
       - name: Check whether the KFR API snapshot is already valid
         id: kfr_snapshot
         if: github.event_name == 'schedule'
         continue-on-error: true
         shell: bash
         run: |
-          args=(--check-existing)
-          if [[ -n "${{ inputs.business_date }}" ]]; then
-            args+=(--business-date "${{ inputs.business_date }}")
-          fi
+          args=(--check-existing --business-date "${{ steps.kfr_date.outputs.business_date }}")
           python automation/kfr/supabase_upload.py "${args[@]}"
 
       - name: Download KFR Partner API JSON
         if: (github.event_name == 'schedule' && steps.kfr_snapshot.outcome == 'failure') || inputs.refresh_sources == true
         shell: bash
         run: |
-          args=(--output-dir "$RUNNER_TEMP/kfr")
-          if [[ -n "${{ inputs.business_date }}" ]]; then
-            args+=(--date "${{ inputs.business_date }}")
-          fi
+          args=(--output-dir "$RUNNER_TEMP/kfr" --date "${{ steps.kfr_date.outputs.business_date }}")
           python automation/kfr/kfr_partner_api_download.py "${args[@]}"
 
       - name: Upload rows to Supabase
         if: (github.event_name == 'schedule' && steps.kfr_snapshot.outcome == 'failure') || inputs.refresh_sources == true
         shell: bash
         run: |
-          args=(--input-dir "$RUNNER_TEMP/kfr")
-          if [[ -n "${{ inputs.business_date }}" ]]; then
-            args+=(--business-date "${{ inputs.business_date }}")
-          fi
+          args=(--input-dir "$RUNNER_TEMP/kfr" --business-date "${{ steps.kfr_date.outputs.business_date }}")
           python automation/kfr/supabase_upload.py "${args[@]}"
 
       - name: Restore KFR API JSON and manual dashboard inputs from Supabase
