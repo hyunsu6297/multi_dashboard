@@ -89,6 +89,16 @@ def previous_business_day(today: date | None = None) -> date:
     return current
 
 
+def normalized_trade_day(row: dict[str, Any]) -> str:
+    value = row.get("trade_day")
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text or text.lower() == "none":
+        return ""
+    return text[:10]
+
+
 def credentials(env_file: Path | None) -> tuple[str, str]:
     values = dict(os.environ)
     if env_file:
@@ -163,7 +173,7 @@ def main() -> int:
     no_data_reasons: list[str] = []
     for name in ("prices", "trades", "mezzanine-portfolio"):
         rows = payloads[name]["content"]
-        trade_days = sorted({str(row.get("trade_day") or "")[:10] for row in rows})
+        trade_days = sorted({normalized_trade_day(row) for row in rows})
         dated_trade_days = [value for value in trade_days if value]
         print(f"{name}: fetched rows={len(rows)} trade_days={trade_days}")
         if not rows:
