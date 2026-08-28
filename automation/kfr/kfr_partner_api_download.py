@@ -137,6 +137,11 @@ def main() -> int:
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--write-csv", action="store_true", help="Also create human-review CSV files")
+    parser.add_argument(
+        "--allow-no-data",
+        action="store_true",
+        help="Write a no-data marker and exit successfully when the target KFR date is not ready",
+    )
     args = parser.parse_args()
 
     date.fromisoformat(args.date)
@@ -155,22 +160,35 @@ def main() -> int:
     if failures:
         return 1
 
-    no_data = False
+    no_data_reasons: list[str] = []
     for name in ("prices", "trades", "mezzanine-portfolio"):
         rows = payloads[name]["content"]
-        trade_days = {str(row.get("trade_day") or "")[:10] for row in rows}
-        if not rows or trade_days != {args.date}:
-            no_data = True
-            break
+        trade_days = sorted({str(row.get("trade_day") or "")[:10] for row in rows})
+        print(f"{name}: fetched rows={len(rows)} trade_days={trade_days}")
+        if not rows:
+            no_data_reasons.append(f"{name}: empty response")
+        elif set(trade_days) != {args.date}:
+            no_data_reasons.append(f"{name}: expected trade_day={args.date}, found={trade_days}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     marker = args.output_dir / f"no_data_{args.date}.json"
-    if no_data:
+    if no_data_reasons:
         marker.write_text(
-            json.dumps({"trade_day": args.date, "status": "no_business_data"}, ensure_ascii=False, indent=2),
+            json.dumps(
+                {
+                    "trade_day": args.date,
+                    "status": "no_business_data",
+                    "reasons": no_data_reasons,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
-        print(f"no KFR business data for {args.date}; upload skipped")
-        return 0
+        message = f"no KFR business data for {args.date}: " + "; ".join(no_data_reasons)
+        if args.allow_no_data:
+            print(f"{message}; upload skipped")
+            return 0
+        raise RuntimeError(message)
     if marker.exists():
         marker.unlink()
     for name, payload in payloads.items():

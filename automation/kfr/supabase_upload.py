@@ -143,6 +143,11 @@ def main() -> None:
         action="store_true",
         help="Exit successfully only when all four API snapshots already exist and are valid",
     )
+    parser.add_argument(
+        "--allow-no-data",
+        action="store_true",
+        help="Exit successfully when a no-data marker exists for the target KFR date",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir).expanduser().resolve()
@@ -163,8 +168,11 @@ def main() -> None:
 
     marker = input_dir / f"no_data_{business_date.isoformat()}.json"
     if marker.is_file():
-        print(f"KFR has no business data for {business_date}; upload skipped")
-        return
+        message = f"KFR has no business data for {business_date}; upload skipped"
+        if args.allow_no_data:
+            print(message)
+            return
+        raise RuntimeError(message)
     for source_key, api_name in SOURCE_TO_API_NAME.items():
         path = input_dir / f"{api_name}_{business_date.isoformat()}.json"
         if not path.is_file():
