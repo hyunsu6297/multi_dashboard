@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,11 +18,23 @@ from kfr_api import SOURCE_TO_API_NAME, load_payload, validate_payload
 from kfr_partner_api_download import previous_business_day
 
 
+ROW_BATCH_SIZE = 100
+ROW_BATCH_ATTEMPTS = 4
+TRANSIENT_HTTP_CODES = {429, 500, 502, 503, 504}
+
+
 def required_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
         raise RuntimeError(f"Environment variable {name} is required")
     return value.rstrip("/")
+
+
+class SupabaseHttpError(RuntimeError):
+    def __init__(self, code: int, detail: str) -> None:
+        self.code = code
+        self.detail = detail
+        super().__init__(f"Supabase HTTP {code}: {detail[:1000]}")
 
 
 class SupabaseRest:
@@ -42,8 +55,30 @@ class SupabaseRest:
                 payload = response.read()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Supabase HTTP {exc.code}: {detail[:1000]}") from exc
+            raise SupabaseHttpError(exc.code, detail) from exc
         return json.loads(payload) if payload else None
+
+
+def upload_row_batch(client: SupabaseRest, rows: list[dict[str, Any]]) -> None:
+    path = "kfr_source_rows?on_conflict=snapshot_id,sheet_name,row_no"
+    for attempt in range(1, ROW_BATCH_ATTEMPTS + 1):
+        try:
+            client.request(
+                "POST",
+                path,
+                rows,
+                prefer="resolution=ignore-duplicates,return=minimal",
+            )
+            return
+        except SupabaseHttpError as exc:
+            if exc.code not in TRANSIENT_HTTP_CODES or attempt == ROW_BATCH_ATTEMPTS:
+                raise
+            delay = 2 ** (attempt - 1)
+            print(
+                f"kfr_source_rows batch timed out or failed with HTTP {exc.code}; "
+                f"retrying in {delay}s ({attempt}/{ROW_BATCH_ATTEMPTS})"
+            )
+            time.sleep(delay)
 
 
 def validate_business_date(source_key: str, rows: list[dict[str, Any]], business_date: date) -> None:
@@ -95,8 +130,8 @@ def upload_payload(client: SupabaseRest, source_key: str, path: Path, business_d
             {"snapshot_id": snapshot_id, "sheet_name": "content", "row_no": index, "payload": row}
             for index, row in enumerate(rows, start=1)
         ]
-        for start in range(0, len(payload), 500):
-            client.request("POST", "kfr_source_rows", payload[start : start + 500], prefer="return=minimal")
+        for start in range(0, len(payload), ROW_BATCH_SIZE):
+            upload_row_batch(client, payload[start : start + ROW_BATCH_SIZE])
         for old_snapshot in existing:
             client.request("DELETE", f"kfr_source_snapshots?id=eq.{int(old_snapshot['id'])}")
     except Exception:
