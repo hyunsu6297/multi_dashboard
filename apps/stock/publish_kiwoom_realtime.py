@@ -208,7 +208,7 @@ def publish_dashboard(
     available = sum(1 for row in rows if row["price"] not in (None, 0, 0.0))
     if not rows or available == 0:
         raise RuntimeError("No usable cached Kiwoom quotes are available")
-    html_path = build_dashboard()
+    html_path = build_dashboard(data_source="json")
     if publish_quote_rows:
         publisher.upsert_rows("kiwoom_realtime_quotes", rows, "code")
     publisher.upload_dashboard(html_path)

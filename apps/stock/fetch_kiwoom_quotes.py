@@ -344,6 +344,7 @@ def fetch_all_quotes(
     output: Path,
     limit: int | None = None,
     only_code: str | None = None,
+    refresh_market_master: bool = False,
 ) -> dict[str, Any]:
     derivative_map = load_derivative_code_map()
     stock_future_proxy_map = load_stock_future_proxy_map()
@@ -354,12 +355,12 @@ def fetch_all_quotes(
 
     previous_payload = load_previous_quotes(output)
     previous = previous_payload.get("stocks", {})
-    market_master_date = time.strftime("%Y-%m-%d")
+    market_master_date = str(previous_payload.get("market_master_date") or time.strftime("%Y-%m-%d"))
     market_master: dict[str, dict[str, str]] = {}
     cached_market_master = previous_payload.get("market_master")
-    if previous_payload.get("market_master_date") == market_master_date and isinstance(cached_market_master, dict):
+    if not refresh_market_master and isinstance(cached_market_master, dict) and cached_market_master:
         market_master = cached_market_master
-    elif previous_payload.get("market_master_date") == market_master_date and isinstance(previous, dict):
+    elif not refresh_market_master and isinstance(previous, dict):
         for item in previous.values():
             if not isinstance(item, dict):
                 continue
@@ -373,6 +374,7 @@ def fetch_all_quotes(
     if not market_master:
         try:
             market_master = fetch_market_master(host, token, timeout)
+            market_master_date = time.strftime("%Y-%m-%d")
         except Exception as exc:
             print(f"market master refresh failed; previous values retained: {exc}")
 
@@ -514,7 +516,17 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
 def run_refresh(args: argparse.Namespace, token: str, codes: dict[str, str]) -> dict[str, Any]:
     output = args.output if args.output.is_absolute() else BASE_DIR / args.output
     started = time.monotonic()
-    quotes = fetch_all_quotes(args.host, token, codes, args.batch_size, args.timeout, output, args.limit, args.code)
+    quotes = fetch_all_quotes(
+        args.host,
+        token,
+        codes,
+        args.batch_size,
+        args.timeout,
+        output,
+        args.limit,
+        args.code,
+        getattr(args, "refresh_market_master", False),
+    )
     write_json_atomic(output, quotes)
     if args.build_dashboard:
         print(build_dashboard())
@@ -553,6 +565,11 @@ def main() -> None:
     parser.add_argument("--end", default=os.getenv("DASHBOARD_END_DATE") or None)
     parser.add_argument("--build-dashboard", action="store_true")
     parser.add_argument("--once", action="store_true", help="Run one refresh and exit.")
+    parser.add_argument(
+        "--refresh-market-master",
+        action="store_true",
+        help="Refresh the KOSPI/KOSDAQ stock master instead of reusing the local cache.",
+    )
     parser.add_argument("--token-refresh-minutes", type=float, default=DEFAULT_TOKEN_REFRESH_MINUTES)
     args = parser.parse_args()
 

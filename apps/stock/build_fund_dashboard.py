@@ -1699,6 +1699,7 @@ def quote_sensitive_payload(
     investment_stocks: pd.DataFrame,
     product_stocks: pd.DataFrame,
     fund_catalog: pd.DataFrame,
+    quotes: dict[str, dict[str, object]],
 ) -> dict[str, object]:
     stock_rows: list[dict[str, object]] = []
     if not stock_holdings.empty:
@@ -1764,6 +1765,11 @@ def quote_sensitive_payload(
         "fundBases": fund_bases,
         "directStocks": direct_rows(investment_stocks, "investment") + direct_rows(product_stocks, "product"),
         "fundCatalog": catalog,
+        "marketByCode": {
+            normalize_code(code): str(item.get("market") or "")
+            for code, item in quotes.items()
+            if normalize_code(code) and str(item.get("market") or "").strip()
+        },
     }
 
 
@@ -2413,7 +2419,14 @@ def build_dashboard(
     }
     investment_table = direct_stock_table(investment_stocks, "투자주식", "investment-panel")
     product_table = direct_stock_table(product_stocks, "상품주식", "product-panel")
-    quote_sensitive_data = quote_sensitive_payload(stock_holdings, holdings, investment_stocks, product_stocks, funds)
+    quote_sensitive_data = quote_sensitive_payload(
+        stock_holdings,
+        holdings,
+        investment_stocks,
+        product_stocks,
+        funds,
+        quotes,
+    )
     benchmark_weights = load_benchmark_weights()
     quote_sensitive_data["benchmarkWeights"] = benchmark_weights
     quote_sensitive_data["benchmarkSectors"] = build_benchmark_sector_weights(
@@ -3154,6 +3167,15 @@ def build_dashboard(
         return (item.sectorLarge && item.sectorLarge !== "미분류") || (item.sector && item.sector !== "미분류");
       }}) || null;
     }}
+    function benchmarkMarketForCode(value) {{
+      const code = normalizeQuoteCode(value);
+      if (!code) return "미분류";
+      for (const market of ["코스피", "코스닥"]) {{
+        const weights = quoteSensitiveData.benchmarkWeights?.weights?.[market];
+        if (weights && Object.prototype.hasOwnProperty.call(weights, code)) return market;
+      }}
+      return "미분류";
+    }}
     function performanceRows() {{
       return enrichedStockRows(activeStockRows()).map((row) => {{
         const quote = quoteForCode(row.code) || {{}};
@@ -3162,7 +3184,19 @@ def build_dashboard(
         const referenceQuote = reference ? quoteForCode(reference.code) || {{}} : {{}};
         const sectorLarge = row.sectorLarge && row.sectorLarge !== "미분류" ? row.sectorLarge : reference?.sectorLarge || "미분류";
         const sectorMid = row.sector && row.sector !== "미분류" ? row.sector : reference?.sector || "미분류";
-        const market = normalizedMarket(quote.market) !== "미분류" ? normalizedMarket(quote.market) : normalizedMarket(referenceQuote.market);
+        const masterMarket = normalizedMarket(
+          quoteSensitiveData.marketByCode?.[normalizeQuoteCode(row.code)]
+          || quoteSensitiveData.marketByCode?.[benchmarkCode]
+        );
+        const liveMarket = normalizedMarket(quote.market);
+        const referenceMarket = normalizedMarket(referenceQuote.market);
+        const market = masterMarket !== "미분류"
+          ? masterMarket
+          : liveMarket !== "미분류"
+            ? liveMarket
+            : referenceMarket !== "미분류"
+              ? referenceMarket
+              : benchmarkMarketForCode(benchmarkCode);
         return {{ ...row, market, sectorLargeName: sectorLarge, sectorMidName: sectorMid, benchmarkCode }};
       }});
     }}
@@ -3768,7 +3802,7 @@ def build_dashboard(
         .order("updated_at", {{ ascending: false }})
         .limit(2000);
       if (error) throw error;
-      const stocks = {{}}, indices = {{}};
+      const stocks = {{}}, indices = {{}}, marketByCode = {{}};
       (data || []).forEach((row) => {{
         const code = normalizeQuoteCode(row.code);
         const payload = row.payload && typeof row.payload === "object" ? row.payload : {{}};
@@ -3791,7 +3825,22 @@ def build_dashboard(
           collected_at: row.collected_at,
         }};
       }});
-      return {{ stocks, indices }};
+      const masterCodes = [...new Set((quoteSensitiveData.stockPositions || [])
+        .map((row) => normalizeQuoteCode(row.code))
+        .filter((code) => /^\\d{{6}}$/.test(code)))];
+      for (let offset = 0; offset < masterCodes.length; offset += 200) {{
+        const batch = masterCodes.slice(offset, offset + 200);
+        const {{ data: masterRows, error: masterError }} = await client
+          .from("stock_market_master")
+          .select("code,market")
+          .in("code", batch);
+        if (masterError) throw masterError;
+        (masterRows || []).forEach((row) => {{
+          const code = normalizeQuoteCode(row.code);
+          if (code) marketByCode[code] = row.market;
+        }});
+      }}
+      return {{ stocks, indices, marketByCode }};
     }}
     async function refreshQuotes(manual = false) {{
       const status = document.getElementById("quoteStatus");
@@ -3807,6 +3856,10 @@ def build_dashboard(
           const payload = await fetchSupabaseQuotes();
           liveQuotes = payload.stocks;
           liveIndices = payload.indices;
+          quoteSensitiveData.marketByCode = {{
+            ...(quoteSensitiveData.marketByCode || {{}}),
+            ...(payload.marketByCode || {{}}),
+          }};
         }}
         renderLiveQuoteViews();
         const available = Object.values(liveQuotes).filter((item) => item && item.price != null).length;
