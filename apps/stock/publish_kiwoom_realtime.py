@@ -164,6 +164,26 @@ def quote_rows(quotes: dict[str, Any], collected_at: str) -> list[dict[str, Any]
                 "updated_at": collected_at,
             }
         )
+    for index_key, item in quotes.get("indices", {}).items():
+        if not isinstance(item, dict):
+            continue
+        payload = {**item, "kind": "index", "index_key": str(index_key)}
+        rows.append(
+            {
+                "code": f"INDEX_{index_key}",
+                "name": str(item.get("name") or index_key),
+                "price": item.get("price"),
+                "change_rate": item.get("change_rate"),
+                "industry": "시장지수",
+                "market": str(index_key),
+                "kiwoom_rest_code": item.get("code"),
+                "proxy_code": None,
+                "error": item.get("error"),
+                "payload": payload,
+                "collected_at": collected_at,
+                "updated_at": collected_at,
+            }
+        )
     return rows
 
 

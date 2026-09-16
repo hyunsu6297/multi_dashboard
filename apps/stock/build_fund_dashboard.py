@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import html
 import argparse
+from datetime import datetime, timedelta, timezone
+from io import BytesIO
 import json
 import os
 import re
@@ -54,6 +56,11 @@ OUTPUT = BASE_DIR / "fund_dashboard.html"
 DATA_DIR = BASE_DIR / "data"
 FUND_MASTER_VERSION_FILE = BASE_DIR / "stock_fund_master_versions.json"
 DEFAULT_SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co"
+BENCHMARK_CACHE_FILE = BASE_DIR / "benchmark_weights.json"
+SAMSUNG_BENCHMARKS = {
+    "코스피": {"fund_id": "2ETF52", "scale": 1.0, "label": "KODEX 코스피"},
+    "코스닥": {"fund_id": "2ETF54", "scale": 0.5, "label": "KODEX 코스닥150 x 50%"},
+}
 
 
 def esc(value: object) -> str:
@@ -80,6 +87,175 @@ def normalize_code(value: object) -> str:
     if len(text) >= 9 and text.startswith("KR7") and text[3:9].isdigit():
         return text[3:9]
     return text.zfill(6) if text.isdigit() else text
+
+
+def _parse_samsung_benchmark_xls(content: bytes, scale: float) -> tuple[str, dict[str, float]]:
+    frame = pd.read_excel(BytesIO(content), header=2, engine="xlrd", dtype={"종목코드": str})
+    if "종목코드" not in frame or "비중(%)" not in frame:
+        raise RuntimeError("삼성자산운용 BM 파일의 컬럼 형식이 예상과 다릅니다.")
+    weights: dict[str, float] = {}
+    for _, row in frame.iterrows():
+        code = normalize_code(row.get("종목코드"))
+        weight = pd.to_numeric(row.get("비중(%)"), errors="coerce")
+        if not re.fullmatch(r"\d{6}", code) or pd.isna(weight):
+            continue
+        value = float(weight)
+        if abs(value) > 1:
+            value /= 100
+        weights[code] = value * scale
+    if len(weights) < 100:
+        raise RuntimeError(f"삼성자산운용 BM 구성종목이 너무 적습니다: {len(weights)}건")
+    raw = pd.read_excel(BytesIO(content), header=None, nrows=2, engine="xlrd")
+    file_date = clean_text(raw.iloc[1, 0]) if len(raw.index) > 1 else ""
+    return file_date.replace("/", "-"), weights
+
+
+def load_benchmark_weights() -> dict[str, object]:
+    cached: dict[str, object] = {}
+    if BENCHMARK_CACHE_FILE.exists():
+        try:
+            cached = json.loads(BENCHMARK_CACHE_FILE.read_text(encoding="utf-8-sig"))
+        except Exception:
+            cached = {}
+    kst = timezone(timedelta(hours=9))
+    configured_date = (os.getenv("DASHBOARD_BENCHMARK_DATE") or "").strip()
+    target_date = (
+        datetime.strptime(configured_date, "%Y-%m-%d").date()
+        if configured_date
+        else datetime.now(kst).date()
+    )
+    if cached.get("requestedDate") == target_date.isoformat() and cached.get("weights"):
+        return cached
+
+    weights = dict(cached.get("weights") or {})
+    sources = dict(cached.get("sources") or {})
+    errors: list[str] = []
+    if os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SECRET_KEY"):
+        try:
+            query = urllib.parse.urlencode(
+                {
+                    "select": "market,business_date,source_date,label,source_url,scale,row_count,weights,downloaded_at",
+                    "business_date": f"eq.{target_date.isoformat()}",
+                    "order": "market.asc",
+                },
+                safe=".,()",
+            )
+            rows = supabase_client().get(f"stock_benchmark_snapshots?{query}")
+            for row in rows:
+                market = str(row.get("market") or "")
+                raw_weights = row.get("weights") if isinstance(row.get("weights"), dict) else {}
+                parsed = {
+                    normalize_code(code): float(value.get("weight") if isinstance(value, dict) else value)
+                    for code, value in raw_weights.items()
+                    if normalize_code(code)
+                }
+                if market in SAMSUNG_BENCHMARKS and len(parsed) >= 100:
+                    weights[market] = parsed
+                    sources[market] = {
+                        "label": str(row.get("label") or SAMSUNG_BENCHMARKS[market]["label"]),
+                        "date": str(row.get("source_date") or row.get("business_date") or ""),
+                        "url": str(row.get("source_url") or ""),
+                        "count": int(row.get("row_count") or len(parsed)),
+                        "scale": float(row.get("scale") or SAMSUNG_BENCHMARKS[market]["scale"]),
+                        "storage": "supabase:stock_benchmark_snapshots",
+                    }
+            if all(weights.get(market) for market in SAMSUNG_BENCHMARKS):
+                return {
+                    "requestedDate": target_date.isoformat(),
+                    "generatedAt": datetime.now(kst).isoformat(timespec="seconds"),
+                    "weights": weights,
+                    "sources": sources,
+                    "errors": [],
+                }
+        except Exception as exc:
+            errors.append(f"Supabase BM restore: {exc}")
+    for market, config in SAMSUNG_BENCHMARKS.items():
+        loaded = False
+        for days_back in range(0, 11):
+            request_date = (target_date - timedelta(days=days_back)).strftime("%Y%m%d")
+            url = f"https://www.samsungfund.com/excel_pdf.do?fId={config['fund_id']}&gijunYMD={request_date}"
+            try:
+                request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(request, timeout=25) as response:
+                    content = response.read()
+                if not content.startswith(bytes.fromhex("D0CF11E0A1B11AE1")):
+                    raise RuntimeError("엑셀 파일이 아닌 응답")
+                file_date, market_weights = _parse_samsung_benchmark_xls(content, float(config["scale"]))
+                weights[market] = market_weights
+                sources[market] = {
+                    "label": config["label"],
+                    "date": file_date or request_date,
+                    "url": url,
+                    "count": len(market_weights),
+                    "scale": float(config["scale"]),
+                }
+                loaded = True
+                break
+            except Exception as exc:
+                errors.append(f"{market} {request_date}: {exc}")
+        if not loaded and market not in weights:
+            weights[market] = {}
+
+    payload = {
+        "requestedDate": target_date.isoformat(),
+        "generatedAt": datetime.now(kst).isoformat(timespec="seconds"),
+        "weights": weights,
+        "sources": sources,
+        "errors": errors[-8:],
+    }
+    if any(weights.get(market) for market in SAMSUNG_BENCHMARKS):
+        try:
+            BENCHMARK_CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+    return payload
+
+
+def build_benchmark_sector_weights(
+    benchmark_payload: dict[str, object],
+    industry_large_by_code: dict[str, str],
+    industry_mid_by_code: dict[str, str],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    all_weights = benchmark_payload.get("weights") if isinstance(benchmark_payload, dict) else {}
+    if not isinstance(all_weights, dict):
+        return result
+    for market in ("코스피", "코스닥"):
+        raw_weights = all_weights.get(market)
+        if not isinstance(raw_weights, dict) or not raw_weights:
+            continue
+        parsed = {
+            normalize_code(code): float(weight)
+            for code, weight in raw_weights.items()
+            if normalize_code(code) and pd.notna(weight)
+        }
+        raw_total = sum(parsed.values())
+        factor = 1 / raw_total if market == "코스피" and raw_total else 1.0
+        residual_weight = max(0.0, 1.0 - raw_total * factor) if market == "코스닥" else 0.0
+        market_result: dict[str, object] = {
+            "rawTotalWeight": raw_total,
+            "totalWeight": raw_total * factor + residual_weight,
+            "normalized": market == "코스피",
+            "residualWeight": residual_weight,
+            "large": {},
+            "mid": {},
+        }
+        for level, sector_map in (
+            ("large", industry_large_by_code),
+            ("mid", industry_mid_by_code),
+        ):
+            grouped: dict[str, dict[str, float | int]] = {}
+            for code, raw_weight in parsed.items():
+                sector = str(sector_map.get(code) or "미분류")
+                item = grouped.setdefault(sector, {"weight": 0.0, "count": 0})
+                item["weight"] = float(item["weight"]) + raw_weight * factor
+                item["count"] = int(item["count"]) + 1
+            if residual_weight:
+                residual = grouped.setdefault("미분류", {"weight": 0.0, "count": 0})
+                residual["weight"] = float(residual["weight"]) + residual_weight
+            market_result[level] = grouped
+        result[market] = market_result
+    return result
 
 
 def load_fund_master_versions() -> dict[str, object]:
@@ -2078,6 +2254,17 @@ def make_view(
           </div>
         </div>
       </section>
+      <section class="tab-panel" data-panel="performance">
+        <div class="section-title performance-heading"><div class="performance-heading-actions"><h3>성과분석</h3><button type="button" class="column-help-button" data-performance-ai>AI 성과분석</button><button type="button" class="column-help-button" data-performance-export>엑셀 저장</button></div></div>
+        <article class="panel performance-ai-panel" data-performance-ai-panel hidden><div class="panel-title"><h4 data-performance-ai-title>AI 성과분석</h4><span data-performance-ai-status></span></div><div class="performance-ai-output" data-performance-ai-output></div></article>
+        <div class="performance-grid">
+          <div class="performance-left-column">
+            <article class="panel performance-market-panel"><div class="panel-title"><h4>시장별 성과</h4><span>Net Exp × 지수 등락률</span></div><div data-performance-market></div></article>
+            <article class="panel performance-sector-panel"><div class="panel-title"><h4>섹터별 손익</h4><div class="sector-panel-controls"><div class="sector-market-toggle" role="group" aria-label="섹터 시장 선택"><button type="button" class="active" data-performance-sector-market="코스피">코스피</button><button type="button" data-performance-sector-market="코스닥">코스닥</button><button type="button" data-performance-sector-market="ALL">전체</button></div><div class="sector-level-toggle" role="group" aria-label="섹터 분류 선택"><button type="button" class="active" data-performance-sector-level="large">대분류</button><button type="button" data-performance-sector-level="mid">중분류</button></div></div></div><div data-performance-sector></div></article>
+          </div>
+          <article class="panel performance-stock-panel"><div class="panel-title"><h4>전체 종목별 손익</h4><div class="title-actions"><span data-performance-filter-label>전체 종목</span><button type="button" class="column-help-button" data-performance-filter-reset>초기화</button></div></div><div data-performance-stocks></div></article>
+        </div>
+      </section>
       <section class="tab-panel" data-panel="holdings">
         <div class="section-title"><h3>보유상세</h3><span>평가액/취득원가/편입비는 raw 보유현황 지분율 기준</span></div>
         <div class="detail-grid">
@@ -2227,6 +2414,13 @@ def build_dashboard(
     investment_table = direct_stock_table(investment_stocks, "투자주식", "investment-panel")
     product_table = direct_stock_table(product_stocks, "상품주식", "product-panel")
     quote_sensitive_data = quote_sensitive_payload(stock_holdings, holdings, investment_stocks, product_stocks, funds)
+    benchmark_weights = load_benchmark_weights()
+    quote_sensitive_data["benchmarkWeights"] = benchmark_weights
+    quote_sensitive_data["benchmarkSectors"] = build_benchmark_sector_weights(
+        benchmark_weights,
+        industry_large_by_code,
+        industry_mid_by_code,
+    )
     sector_mid_labels = (
         stock_holdings.groupby("업종중분류")["우리평가금"].sum().sort_values(ascending=False).index.astype(str).tolist()
     )
@@ -2300,6 +2494,7 @@ def build_dashboard(
         "trade_stock_related_rows": int(len(stock_trades)),
         "quote_source": quote_source,
         "quote_count": len(quotes),
+        "benchmark_sources": benchmark_weights.get("sources", {}),
         "holding_source_file": f"{data_source}:KFR Partner API JSON/fund_holdings",
         "trade_source_file": f"{data_source}:KFR Partner API JSON/fund_trades",
         "direct_stock_file": INPUTS["direct_stocks"].name if INPUTS["direct_stocks"].exists() else "없음",
@@ -2391,6 +2586,84 @@ def build_dashboard(
     .hold-grid {{ display:grid; grid-template-columns:1.22fr 1.05fr 1.31fr; gap:10px; align-items:start; }}
     .trade-grid {{ display:grid; grid-template-columns:minmax(560px,1.55fr) minmax(260px,.75fr) minmax(260px,.75fr); gap:12px; align-items:start; }}
     .timeseries-grid {{ display:grid; grid-template-columns:1fr; gap:12px; align-items:start; }}
+    .performance-grid {{ display:grid; grid-template-columns:minmax(580px,.95fr) minmax(670px,1.2fr); gap:10px; align-items:stretch; }}
+    .performance-left-column {{ display:grid; grid-template-columns:minmax(0,1fr); gap:10px; align-content:start; min-width:0; }}
+    .performance-market-panel {{ min-height:250px; }}
+    .performance-sector-panel {{ min-height:420px; }}
+    .performance-sector-panel .performance-table {{ max-height:none; overflow:visible; }}
+    .performance-stock-panel {{ grid-column:2; grid-row:1; min-height:680px; align-self:start; display:flex; flex-direction:column; overflow:hidden; }}
+    .performance-stock-panel [data-performance-stocks] {{ flex:1; min-height:0; display:flex; overflow:hidden; }}
+    .performance-stock-panel .performance-table {{ width:100%; height:100%; max-height:none; overflow:auto; }}
+    .performance-heading {{ justify-content:flex-start; align-items:center; }}
+    .performance-heading-actions {{ display:flex; align-items:center; gap:8px; }}
+    .performance-heading-actions h3 {{ margin-right:4px; }}
+    .performance-ai-panel {{ margin-bottom:10px; padding:12px 14px; }}
+    .performance-ai-panel[hidden] {{ display:none; }}
+    .performance-ai-output {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; color:#173a34; font-size:13px; line-height:1.65; }}
+    .performance-ai-market-box {{ min-width:0; padding:10px 12px; border:1px solid #c9ddd7; border-radius:5px; background:#fbfdfc; }}
+    .performance-ai-market-box h5 {{ margin:0 0 6px; color:var(--hana); font-size:12px; font-weight:900; }}
+    .performance-ai-market-box p {{ margin:0; line-height:1.65; }}
+    .performance-ai-panel .panel-title span {{ color:var(--muted); font-size:11px; }}
+    .performance-table table {{ table-layout:fixed; width:100%; }}
+    .performance-table th,.performance-table td {{ text-align:center !important; padding:6px 7px; }}
+    .performance-table td.profit-cell,.performance-table td.loss-cell {{ font-weight:400 !important; }}
+    .performance-table .total-label {{ text-align:center !important; }}
+    .performance-table .name-cell {{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+    .performance-filter-row {{ cursor:pointer; }}
+    .performance-filter-row:hover td {{ background:#eef8f4; }}
+    .performance-filter-row.active td {{ background:#dff1eb; font-weight:900; }}
+    .performance-filter-button {{
+      width:100%; padding:0; border:0; background:transparent; color:inherit;
+      font:inherit; font-weight:inherit; text-align:center; cursor:pointer;
+    }}
+    .performance-market-panel .performance-table th:nth-child(1),.performance-market-panel .performance-table td:nth-child(1) {{ width:9%; }}
+    .performance-market-panel .performance-table th:nth-child(2),.performance-market-panel .performance-table td:nth-child(2) {{ width:7%; }}
+    .performance-market-panel .performance-table th:nth-child(3),.performance-market-panel .performance-table td:nth-child(3) {{ width:10%; }}
+    .performance-market-panel .performance-table th:nth-child(4),.performance-market-panel .performance-table td:nth-child(4) {{ width:7%; }}
+    .performance-market-panel .performance-table th:nth-child(5),.performance-market-panel .performance-table td:nth-child(5) {{ width:8%; }}
+    .performance-market-panel .performance-table th:nth-child(6),.performance-market-panel .performance-table td:nth-child(6) {{ width:12%; }}
+    .performance-market-panel .performance-table th:nth-child(6) {{ white-space:normal; line-height:1.15; }}
+    .performance-market-panel .performance-table th:nth-child(7),.performance-market-panel .performance-table td:nth-child(7) {{ width:10%; }}
+    .performance-market-panel .performance-table th:nth-child(8),.performance-market-panel .performance-table td:nth-child(8) {{ width:10%; }}
+    .performance-market-panel .performance-table th:nth-child(9),.performance-market-panel .performance-table td:nth-child(9) {{ width:9%; }}
+    .performance-market-panel .performance-table th:nth-child(10),.performance-market-panel .performance-table td:nth-child(10) {{ width:18%; }}
+    .performance-sector-panel .performance-table th:nth-child(1),.performance-sector-panel .performance-table td:nth-child(1) {{ width:20%; }}
+    .performance-sector-panel .performance-table th:nth-child(2),.performance-sector-panel .performance-table td:nth-child(2) {{ width:9%; }}
+    .performance-sector-panel .performance-table th:nth-child(3),.performance-sector-panel .performance-table td:nth-child(3) {{ width:13%; }}
+    .performance-sector-panel .performance-table th:nth-child(4),.performance-sector-panel .performance-table td:nth-child(4) {{ width:10%; }}
+    .performance-sector-panel .performance-table th:nth-child(5),.performance-sector-panel .performance-table td:nth-child(5) {{ width:10%; }}
+    .performance-sector-panel .performance-table th:nth-child(6),.performance-sector-panel .performance-table td:nth-child(6) {{ width:11%; }}
+    .performance-sector-panel .performance-table th:nth-child(7),.performance-sector-panel .performance-table td:nth-child(7) {{ width:14%; }}
+    .performance-sector-panel .performance-table th:nth-child(8),.performance-sector-panel .performance-table td:nth-child(8) {{ width:13%; }}
+    .performance-stock-panel .performance-table th:nth-child(1),
+    .performance-stock-panel .performance-table td:nth-child(1) {{ width:20%; }}
+    .performance-stock-panel .performance-table th:nth-child(2),
+    .performance-stock-panel .performance-table td:nth-child(2) {{ width:6%; }}
+    .performance-stock-panel .performance-table th:nth-child(3),
+    .performance-stock-panel .performance-table td:nth-child(3) {{ width:11%; }}
+    .performance-stock-panel .performance-table th:nth-child(4),
+    .performance-stock-panel .performance-table td:nth-child(4) {{ width:9%; }}
+    .performance-stock-panel .performance-table th:nth-child(5),
+    .performance-stock-panel .performance-table td:nth-child(5) {{ width:9%; }}
+    .performance-stock-panel .performance-table th:nth-child(6),
+    .performance-stock-panel .performance-table td:nth-child(6) {{ width:9%; }}
+    .performance-stock-panel .performance-table th:nth-child(7),
+    .performance-stock-panel .performance-table td:nth-child(7) {{ width:9%; }}
+    .performance-stock-panel .performance-table th:nth-child(8),
+    .performance-stock-panel .performance-table td:nth-child(8) {{ width:9%; }}
+    .performance-stock-panel .performance-table th:nth-child(9),
+    .performance-stock-panel .performance-table td:nth-child(9) {{ width:9%; }}
+    .performance-stock-panel .performance-table th:nth-child(10),
+    .performance-stock-panel .performance-table td:nth-child(10) {{ width:9%; }}
+    .relative-badge {{ display:inline-flex; align-items:center; justify-content:center; min-width:48px; border:1px solid currentColor; border-radius:4px; padding:2px 6px; font-size:10px; font-weight:900; background:#fff; }}
+    .relative-badge.over {{ color:#d92d20; background:#fff3f1; }}
+    .relative-badge.under {{ color:#2563eb; background:#eff6ff; }}
+    .relative-badge.neutral {{ color:#53645e; background:#f4f7f5; }}
+    .sector-panel-controls {{ display:flex; align-items:center; gap:6px; }}
+    .sector-level-toggle,.sector-market-toggle {{ display:inline-flex; border:1px solid #b9d2cb; border-radius:5px; overflow:hidden; }}
+    .sector-level-toggle button,.sector-market-toggle button {{ border:0; border-right:1px solid #b9d2cb; background:#fff; color:#496159; padding:4px 9px; font-size:10px; font-weight:900; cursor:pointer; }}
+    .sector-level-toggle button:last-child,.sector-market-toggle button:last-child {{ border-right:0; }}
+    .sector-level-toggle button.active,.sector-market-toggle button.active {{ background:var(--hana); color:#fff; }}
     .ts-trend-panel {{ grid-column:1 / -1; }}
     .ts-daily-panel {{ grid-column:1 / -1; }}
     .ts-stock-panel {{ grid-column:1 / -1; }}
@@ -2627,7 +2900,12 @@ def build_dashboard(
     .trade-dynamic-bar .fill.sell {{ background:#2563eb; }}
     .trade-dynamic-bar em {{ font-style:normal; font-size:10.5px; font-weight:900; text-align:right; }}
     @media (max-width:1280px) {{ .hold-grid {{ grid-template-columns:1fr 1fr; }} .trade-grid {{ grid-template-columns:1fr 1fr; }} .trade-recent {{ grid-column:1 / -1; grid-row:auto; }} .net-buy-panel,.net-sell-panel,.long-panel,.short-panel,.chart-panel {{ grid-column:auto; grid-row:auto; }} }}
-    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.topbar-left {{ flex-wrap:wrap }}.brand {{ font-size:20px }}.quick-nav {{ order:3; width:100%; overflow:auto; padding-bottom:2px; }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.summary-grid,.sector-row,.hold-grid,.detail-grid,.trade-grid,.timeseries-grid,.pie-wrap {{ grid-template-columns:1fr; }} .trade-recent,.ts-trend-panel,.ts-daily-panel {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
+    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.topbar-left {{ flex-wrap:wrap }}.brand {{ font-size:20px }}.quick-nav {{ order:3; width:100%; overflow:auto; padding-bottom:2px; }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.summary-grid,.sector-row,.hold-grid,.detail-grid,.trade-grid,.timeseries-grid,.performance-grid,.performance-kpis,.performance-ai-output,.pie-wrap {{ grid-template-columns:1fr; }} .performance-stock-panel {{ grid-column:auto;grid-row:auto; }} .trade-recent,.ts-trend-panel,.ts-daily-panel {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
+    @media (max-width:980px) {{
+      .performance-stock-panel {{ display:block; }}
+      .performance-stock-panel [data-performance-stocks] {{ display:block; }}
+      .performance-stock-panel .performance-table {{ height:auto; max-height:760px; }}
+    }}
   </style>
 </head>
 <body>
@@ -2635,7 +2913,8 @@ def build_dashboard(
     <div class="topbar-left">
       <div class="brand"><span>주식 & 수익증권 대시보드</span><button type="button" id="refreshPage" class="refresh-button">새로고침</button></div>
       <div class="quick-nav">
-        <button type="button" data-tab="summary">요약</button>
+        <button type="button" data-tab="summary">메인</button>
+        <button type="button" data-tab="performance">성과분석</button>
         <button type="button" data-tab="holdings">보유상세</button>
         <button type="button" data-tab="trades">매매상세</button>
         <button type="button" data-tab="timeseries">시계열</button>
@@ -2686,6 +2965,7 @@ def build_dashboard(
       <div id="holdingFundBody"></div>
     </section>
   </div>
+  <script src="xlsx.full.min.js"></script>
   <script>
     const views = {json.dumps(views, ensure_ascii=False)};
     const funds = {json.dumps(fund_buttons, ensure_ascii=False)};
@@ -2713,6 +2993,9 @@ def build_dashboard(
     let activeTab = initialTabFromLocation();
     let tsRangeState = null;
     let tsActiveSubtab = "overview";
+    let performanceSectorLevel = "large";
+    let performanceSectorMarket = "코스피";
+    let performanceFilter = null;
     function normalizeFundCode(value) {{
       const text = String(value ?? "").trim().replace(/,/g, "");
       if (!text || text.toLowerCase() === "nan") return "";
@@ -2776,6 +3059,7 @@ def build_dashboard(
     const SUPABASE_URL = "{DEFAULT_SUPABASE_URL}";
     const SUPABASE_KEY = "sb_publishable_T0q_8mB9yzcitTL7HH0SuA_W4DUcVtP";
     let liveQuotes = {{}};
+    let liveIndices = {{}};
     let quoteRefreshTimer = null;
     let stockSupabaseClient = null;
     function normalizeQuoteCode(value) {{
@@ -2847,6 +3131,460 @@ def build_dashboard(
           pl: evalAmount == null || ratePct == null ? null : evalAmount * ratePct / 100,
         }};
       }});
+    }}
+    function normalizedMarket(value) {{
+      const market = String(value || "").trim();
+      if (market === "코스피" || market === "KOSPI" || market === "거래소" || market === "0") return "코스피";
+      if (market === "코스닥" || market === "KOSDAQ" || market === "10") return "코스닥";
+      return "미분류";
+    }}
+    function referenceCodeForPerformance(row, quote) {{
+      const proxyCode = normalizeQuoteCode(quote.proxy_code);
+      if (proxyCode) return proxyCode;
+      const code = normalizeQuoteCode(row.code);
+      const name = String(row.name || "").replace(/\\s/g, "");
+      if (/우(?:B|C|[(]|$)/.test(name) && /^\\d{{6}}$/.test(code) && /[1257]$/.test(code)) return `${{code.slice(0, 5)}}0`;
+      return "";
+    }}
+    function referenceSectorForPerformance(row, quote) {{
+      const referenceCode = referenceCodeForPerformance(row, quote);
+      if (!referenceCode) return null;
+      return (quoteSensitiveData.stockPositions || []).find((item) => {{
+        if (normalizeQuoteCode(item.code) !== referenceCode) return false;
+        return (item.sectorLarge && item.sectorLarge !== "미분류") || (item.sector && item.sector !== "미분류");
+      }}) || null;
+    }}
+    function performanceRows() {{
+      return enrichedStockRows(activeStockRows()).map((row) => {{
+        const quote = quoteForCode(row.code) || {{}};
+        const benchmarkCode = referenceCodeForPerformance(row, quote) || normalizeQuoteCode(row.code);
+        const reference = referenceSectorForPerformance(row, quote);
+        const referenceQuote = reference ? quoteForCode(reference.code) || {{}} : {{}};
+        const sectorLarge = row.sectorLarge && row.sectorLarge !== "미분류" ? row.sectorLarge : reference?.sectorLarge || "미분류";
+        const sectorMid = row.sector && row.sector !== "미분류" ? row.sector : reference?.sector || "미분류";
+        const market = normalizedMarket(quote.market) !== "미분류" ? normalizedMarket(quote.market) : normalizedMarket(referenceQuote.market);
+        return {{ ...row, market, sectorLargeName: sectorLarge, sectorMidName: sectorMid, benchmarkCode }};
+      }});
+    }}
+    function benchmarkWeightForStock(row) {{
+      const marketWeights = quoteSensitiveData.benchmarkWeights?.weights?.[row.market];
+      if (!marketWeights || !Object.keys(marketWeights).length) return null;
+      const code = normalizeQuoteCode(row.benchmarkCode || row.code);
+      const value = Number(marketWeights[code]);
+      return Number.isFinite(value) ? value : 0;
+    }}
+    function fmtPpJs(value) {{
+      if (value == null || !Number.isFinite(Number(value))) return "-";
+      const number = Number(value) * 100;
+      return `${{number > 0 ? "+" : ""}}${{number.toFixed(2)}}%p`;
+    }}
+    function indexRate(key) {{
+      const item = liveIndices[key] || {{}};
+      const rate = item.change_rate ?? item.flu_rt;
+      return Number.isFinite(Number(rate)) ? Number(rate) : null;
+    }}
+    function assessmentBadge(actualRate, indexReturn) {{
+      if (actualRate == null || indexReturn == null || !Number.isFinite(Number(actualRate)) || !Number.isFinite(Number(indexReturn))) return "-";
+      const gap = Number(actualRate) - Number(indexReturn);
+      const label = gap >= 0 ? "Over" : "Under";
+      const tone = gap >= 0 ? "over" : "under";
+      return `<span class="relative-badge ${{tone}}">${{label}} ${{Math.abs(gap).toFixed(2)}}%p</span>`;
+    }}
+    function assessmentText(actualRate, indexReturn) {{
+      if (actualRate == null || indexReturn == null || !Number.isFinite(Number(actualRate)) || !Number.isFinite(Number(indexReturn))) return "";
+      const gap = Number(actualRate) - Number(indexReturn);
+      return `${{gap >= 0 ? "Over" : "Under"}} ${{Math.abs(gap).toFixed(2)}}%p`;
+    }}
+    function groupedPerformanceStocks() {{
+      const grouped = new Map();
+      performanceRows().filter((row) => row.code && row.eval != null).forEach((row) => {{
+        const key = `${{normalizeQuoteCode(row.code)}}|${{row.name}}`;
+        const item = grouped.get(key) || {{ code: normalizeQuoteCode(row.code), benchmarkCode: row.benchmarkCode, name: row.name, market: row.market, sectorLarge: row.sectorLargeName, sectorMid: row.sectorMidName, exp: 0, pl: 0 }};
+        item.exp += Number(row.netExp || 0);
+        item.pl += Number(row.pl || 0);
+        if (item.market === "미분류" && row.market !== "미분류") item.market = row.market;
+        if (item.sectorLarge === "미분류" && row.sectorLargeName !== "미분류") item.sectorLarge = row.sectorLargeName;
+        if (item.sectorMid === "미분류" && row.sectorMidName !== "미분류") item.sectorMid = row.sectorMidName;
+        if (!item.benchmarkCode && row.benchmarkCode) item.benchmarkCode = row.benchmarkCode;
+        grouped.set(key, item);
+      }});
+      return [...grouped.values()];
+    }}
+    function performanceMarkets(stocks) {{
+      return ["코스피", "코스닥", "미분류"].map((market) => {{
+        const marketRows = stocks.filter((row) => row.market === market);
+        const exp = marketRows.reduce((sum, row) => sum + Number(row.exp || 0), 0);
+        const actual = marketRows.reduce((sum, row) => sum + Number(row.pl || 0), 0);
+        const rate = market === "코스피" ? indexRate("KOSPI") : market === "코스닥" ? indexRate("KOSDAQ") : null;
+        const actualRate = exp ? actual / exp * 100 : null;
+        return {{ market, count: marketRows.length, exp, actual, actualRate, rate, expected: rate == null ? null : exp * rate / 100 }};
+      }});
+    }}
+    function benchmarkSectorsForScope(level, marketScope = "ALL", stocks = []) {{
+      const source = quoteSensitiveData.benchmarkSectors || {{}};
+      const markets = marketScope === "ALL" ? ["코스피", "코스닥"] : [marketScope];
+      const grouped = new Map();
+      let available = false;
+      const totalExp = stocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
+      const marketExp = new Map();
+      if (marketScope === "ALL" && totalExp) {{
+        stocks.forEach((row) => marketExp.set(row.market, (marketExp.get(row.market) || 0) + Number(row.exp || 0)));
+      }}
+      markets.forEach((market) => {{
+        const rows = source?.[market]?.[level];
+        if (!rows || typeof rows !== "object") return;
+        available = true;
+        const marketFactor = marketScope === "ALL" && totalExp ? Number(marketExp.get(market) || 0) / totalExp : 1;
+        Object.entries(rows).forEach(([name, item]) => {{
+          const current = grouped.get(name) || {{ weight:0, count:0 }};
+          current.weight += Number(item?.weight || 0) * marketFactor;
+          current.count += Number(item?.count || 0);
+          grouped.set(name, current);
+        }});
+      }});
+      if (marketScope === "ALL" && totalExp) {{
+        const unclassifiedWeight = Number(marketExp.get("미분류") || 0) / totalExp;
+        if (unclassifiedWeight) {{
+          const current = grouped.get("미분류") || {{ weight:0, count:0 }};
+          current.weight += unclassifiedWeight;
+          grouped.set("미분류", current);
+          available = true;
+        }}
+      }}
+      return {{ grouped, available }};
+    }}
+    function performanceSectors(stocks, level, marketScope = "ALL") {{
+      const sectors = new Map();
+      stocks.forEach((row) => {{
+        const sectorName = level === "large" ? row.sectorLarge : row.sectorMid;
+        const item = sectors.get(sectorName) || {{ name: sectorName, codes: new Set(), benchmarkCodes: new Set(), benchmarkWeight: 0, hasBenchmark: false, exp: 0, pl: 0 }};
+        item.codes.add(row.code);
+        item.exp += row.exp;
+        item.pl += row.pl;
+        sectors.set(sectorName, item);
+      }});
+      const benchmark = benchmarkSectorsForScope(level, marketScope, stocks);
+      if (benchmark.available) {{
+        benchmark.grouped.forEach((bm, name) => {{
+          const item = sectors.get(name) || {{ name, codes:new Set(), benchmarkCodes:new Set(), benchmarkWeight:0, hasBenchmark:true, exp:0, pl:0 }};
+          item.benchmarkWeight = Number(bm.weight || 0);
+          item.hasBenchmark = true;
+          item.benchmarkCount = Number(bm.count || 0);
+          sectors.set(name, item);
+        }});
+        sectors.forEach((item) => {{
+          item.hasBenchmark = true;
+          if (!benchmark.grouped.has(item.name)) item.benchmarkWeight = 0;
+        }});
+      }}
+      return [...sectors.values()].sort((a, b) => Math.abs(b.pl) - Math.abs(a.pl));
+    }}
+    function performanceAnalysisPayload() {{
+      const stocks = groupedPerformanceStocks();
+      const rate = (value) => value == null || !Number.isFinite(Number(value)) ? null : Number(Number(value).toFixed(3));
+      const marketIndexReturns = Object.fromEntries(performanceMarkets(stocks).map((row) => [row.market, rate(row.rate)]));
+      const koreaDateParts = Object.fromEntries(
+        new Intl.DateTimeFormat("en-US", {{ timeZone:"Asia/Seoul", year:"numeric", month:"2-digit", day:"2-digit" }})
+          .formatToParts(new Date())
+          .filter((part) => part.type !== "literal")
+          .map((part) => [part.type, part.value])
+      );
+      return {{
+        asOfDate:`${{koreaDateParts.year}}-${{koreaDateParts.month}}-${{koreaDateParts.day}}`,
+        holdingsSnapshotDate:currentSnapshotDate || null,
+        selectedFund:selectedPerformanceFundLabel(),
+        marketIndexReturns,
+        benchmarkSectors:quoteSensitiveData.benchmarkSectors || {{}},
+        positions:stocks.map((row) => ({{
+          name:row.name,
+          code:row.code,
+          market:row.market,
+          sectorLarge:row.sectorLarge,
+          sectorMid:row.sectorMid,
+          exp:Number(row.exp || 0),
+          pl:Number(row.pl || 0),
+          changeRatePct:rate(quoteRateForCode(row.code)),
+          benchmarkKey:`${{row.market}}|${{row.benchmarkCode || row.code}}`,
+          benchmarkWeight:benchmarkWeightForStock(row),
+        }})),
+      }};
+    }}
+    function normalizePerformanceAnalysisLayout(value) {{
+      const lines = String(value || "분석 결과가 없습니다.")
+        .split(/\\r?\\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const kosdaqIndex = lines.findIndex((line) => /^\\*\\*코스닥|^코스닥/.test(line));
+      if (kosdaqIndex > 0) {{
+        return `${{lines.slice(0, kosdaqIndex).join(" ")}}\\n\\n${{lines.slice(kosdaqIndex).join(" ")}}`;
+      }}
+      return lines.join(" ");
+    }}
+    function renderPerformanceAnalysisText(element, value) {{
+      const escaped = normalizePerformanceAnalysisLayout(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+      element.innerHTML = escaped
+        .replace(/\\*\\*([^*\\n]+)\\*\\*/g, "<strong>$1</strong>")
+        .replace(/\\n/g, "<br>");
+    }}
+    function performanceAnalysisMarketParts(value) {{
+      const raw = String(value || "분석 결과가 없습니다.").trim();
+      const marked = raw.match(/\\[코스피\\]\\s*([\\s\\S]*?)\\s*\\[코스닥\\]\\s*([\\s\\S]*)/);
+      if (marked) return [
+        {{ market:"코스피", text:marked[1].trim() }},
+        {{ market:"코스닥", text:marked[2].trim() }},
+      ];
+      const paragraphs = raw.split(/\\r?\\n\\s*\\r?\\n/).map((item) => item.replace(/\\r?\\n/g, " ").trim()).filter(Boolean);
+      const kosdaqIndex = paragraphs.findIndex((item) => item.includes("코스닥"));
+      if (kosdaqIndex > 0) return [
+        {{ market:"코스피", text:paragraphs.slice(0, kosdaqIndex).join(" ") }},
+        {{ market:"코스닥", text:paragraphs.slice(kosdaqIndex).join(" ") }},
+      ];
+      return [{{ market:"분석 결과", text:paragraphs.join(" ") || raw }}];
+    }}
+    function performanceAnalysisHtml(value) {{
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+        .replace(/\\*\\*([^*\\n]+)\\*\\*/g, "<strong>$1</strong>")
+        .replace(/\\r?\\n/g, " ");
+    }}
+    function renderPerformanceAnalysisCards(element, value) {{
+      element.innerHTML = performanceAnalysisMarketParts(value).map((part) =>
+        '<section class="performance-ai-market-box"><h5>' + part.market + '</h5><p>' + performanceAnalysisHtml(part.text) + '</p></section>'
+      ).join("");
+    }}
+    async function requestPerformanceAnalysis() {{
+      const button = dashboard.querySelector("[data-performance-ai]");
+      const panel = dashboard.querySelector("[data-performance-ai-panel]");
+      const title = dashboard.querySelector("[data-performance-ai-title]");
+      const status = dashboard.querySelector("[data-performance-ai-status]");
+      const output = dashboard.querySelector("[data-performance-ai-output]");
+      if (!button || !panel || !output) return;
+      const originalText = button.textContent;
+      const requestPayload = performanceAnalysisPayload();
+      const requestedTime = new Date().toLocaleTimeString("ko-KR", {{ hour:"2-digit", minute:"2-digit" }});
+      panel.hidden = false;
+      if (title) title.textContent = "AI 성과분석 (기준일 " + requestPayload.asOfDate + " " + requestedTime + ")";
+      button.disabled = true;
+      button.textContent = "분석 중";
+      if (status) status.textContent = "BM 상대성과 분석 중";
+      output.textContent = "코스피·코스닥 대비 핵심 성과 요인을 분석하고 있습니다.";
+      try {{
+        let payload;
+        if (["127.0.0.1", "localhost"].includes(window.location.hostname)) {{
+          const response = await fetch("/api/performance-analysis", {{
+            method:"POST",
+            headers:{{ "Content-Type":"application/json" }},
+            body:JSON.stringify(requestPayload),
+          }});
+          payload = await response.json().catch(() => ({{}}));
+          if (!response.ok) throw new Error(payload.error || `HTTP ${{response.status}}`);
+        }} else {{
+          const client = await getStockSupabaseClient();
+          const result = await client.functions.invoke("stock-performance-analysis", {{ body:requestPayload }});
+          if (result.error) {{
+            const detail = await result.error.context?.json?.().catch(() => null);
+            throw new Error(detail?.error || detail?.message || result.error.message);
+          }}
+          payload = result.data || {{}};
+          if (payload.error) throw new Error(payload.error);
+        }}
+        renderPerformanceAnalysisCards(output, payload.analysis);
+        const rawModel = String(payload.model || "gpt-5.4-mini");
+        const modelLabel = rawModel.startsWith("gpt-5.4-mini") ? "gpt-5.4-mini" : rawModel;
+        if (status) status.textContent = modelLabel;
+      }} catch (error) {{
+        console.error("Performance AI analysis failed", error);
+        output.textContent = `AI 성과분석을 불러오지 못했습니다. ${{error.message || error}}`;
+        if (status) status.textContent = "호출 실패";
+      }} finally {{
+        button.disabled = false;
+        button.textContent = originalText;
+      }}
+    }}
+    function renderPerformanceAnalysis() {{
+      const panel = dashboard.querySelector('[data-panel="performance"]');
+      if (!panel) return;
+      const stocks = groupedPerformanceStocks();
+      const stockExpTotal = stocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
+      const markets = performanceMarkets(stocks);
+      const classified = markets.filter((row) => row.market !== "미분류");
+      const actualTotal = stocks.reduce((sum, row) => sum + Number(row.pl || 0), 0);
+      const classifiedActual = classified.reduce((sum, row) => sum + row.actual, 0);
+      const expectedTotal = classified.some((row) => row.expected != null) ? classified.reduce((sum, row) => sum + Number(row.expected || 0), 0) : null;
+      const marketHost = panel.querySelector('[data-performance-market]');
+      if (marketHost) {{
+        const marketRowsHtml = markets.map((row) => {{
+          const gap = row.expected == null ? null : row.actual - row.expected;
+          const active = performanceFilter?.type === "market" && performanceFilter.value === row.market ? " active" : "";
+          return `<tr class="performance-filter-row${{active}}" data-performance-market-filter="${{row.market}}"><td class="name-cell"><button type="button" class="performance-filter-button">${{row.market}}</button></td><td>${{row.count}}</td><td class="${{signedClass(row.exp)}}">${{fmtEok1(row.exp)}}</td><td>${{fmtPct1Js(stockExpTotal ? row.exp / stockExpTotal : null)}}</td><td class="${{signedClass(row.rate)}}">${{fmtRateJs(row.rate)}}</td><td class="${{signedClass(row.actualRate)}}">${{fmtRateJs(row.actualRate)}}</td><td class="${{signedClass(row.expected)}}">${{fmtEok1(row.expected)}}</td><td class="${{signedClass(row.actual)}}">${{fmtEok1(row.actual)}}</td><td class="${{signedClass(gap)}}">${{fmtEok1(gap)}}</td><td>${{assessmentBadge(row.actualRate, row.rate)}}</td></tr>`;
+        }}).join("");
+        const totalGap = expectedTotal == null ? null : classifiedActual - expectedTotal;
+        const totalActualRate = stockExpTotal ? actualTotal / stockExpTotal * 100 : null;
+        const totalRow = `<tr class="total-row"><td class="name-cell total-label">합계</td><td>${{stocks.length}}</td><td class="${{signedClass(stockExpTotal)}}">${{fmtEok1(stockExpTotal)}}</td><td>${{fmtPct1Js(stockExpTotal ? 1 : null)}}</td><td></td><td class="${{signedClass(totalActualRate)}}">${{fmtRateJs(totalActualRate)}}</td><td class="${{signedClass(expectedTotal)}}">${{fmtEok1(expectedTotal)}}</td><td class="${{signedClass(actualTotal)}}">${{fmtEok1(actualTotal)}}</td><td class="${{signedClass(totalGap)}}">${{fmtEok1(totalGap)}}</td><td></td></tr>`;
+        marketHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table"><thead><tr><th data-sort-index="0">구분</th><th data-sort-index="1">종목수</th><th data-sort-index="2">주식 Exp</th><th data-sort-index="3">비중</th><th data-sort-index="4">지수</th><th data-sort-index="5">실제 수익률</th><th data-sort-index="6">지수손익</th><th data-sort-index="7">실제손익</th><th data-sort-index="8">차이</th><th data-sort-index="9">판단</th></tr></thead><tbody>${{marketRowsHtml}}${{totalRow}}</tbody></table></div>`;
+      }}
+      panel.querySelectorAll("[data-performance-sector-market]").forEach((button) => button.classList.toggle("active", button.dataset.performanceSectorMarket === performanceSectorMarket));
+      panel.querySelectorAll("[data-performance-sector-level]").forEach((button) => button.classList.toggle("active", button.dataset.performanceSectorLevel === performanceSectorLevel));
+      const sectorStocks = performanceSectorMarket === "ALL" ? stocks : stocks.filter((row) => row.market === performanceSectorMarket);
+      const sectorExpTotal = sectorStocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
+      const sectorActualTotal = sectorStocks.reduce((sum, row) => sum + Number(row.pl || 0), 0);
+      const sectorRows = performanceSectors(sectorStocks, performanceSectorLevel, performanceSectorMarket);
+      const sectorHost = panel.querySelector('[data-performance-sector]');
+      if (sectorHost) {{
+        const sectorRowsHtml = sectorRows.map((row) => {{ const active = performanceFilter?.type === "sector" && performanceFilter.level === performanceSectorLevel && performanceFilter.market === performanceSectorMarket && performanceFilter.value === row.name ? " active" : ""; const portfolioWeight = sectorExpTotal ? row.exp / sectorExpTotal : null; const benchmarkWeight = row.hasBenchmark ? row.benchmarkWeight : null; const activeWeight = portfolioWeight == null || benchmarkWeight == null ? null : portfolioWeight - benchmarkWeight; return `<tr class="performance-filter-row${{active}}" data-performance-sector-filter="${{escHtml(row.name)}}"><td class="name-cell" title="${{escHtml(row.name)}}"><button type="button" class="performance-filter-button">${{escHtml(row.name)}}</button></td><td>${{row.codes.size}}</td><td class="${{signedClass(row.exp)}}">${{fmtEok1(row.exp)}}</td><td>${{fmtPct1Js(portfolioWeight)}}</td><td>${{fmtPct1Js(benchmarkWeight)}}</td><td class="${{signedClass(activeWeight)}}">${{fmtPpJs(activeWeight)}}</td><td class="${{signedClass(row.pl)}}">${{fmtEok1(row.pl)}}</td><td class="${{signedClass(row.pl)}}">${{fmtPctJs(sectorExpTotal ? row.pl / sectorExpTotal : null)}}p</td></tr>`; }}).join("");
+        const sectorBenchmarkTotal = sectorRows.some((row) => row.hasBenchmark) ? sectorRows.reduce((sum, row) => sum + (row.hasBenchmark ? row.benchmarkWeight : 0), 0) : null;
+        const sectorActiveTotal = sectorBenchmarkTotal == null || !sectorExpTotal ? null : 1 - sectorBenchmarkTotal;
+        const sectorTotal = `<tr class="total-row"><td class="name-cell total-label">합계</td><td>${{sectorStocks.length}}</td><td class="${{signedClass(sectorExpTotal)}}">${{fmtEok1(sectorExpTotal)}}</td><td>${{fmtPct1Js(sectorExpTotal ? 1 : null)}}</td><td>${{fmtPct1Js(sectorBenchmarkTotal)}}</td><td class="${{signedClass(sectorActiveTotal)}}">${{fmtPpJs(sectorActiveTotal)}}</td><td class="${{signedClass(sectorActualTotal)}}">${{fmtEok1(sectorActualTotal)}}</td><td class="${{signedClass(sectorActualTotal)}}">${{fmtPctJs(sectorExpTotal ? sectorActualTotal / sectorExpTotal : null)}}p</td></tr>`;
+        sectorHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table"><thead><tr><th data-sort-index="0">섹터</th><th data-sort-index="1">종목수</th><th data-sort-index="2">주식 Exp</th><th data-sort-index="3">비중</th><th data-sort-index="4">BM비중</th><th data-sort-index="5">BM대비</th><th data-sort-index="6">현재 손익</th><th data-sort-index="7">기여도</th></tr></thead><tbody>${{sectorRowsHtml}}${{sectorTotal}}</tbody></table></div>`;
+      }}
+      const stockHost = panel.querySelector('[data-performance-stocks]');
+      const filterLabel = panel.querySelector('[data-performance-filter-label]');
+      let filteredStocks = [...stocks];
+      if (performanceFilter?.type === "market") filteredStocks = filteredStocks.filter((row) => row.market === performanceFilter.value);
+      if (performanceFilter?.type === "sector") {{
+        if (performanceFilter.market && performanceFilter.market !== "ALL") filteredStocks = filteredStocks.filter((row) => row.market === performanceFilter.market);
+        filteredStocks = filteredStocks.filter((row) => (performanceFilter.level === "large" ? row.sectorLarge : row.sectorMid) === performanceFilter.value);
+      }}
+      filteredStocks.sort((a, b) => Number(b.exp || 0) - Number(a.exp || 0));
+      if (filterLabel) {{
+        if (!performanceFilter) filterLabel.textContent = "전체 종목";
+        else if (performanceFilter.type === "market") filterLabel.textContent = `시장: ${{performanceFilter.value}}`;
+        else {{
+          const marketLabel = performanceFilter.market && performanceFilter.market !== "ALL" ? `${{performanceFilter.market}} · ` : "";
+          filterLabel.textContent = `${{marketLabel}}${{performanceFilter.level === "large" ? "대분류" : "중분류"}}: ${{performanceFilter.value}}`;
+        }}
+      }}
+      if (stockHost) {{
+        const rowsHtml = filteredStocks.map((row) => {{ const sectorName = performanceSectorLevel === "large" ? row.sectorLarge : row.sectorMid; const rate = quoteRateForCode(row.code); const portfolioWeight = stockExpTotal ? row.exp / stockExpTotal : null; const benchmarkWeight = benchmarkWeightForStock(row); const activeWeight = portfolioWeight == null || benchmarkWeight == null ? null : portfolioWeight - benchmarkWeight; return `<tr><td class="name-cell" title="${{escHtml(row.name)}}">${{escHtml(row.name)}}</td><td>${{row.market}}</td><td class="name-cell" title="${{escHtml(sectorName)}}">${{escHtml(sectorName)}}</td><td class="${{signedClass(row.exp)}}">${{fmtEok1(row.exp)}}</td><td>${{fmtPct1Js(portfolioWeight)}}</td><td>${{fmtPct1Js(benchmarkWeight)}}</td><td class="${{signedClass(activeWeight)}}">${{fmtPpJs(activeWeight)}}</td>${{rateBarPct(rate)}}<td class="${{signedClass(row.pl)}}">${{fmtEok1(row.pl)}}</td><td class="${{signedClass(row.pl)}}">${{fmtPctJs(stockExpTotal ? row.pl / stockExpTotal : null)}}p</td></tr>`; }}).join("");
+        const filteredExp = filteredStocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
+        const filteredPl = filteredStocks.reduce((sum, row) => sum + Number(row.pl || 0), 0);
+        const totalRow = `<tr class="total-row"><td class="name-cell total-label">합계</td><td></td><td></td><td class="${{signedClass(filteredExp)}}">${{fmtEok1(filteredExp)}}</td><td>${{fmtPct1Js(stockExpTotal ? filteredExp / stockExpTotal : null)}}</td><td></td><td></td><td></td><td class="${{signedClass(filteredPl)}}">${{fmtEok1(filteredPl)}}</td><td class="${{signedClass(filteredPl)}}">${{fmtPctJs(stockExpTotal ? filteredPl / stockExpTotal : null)}}p</td></tr>`;
+        stockHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table"><thead><tr><th data-sort-index="0">종목명</th><th data-sort-index="1">시장</th><th data-sort-index="2">섹터</th><th data-sort-index="3">주식 Exp</th><th data-sort-index="4">비중</th><th data-sort-index="5">BM비중</th><th data-sort-index="6">BM대비</th><th data-sort-index="7">등락률</th><th data-sort-index="8">현재 손익</th><th data-sort-index="9">기여도</th></tr></thead><tbody>${{rowsHtml}}${{totalRow}}</tbody></table></div>`;
+      }}
+      const marketPanel = panel.querySelector(".performance-market-panel");
+      const sectorPanel = panel.querySelector(".performance-sector-panel");
+      const stockPanel = panel.querySelector(".performance-stock-panel");
+      if (marketPanel && sectorPanel && stockPanel && window.innerWidth > 980) {{
+        const leftGap = 10;
+        stockPanel.style.height = `${{Math.max(680, marketPanel.offsetHeight + sectorPanel.offsetHeight + leftGap)}}px`;
+      }} else if (stockPanel) {{
+        stockPanel.style.height = "";
+      }}
+    }}
+    let xlsxLibraryPromise = null;
+    function ensureXlsxLibrary() {{
+      if (window.XLSX) return Promise.resolve(window.XLSX);
+      if (xlsxLibraryPromise) return xlsxLibraryPromise;
+      xlsxLibraryPromise = new Promise((resolve, reject) => {{
+        const script = document.createElement("script");
+        script.src = "xlsx.full.min.js";
+        script.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error("XLSX library unavailable"));
+        script.onerror = () => reject(new Error("XLSX library load failed"));
+        document.head.appendChild(script);
+      }});
+      return xlsxLibraryPromise;
+    }}
+    function exportDateParts() {{
+      const now = new Date();
+      const pad = (value) => String(value).padStart(2, "0");
+      const iso = `${{now.getFullYear()}}-${{pad(now.getMonth() + 1)}}-${{pad(now.getDate())}}`;
+      return {{ iso, file: iso.replaceAll("-", "_") }};
+    }}
+    function selectedPerformanceFundLabel() {{
+      if (currentKey === "ALL") return "전체 펀드";
+      return funds.find((fund) => String(fund.key) === String(currentKey))?.name || currentKey;
+    }}
+    function performanceExcelSheet(title, headers, rows, formats, widths, context) {{
+      const sheet = XLSX.utils.aoa_to_sheet([[`${{title}} | 저장일 ${{context.savedDate}} | 보유 기준일 ${{context.holdingDate}} | 대상 ${{context.fund}}`], headers, ...rows]);
+      sheet["!merges"] = [{{ s: {{ r:0, c:0 }}, e: {{ r:0, c:headers.length - 1 }} }}];
+      sheet["!cols"] = widths.map((wch) => ({{ wch }}));
+      sheet["!rows"] = [{{ hpt:22 }}, {{ hpt:20 }}];
+      sheet["!autofilter"] = {{ ref:`A2:${{XLSX.utils.encode_col(headers.length - 1)}}${{rows.length + 2}}` }};
+      rows.forEach((row, rowIndex) => formats.forEach((format, colIndex) => {{
+        if (!format || row[colIndex] == null) return;
+        const cell = sheet[XLSX.utils.encode_cell({{ r:rowIndex + 2, c:colIndex }})];
+        if (cell) cell.z = format;
+      }}));
+      return sheet;
+    }}
+    function performanceAiExcelSheet(context) {{
+      const panel = dashboard.querySelector("[data-performance-ai-panel]");
+      const title = dashboard.querySelector("[data-performance-ai-title]")?.textContent?.trim()
+        || `AI 성과분석 (기준일 ${{context.savedDate}})`;
+      const status = dashboard.querySelector("[data-performance-ai-status]")?.textContent?.trim() || "";
+      const output = dashboard.querySelector("[data-performance-ai-output]")?.innerText?.trim() || "";
+      const analysis = panel && !panel.hidden && output
+        ? output
+        : "AI 성과분석을 아직 실행하지 않았습니다.";
+      const sheet = XLSX.utils.aoa_to_sheet([
+        [title],
+        [`저장일 ${{context.savedDate}} | 보유 기준일 ${{context.holdingDate}} | 대상 ${{context.fund}}`],
+        [status ? `호출 정보 ${{status}}` : "호출 정보 없음"],
+        [],
+        [analysis],
+      ]);
+      sheet["!cols"] = [{{ wch:140 }}];
+      sheet["!rows"] = [{{ hpt:24 }}, {{ hpt:20 }}, {{ hpt:20 }}, {{ hpt:8 }}, {{ hpt:110 }}];
+      ["A1", "A2", "A3", "A5"].forEach((address) => {{
+        if (!sheet[address]) return;
+        sheet[address].s = {{ alignment:{{ vertical:"top", wrapText:true }} }};
+      }});
+      return sheet;
+    }}
+    async function exportPerformanceWorkbook() {{
+      const button = dashboard.querySelector("[data-performance-export]");
+      const originalText = button?.textContent || "엑셀 저장";
+      if (button) {{ button.disabled = true; button.textContent = "저장 중"; }}
+      try {{
+        await ensureXlsxLibrary();
+        const stocks = groupedPerformanceStocks();
+        const stockExpTotal = stocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
+        const actualTotal = stocks.reduce((sum, row) => sum + Number(row.pl || 0), 0);
+        const markets = performanceMarkets(stocks);
+        const classified = markets.filter((row) => row.market !== "미분류");
+        const classifiedActual = classified.reduce((sum, row) => sum + row.actual, 0);
+        const expectedTotal = classified.some((row) => row.expected != null) ? classified.reduce((sum, row) => sum + Number(row.expected || 0), 0) : null;
+        const totalGap = expectedTotal == null ? null : classifiedActual - expectedTotal;
+        const totalActualRate = stockExpTotal ? actualTotal / stockExpTotal * 100 : null;
+        const dates = exportDateParts();
+        const context = {{ savedDate:dates.iso, holdingDate:currentSnapshotDate || "-", fund:selectedPerformanceFundLabel() }};
+        const eok = (value) => value == null || !Number.isFinite(Number(value)) ? null : Number(value) / 100000000;
+        const rate = (value) => value == null || !Number.isFinite(Number(value)) ? null : Number(value) / 100;
+        const ratio = (value, basis) => basis ? Number(value || 0) / basis : null;
+        const marketRows = markets.map((row) => [row.market, row.count, eok(row.exp), ratio(row.exp, stockExpTotal), rate(row.rate), rate(row.actualRate), eok(row.expected), eok(row.actual), eok(row.expected == null ? null : row.actual - row.expected), assessmentText(row.actualRate, row.rate)]);
+        marketRows.push(["합계", stocks.length, eok(stockExpTotal), stockExpTotal ? 1 : null, null, rate(totalActualRate), eok(expectedTotal), eok(actualTotal), eok(totalGap), ""]);
+        const sectorRowsForExcel = (level) => {{
+          const sectors = performanceSectors(stocks, level);
+          const rows = sectors.map((row) => {{ const portfolioWeight = ratio(row.exp, stockExpTotal); const benchmarkWeight = row.hasBenchmark ? row.benchmarkWeight : null; return [row.name, row.codes.size, eok(row.exp), portfolioWeight, benchmarkWeight, portfolioWeight == null || benchmarkWeight == null ? null : portfolioWeight - benchmarkWeight, eok(row.pl), ratio(row.pl, stockExpTotal)]; }});
+          const benchmarkTotal = sectors.some((row) => row.hasBenchmark) ? sectors.reduce((sum, row) => sum + (row.hasBenchmark ? row.benchmarkWeight : 0), 0) : null;
+          rows.push(["합계", stocks.length, eok(stockExpTotal), stockExpTotal ? 1 : null, benchmarkTotal, benchmarkTotal == null || !stockExpTotal ? null : 1 - benchmarkTotal, eok(actualTotal), ratio(actualTotal, stockExpTotal)]);
+          return rows;
+        }};
+        const stockRows = [...stocks].sort((a, b) => Number(b.exp || 0) - Number(a.exp || 0)).map((row) => {{ const portfolioWeight = ratio(row.exp, stockExpTotal); const benchmarkWeight = benchmarkWeightForStock(row); return [row.name, row.market, row.sectorLarge, row.sectorMid, eok(row.exp), portfolioWeight, benchmarkWeight, portfolioWeight == null || benchmarkWeight == null ? null : portfolioWeight - benchmarkWeight, rate(quoteRateForCode(row.code)), eok(row.pl), ratio(row.pl, stockExpTotal)]; }});
+        stockRows.push(["합계", "", "", "", eok(stockExpTotal), stockExpTotal ? 1 : null, null, eok(actualTotal), ratio(actualTotal, stockExpTotal)]);
+        const workbook = XLSX.utils.book_new();
+        workbook.Props = {{ Title:"주식성과분석", Subject:`${{context.fund}} ${{context.savedDate}}`, CreatedDate:new Date() }};
+        XLSX.utils.book_append_sheet(workbook, performanceAiExcelSheet(context), "AI 성과분석");
+        XLSX.utils.book_append_sheet(workbook, performanceExcelSheet("시장별 성과", ["구분", "종목수", "주식 Exp(억원)", "비중", "지수", "실제 수익률", "지수손익(억원)", "실제손익(억원)", "차이(억원)", "판단"], marketRows, [null, "#,##0", "#,##0.0", "0.0%", "0.00%", "0.00%", "#,##0.0", "#,##0.0", "#,##0.0", null], [12, 10, 14, 10, 10, 13, 14, 14, 12, 18], context), "시장별 성과");
+        XLSX.utils.book_append_sheet(workbook, performanceExcelSheet("섹터별(중분류)", ["섹터", "종목수", "주식 Exp(억원)", "비중", "BM비중", "BM대비", "현재 손익(억원)", "기여도"], sectorRowsForExcel("mid"), [null, "#,##0", "#,##0.0", "0.0%", "0.0%", "0.00%", "#,##0.0", "0.00%"], [22, 10, 14, 10, 10, 11, 14, 12], context), "섹터별(중분류)");
+        XLSX.utils.book_append_sheet(workbook, performanceExcelSheet("섹터별(대분류)", ["섹터", "종목수", "주식 Exp(억원)", "비중", "BM비중", "BM대비", "현재 손익(억원)", "기여도"], sectorRowsForExcel("large"), [null, "#,##0", "#,##0.0", "0.0%", "0.0%", "0.00%", "#,##0.0", "0.00%"], [22, 10, 14, 10, 10, 11, 14, 12], context), "섹터별(대분류)");
+        XLSX.utils.book_append_sheet(workbook, performanceExcelSheet("전체 종목별 손익", ["종목명", "시장", "대분류", "중분류", "주식 Exp(억원)", "비중", "BM비중", "BM대비", "등락률", "현재 손익(억원)", "기여도"], stockRows, [null, null, null, null, "#,##0.0", "0.0%", "0.0%", "0.00%", "0.00%", "#,##0.0", "0.00%"], [30, 10, 20, 22, 14, 10, 10, 11, 12, 14, 12], context), "전체 종목별 손익");
+        XLSX.writeFile(workbook, `주식성과분석_${{dates.file}}.xlsx`, {{ compression:true }});
+      }} catch (error) {{
+        console.error("Performance workbook export failed", error);
+        window.alert("엑셀 파일을 생성하지 못했습니다. 네트워크 연결 후 다시 시도해 주세요.");
+      }} finally {{
+        if (button) {{ button.disabled = false; button.textContent = originalText; }}
+      }}
     }}
     function directPanel(kind, title, panelClass) {{
       const rows = directRows(kind).sort((a, b) => Number(b.eval || 0) - Number(a.eval || 0));
@@ -3007,6 +3745,7 @@ def build_dashboard(
       renderLiveFundTable();
       rebuildHoldingDetailsForCurrentFund();
       renderHoldingTables();
+      renderPerformanceAnalysis();
       bindSortableTables();
     }}
     async function getStockSupabaseClient() {{
@@ -3029,12 +3768,18 @@ def build_dashboard(
         .order("updated_at", {{ ascending: false }})
         .limit(2000);
       if (error) throw error;
-      const stocks = {{}};
+      const stocks = {{}}, indices = {{}};
       (data || []).forEach((row) => {{
         const code = normalizeQuoteCode(row.code);
+        const payload = row.payload && typeof row.payload === "object" ? row.payload : {{}};
+        if (payload.kind === "index" || String(row.code || "").startsWith("INDEX_")) {{
+          const key = payload.index_key || String(row.code || "").replace(/^INDEX_/, "");
+          indices[key] = {{ ...payload, name: row.name || payload.name || key, price: row.price, change_rate: row.change_rate, error: row.error, collected_at: row.collected_at }};
+          return;
+        }}
         if (!code || stocks[code]) return;
         stocks[code] = {{
-          ...(row.payload && typeof row.payload === "object" ? row.payload : {{}}),
+          ...payload,
           name: row.name || row.payload?.name || code,
           price: row.price,
           change_rate: row.change_rate,
@@ -3046,7 +3791,7 @@ def build_dashboard(
           collected_at: row.collected_at,
         }};
       }});
-      return stocks;
+      return {{ stocks, indices }};
     }}
     async function refreshQuotes(manual = false) {{
       const status = document.getElementById("quoteStatus");
@@ -3057,8 +3802,11 @@ def build_dashboard(
           if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
           const payload = await response.json();
           liveQuotes = payload.stocks || payload || {{}};
+          liveIndices = payload.indices || {{}};
         }} catch (fileError) {{
-          liveQuotes = await fetchSupabaseQuotes();
+          const payload = await fetchSupabaseQuotes();
+          liveQuotes = payload.stocks;
+          liveIndices = payload.indices;
         }}
         renderLiveQuoteViews();
         const available = Object.values(liveQuotes).filter((item) => item && item.price != null).length;
@@ -3086,7 +3834,7 @@ def build_dashboard(
     }}
     function initialTabFromLocation() {{
       const tab = new URLSearchParams(window.location.search).get("tab");
-      return ["summary", "holdings", "trades", "timeseries"].includes(tab) ? tab : "summary";
+      return ["summary", "performance", "holdings", "trades", "timeseries"].includes(tab) ? tab : "summary";
     }}
     async function loadExternalDataIfNeeded() {{
       if (views && Object.keys(views).length) return;
@@ -3559,6 +4307,7 @@ def build_dashboard(
       dashboard.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === activeTab));
       document.querySelectorAll(".quick-nav button").forEach((button) => button.classList.toggle("active", button.dataset.tab === activeTab));
       if (activeTab === "summary") refreshQuotes(false);
+      if (activeTab === "performance") {{ renderPerformanceAnalysis(); refreshQuotes(false); }}
       if (activeTab === "holdings") renderHoldingTables();
       if (activeTab === "trades") renderTradeHistory();
       if (activeTab === "timeseries") {{
@@ -3694,8 +4443,9 @@ def build_dashboard(
       if (!cell) return {{ type:"text", value:"" }};
       const text = cell.textContent.trim();
       if (!text || text === "-") return {{ type:"empty", value:null }};
-      const numeric = Number(text.replace(/[,%억원\\s]/g, ""));
-      if (Number.isFinite(numeric) && /[0-9]/.test(text)) return {{ type:"number", value:numeric }};
+      const normalized = text.replace(/,/g, "").replace(/\\s+/g, "");
+      const numericMatch = normalized.match(/^([+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+))(?:%p|%|억원|백만원|만원|억|원|p)?$/);
+      if (numericMatch) return {{ type:"number", value:Number(numericMatch[1]) }};
       return {{ type:"text", value:text.toLowerCase() }};
     }}
     function bindSortableTables(root = dashboard) {{
@@ -3758,6 +4508,7 @@ def build_dashboard(
       updateFundButtons();
     }}
     function selectFund(key) {{
+      performanceFilter = null;
       if (key === "ALL") {{
         selectedFundKeys = ["ALL"];
         render("ALL");
@@ -3807,6 +4558,40 @@ def build_dashboard(
     }});
     dashboard.addEventListener("click", (event) => {{
       if (event.target.closest("[data-open-column-help]")) setColumnHelp(true);
+      if (event.target.closest("[data-performance-ai]")) requestPerformanceAnalysis();
+      if (event.target.closest("[data-performance-export]")) exportPerformanceWorkbook();
+      const sectorMarket = event.target.closest("[data-performance-sector-market]");
+      if (sectorMarket) {{
+        const value = sectorMarket.dataset.performanceSectorMarket || "ALL";
+        performanceSectorMarket = value === "코스피" || value === "코스닥" ? value : "ALL";
+        performanceFilter = null;
+        renderPerformanceAnalysis();
+        bindSortableTables();
+      }}
+      const sectorLevel = event.target.closest("[data-performance-sector-level]");
+      if (sectorLevel) {{
+        performanceSectorLevel = sectorLevel.dataset.performanceSectorLevel === "large" ? "large" : "mid";
+        performanceFilter = null;
+        renderPerformanceAnalysis();
+        bindSortableTables();
+      }}
+      const marketFilter = event.target.closest("[data-performance-market-filter]");
+      if (marketFilter) {{
+        performanceFilter = {{ type: "market", value: marketFilter.dataset.performanceMarketFilter || "미분류" }};
+        renderPerformanceAnalysis();
+        bindSortableTables();
+      }}
+      const sectorFilter = event.target.closest("[data-performance-sector-filter]");
+      if (sectorFilter) {{
+        performanceFilter = {{ type: "sector", market: performanceSectorMarket, level: performanceSectorLevel, value: sectorFilter.dataset.performanceSectorFilter || "미분류" }};
+        renderPerformanceAnalysis();
+        bindSortableTables();
+      }}
+      if (event.target.closest("[data-performance-filter-reset]")) {{
+        performanceFilter = null;
+        renderPerformanceAnalysis();
+        bindSortableTables();
+      }}
       const tradeFilter = event.target.closest("[data-trade-filter]");
       if (tradeFilter) {{
         tradeSearch = tradeFilter.dataset.tradeFilter || "";

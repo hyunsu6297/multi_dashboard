@@ -259,6 +259,73 @@ def fetch_quote_batch(host: str, token: str, rest_codes: list[str], timeout: flo
     return rows if isinstance(rows, list) else []
 
 
+def normalize_market_name(market_code: Any, market_name: Any) -> str:
+    code = str(market_code or "").strip()
+    name = str(market_name or "").strip()
+    if code == "0" or name == "거래소" or "코스피" in name:
+        return "코스피"
+    if code == "10" or "코스닥" in name:
+        return "코스닥"
+    return "미분류"
+
+
+def fetch_market_master(host: str, token: str, timeout: float) -> dict[str, dict[str, str]]:
+    master: dict[str, dict[str, str]] = {}
+    for market_type in ("0", "10"):
+        data = post_json(
+            host,
+            "/api/dostk/stkinfo",
+            {"mrkt_tp": market_type},
+            headers={
+                "authorization": f"Bearer {token}",
+                "api-id": "ka10099",
+                "cont-yn": "N",
+                "next-key": "0",
+            },
+            timeout=timeout,
+        )
+        rows = data.get("list", [])
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            code = normalize_code(row.get("code"))
+            if not code:
+                continue
+            master[code] = {
+                "market": normalize_market_name(row.get("marketCode"), row.get("marketName")),
+                "industry": str(row.get("upName") or "").strip(),
+            }
+    return master
+
+
+def fetch_index_quote(
+    host: str,
+    token: str,
+    market_type: str,
+    index_code: str,
+    name: str,
+    timeout: float,
+) -> dict[str, Any]:
+    data = post_json(
+        host,
+        "/api/dostk/sect",
+        {"mrkt_tp": market_type, "inds_cd": index_code},
+        headers={
+            "authorization": f"Bearer {token}",
+            "api-id": "ka20001",
+            "cont-yn": "N",
+            "next-key": "0",
+        },
+        timeout=timeout,
+    )
+    return {
+        "name": name,
+        "code": index_code,
+        "price": abs(parse_float(data.get("cur_prc"), 0.0) or 0.0),
+        "change_rate": parse_float(data.get("flu_rt"), None),
+    }
+
+
 def load_previous_quotes(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -285,11 +352,51 @@ def fetch_all_quotes(
         codes = {code: codes.get(code, code)}
     selected_codes = dict(list(codes.items())[:limit]) if limit else codes
 
-    previous = load_previous_quotes(output).get("stocks", {})
+    previous_payload = load_previous_quotes(output)
+    previous = previous_payload.get("stocks", {})
+    market_master_date = time.strftime("%Y-%m-%d")
+    market_master: dict[str, dict[str, str]] = {}
+    cached_market_master = previous_payload.get("market_master")
+    if previous_payload.get("market_master_date") == market_master_date and isinstance(cached_market_master, dict):
+        market_master = cached_market_master
+    elif previous_payload.get("market_master_date") == market_master_date and isinstance(previous, dict):
+        for item in previous.values():
+            if not isinstance(item, dict):
+                continue
+            rest_code = normalize_code(item.get("kiwoom_rest_code"))
+            market = str(item.get("market") or "미분류")
+            industry = str(item.get("industry") or "")
+            if rest_code and (market in {"코스피", "코스닥"} or industry):
+                current = market_master.get(rest_code, {})
+                if not current or market in {"코스피", "코스닥"}:
+                    market_master[rest_code] = {"market": market, "industry": industry}
+    if not market_master:
+        try:
+            market_master = fetch_market_master(host, token, timeout)
+        except Exception as exc:
+            print(f"market master refresh failed; previous values retained: {exc}")
+
+    indices: dict[str, Any] = {}
+    for key, market_type, index_code, name in (
+        ("KOSPI", "0", "001", "KOSPI"),
+        ("KOSDAQ", "1", "101", "KOSDAQ"),
+    ):
+        try:
+            indices[key] = fetch_index_quote(host, token, market_type, index_code, name, timeout)
+        except Exception as exc:
+            previous_index = previous_payload.get("indices", {}).get(key, {})
+            indices[key] = {**previous_index, "name": name, "code": index_code, "error": str(exc)[:300]}
     rest_items: list[tuple[str, str, str, str | None]] = []
     skipped_derivatives: list[str] = []
     proxied_derivatives: dict[str, str] = {}
     stocks: dict[str, Any] = {}
+
+    def market_info_for(rest_code: str) -> dict[str, str]:
+        if rest_code == KOSPI200_PROXY_CODE:
+            return {"market": "코스피", "industry": "시장지수"}
+        if rest_code == KOSDAQ150_PROXY_CODE:
+            return {"market": "코스닥", "industry": "시장지수"}
+        return market_master.get(normalize_code(rest_code), {})
 
     for source_code, name in selected_codes.items():
         rest_code = kiwoom_rest_code(source_code, derivative_map, name)
@@ -328,12 +435,13 @@ def fetch_all_quotes(
                 if not quote:
                     failed += 1
                     prev = previous.get(source_code, {}) if isinstance(previous, dict) else {}
+                    market_info = market_info_for(rest_code)
                     stocks[source_code] = {
                         "name": fallback_name,
                         "price": prev.get("price") if proxy_code else None,
                         "change_rate": prev.get("change_rate") if proxy_code else None,
-                        "industry": "",
-                        "market": "",
+                        "industry": market_info.get("industry", prev.get("industry", "")),
+                        "market": market_info.get("market", prev.get("market", "미분류")),
                         "kiwoom_rest_code": rest_code,
                         "proxy_code": proxy_code,
                         "error": "missing_batch_response",
@@ -342,23 +450,25 @@ def fetch_all_quotes(
                 if quote["price"] in (None, 0.0):
                     failed += 1
                     prev = previous.get(source_code, {}) if isinstance(previous, dict) else {}
+                    market_info = market_info_for(rest_code)
                     stocks[source_code] = {
                         "name": fallback_name,
                         "price": prev.get("price"),
                         "change_rate": prev.get("change_rate"),
-                        "industry": "",
-                        "market": "",
+                        "industry": market_info.get("industry", prev.get("industry", "")),
+                        "market": market_info.get("market", prev.get("market", "미분류")),
                         "kiwoom_rest_code": rest_code,
                         "proxy_code": proxy_code,
                         "error": "empty_quote_from_rest",
                     }
                 else:
+                    market_info = market_info_for(rest_code)
                     stocks[source_code] = {
                         "name": fallback_name if proxy_code else quote["name"] or fallback_name,
                         "price": quote["price"],
                         "change_rate": quote["change_rate"],
-                        "industry": "",
-                        "market": "",
+                        "industry": market_info.get("industry", ""),
+                        "market": market_info.get("market", "미분류"),
                         "kiwoom_rest_code": rest_code,
                         "proxy_code": proxy_code,
                         "proxy_name": quote["name"] if proxy_code else "",
@@ -366,12 +476,14 @@ def fetch_all_quotes(
         except Exception as exc:
             failed += len(batch)
             for source_code, rest_code, fallback_name, proxy_code in batch:
+                prev = previous.get(source_code, {}) if isinstance(previous, dict) else {}
+                market_info = market_info_for(rest_code)
                 stocks[source_code] = {
                     "name": fallback_name,
                     "price": None,
                     "change_rate": None,
-                    "industry": "",
-                    "market": "",
+                    "industry": market_info.get("industry", prev.get("industry", "")),
+                    "market": market_info.get("market", prev.get("market", "미분류")),
                     "kiwoom_rest_code": rest_code,
                     "proxy_code": proxy_code,
                     "error": str(exc)[:300],
@@ -386,6 +498,9 @@ def fetch_all_quotes(
         "failed": failed,
         "skipped_derivatives": skipped_derivatives,
         "proxied_derivatives": proxied_derivatives,
+        "market_master_date": market_master_date,
+        "market_master": market_master,
+        "indices": indices,
         "stocks": stocks,
     }
 

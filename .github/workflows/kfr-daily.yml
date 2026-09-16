@@ -51,6 +51,8 @@ jobs:
       KIWOOM_SECRETKEY: ${{ secrets.KIWOOM_SECRETKEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: esqakvzvchcunhzjlyry
     steps:
       - uses: actions/checkout@v4
 
@@ -117,6 +119,18 @@ jobs:
           args=(--input-dir "$RUNNER_TEMP/kfr" --business-date "${{ steps.kfr_date.outputs.business_date }}")
           python automation/kfr/supabase_upload.py "${args[@]}"
 
+      - name: Download and upload stock benchmark weights
+        id: stock_benchmarks
+        continue-on-error: true
+        run: >-
+          python automation/kfr/stock_benchmark_upload.py
+          --business-date "${{ steps.kfr_date.outputs.business_date }}"
+          --output apps/stock/benchmark_weights.json
+
+      - name: Warn when stock benchmark refresh is unavailable
+        if: steps.stock_benchmarks.outcome == 'failure'
+        run: echo "Stock benchmark refresh failed; the latest valid cache or direct download fallback will be used."
+
       - name: Restore KFR API JSON and manual dashboard inputs from Supabase
         run: python scripts/restore_dashboard_inputs.py
 
@@ -139,7 +153,19 @@ jobs:
         run: echo "Mezzanine delta refresh was unavailable; the last valid delta history will be used."
 
       - name: Build stock dashboard
+        env:
+          DASHBOARD_BENCHMARK_DATE: ${{ steps.kfr_date.outputs.business_date }}
         run: python apps/stock/build_fund_dashboard.py --source json --start 2026-08-01 --static-data-bundle --recent-snapshots 1
+
+      - name: Set up Supabase CLI
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy stock performance AI function
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: supabase functions deploy stock-performance-analysis --project-ref "$SUPABASE_PROJECT_ID"
 
       - name: Build bond dashboard
         run: python apps/bond/build_dashboard.py

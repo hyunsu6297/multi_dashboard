@@ -33,6 +33,12 @@ def main() -> None:
             shutil.rmtree(target)
         shutil.copytree(stock_data, target)
         print(f"copied stock data -> {target.relative_to(DIST)}")
+    stock_xlsx = ROOT / "apps" / "stock" / "xlsx.full.min.js"
+    if stock_xlsx.is_file():
+        target = DIST / "pages" / "stock" / stock_xlsx.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(stock_xlsx, target)
+        print(f"copied {stock_xlsx.name} -> {target.relative_to(DIST)}")
     global_script = ROOT / "apps" / "global" / "emp_dashboard_upgrade.js"
     if global_script.is_file():
         target = DIST / "pages" / "global" / "emp_dashboard_upgrade.js"
