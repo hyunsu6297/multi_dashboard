@@ -238,30 +238,32 @@ def publish_cycle(
     codes: dict[str, str],
 ) -> None:
     restore_client = None
-    manual_version = publisher.manual_version()
-    manual_changed = manual_version != getattr(args, "manual_version", None)
-    if manual_changed:
-        restore_client = SupabaseRest(publisher.url, required_secret())
-        restore_manual(
-            restore_client,
-            REPOSITORY_ROOT / "apps" / "stock",
-            REPOSITORY_ROOT / "apps" / "bond",
-        )
-        args.manual_version = manual_version
+    inputs_changed = False
+    if not args.quotes_only:
+        manual_version = publisher.manual_version()
+        manual_changed = manual_version != getattr(args, "manual_version", None)
+        if manual_changed:
+            restore_client = SupabaseRest(publisher.url, required_secret())
+            restore_manual(
+                restore_client,
+                REPOSITORY_ROOT / "apps" / "stock",
+                REPOSITORY_ROOT / "apps" / "bond",
+            )
+            args.manual_version = manual_version
 
-    source_version = publisher.source_version()
-    source_changed = source_version != getattr(args, "source_version", None)
-    if source_changed:
-        restore_client = restore_client or SupabaseRest(publisher.url, required_secret())
-        restore_kfr(
-            restore_client,
-            REPOSITORY_ROOT / "apps" / "stock",
-            REPOSITORY_ROOT / "apps" / "bond",
-            REPOSITORY_ROOT / "apps" / "mezzanine",
-        )
-        args.source_version = source_version
+        source_version = publisher.source_version()
+        source_changed = source_version != getattr(args, "source_version", None)
+        if source_changed:
+            restore_client = restore_client or SupabaseRest(publisher.url, required_secret())
+            restore_kfr(
+                restore_client,
+                REPOSITORY_ROOT / "apps" / "stock",
+                REPOSITORY_ROOT / "apps" / "bond",
+                REPOSITORY_ROOT / "apps" / "mezzanine",
+            )
+            args.source_version = source_version
 
-    inputs_changed = manual_changed or source_changed
+        inputs_changed = manual_changed or source_changed
     if inputs_changed:
         cached_quotes = load_cached_quotes(args.output)
         publish_dashboard(publisher, cached_quotes, publish_quote_rows=False)
@@ -281,6 +283,11 @@ def publish_cycle(
             print("Kiwoom returned no usable quotes after cached dashboard publish")
             return
         raise RuntimeError("No usable Kiwoom quotes were returned; previous live dashboard was retained")
+
+    if args.quotes_only:
+        publisher.upsert_rows("kiwoom_realtime_quotes", rows, "code")
+        print(f"published quote rows only: quotes={len(rows)}, available={available}")
+        return
 
     delta_run_date = datetime.now().astimezone().date().isoformat()
     if delta_run_date != getattr(args, "delta_run_date", None):
@@ -309,6 +316,11 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--token-refresh-minutes", type=float, default=DEFAULT_TOKEN_REFRESH_MINUTES)
+    parser.add_argument(
+        "--quotes-only",
+        action="store_true",
+        help="Only update kiwoom_realtime_quotes without uploading dashboard HTML.",
+    )
     args = parser.parse_args()
     args.build_dashboard = False
 
