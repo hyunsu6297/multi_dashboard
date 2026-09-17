@@ -501,6 +501,7 @@
         const htmlBlob = new Blob([buffer], { type: "text/html;charset=utf-8" });
         const nextUrl = URL.createObjectURL(htmlBlob);
         frame.src = nextUrl;
+        openButton.href = nextUrl;
         if (liveStockObjectUrl) URL.revokeObjectURL(liveStockObjectUrl);
         liveStockObjectUrl = nextUrl;
         liveStockVersion = versionRow.version;
@@ -529,6 +530,8 @@
       app.hidden = false;
       if (currentPageKey === "admin-members" && profile.role !== "admin") {
         await showPage("stock-dashboard");
+      } else if (currentPageKey === "stock-dashboard") {
+        await refreshLiveStock(true);
       }
     }
 
@@ -670,6 +673,7 @@
       frame.title = page.title;
       openButton.href = pageSrc;
       location.hash = key;
+      if (currentUser && key === "stock-dashboard") await refreshLiveStock(true);
     }
 
     document.querySelectorAll("[data-page]").forEach((button) => {
@@ -685,6 +689,7 @@
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) await handleAuthenticatedUser(session.user);
     else showLogin();
+    window.setInterval(() => refreshLiveStock(false), 30000);
   </script>
 </body>
 </html>

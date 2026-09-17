@@ -23,9 +23,12 @@ from fetch_kiwoom_quotes import (
     DEFAULT_HOST,
     DEFAULT_TOKEN_REFRESH_MINUTES,
     OUTPUT,
+    QuoteUpdateCutoffReached,
     collect_codes,
     collect_mezzanine_codes,
     load_credentials,
+    quote_pause_message,
+    quote_updates_allowed,
     request_token,
     run_refresh,
 )
@@ -237,6 +240,8 @@ def publish_cycle(
     token: str,
     codes: dict[str, str],
 ) -> None:
+    if not quote_updates_allowed():
+        raise QuoteUpdateCutoffReached(quote_pause_message())
     restore_client = None
     inputs_changed = False
     if not args.quotes_only:
@@ -275,6 +280,9 @@ def publish_cycle(
             print(f"Kiwoom refresh failed after cached dashboard publish: {exc}")
             return
         raise
+
+    if not quote_updates_allowed():
+        raise QuoteUpdateCutoffReached(quote_pause_message())
 
     rows = quote_rows(quotes, datetime.now(timezone.utc).isoformat())
     available = sum(1 for row in rows if row["price"] not in (None, 0, 0.0))
@@ -339,7 +347,6 @@ def main() -> None:
             print("Kiwoom token refreshed.")
         return token
 
-    refresh_token(force=True)
     stock_codes = collect_codes()
     mezzanine_codes = collect_mezzanine_codes()
     codes = {**stock_codes, **mezzanine_codes}
@@ -355,14 +362,38 @@ def main() -> None:
         required_secret(),
     )
 
+    cutoff_logged = False
     while True:
+        if not quote_updates_allowed():
+            if not cutoff_logged:
+                print(quote_pause_message())
+                cutoff_logged = True
+            if args.once:
+                break
+            time.sleep(max(1.0, args.cycle_seconds))
+            continue
+        cutoff_logged = False
         started = time.monotonic()
         try:
             publish_cycle(publisher, args, refresh_token(), codes)
+        except QuoteUpdateCutoffReached as exc:
+            if not cutoff_logged:
+                print(str(exc))
+                cutoff_logged = True
+            if args.once:
+                break
+            continue
         except Exception as exc:
             print(f"publish cycle failed: {exc}")
             try:
                 publish_cycle(publisher, args, refresh_token(force=True), codes)
+            except QuoteUpdateCutoffReached as cutoff_exc:
+                if not cutoff_logged:
+                    print(str(cutoff_exc))
+                    cutoff_logged = True
+                if args.once:
+                    break
+                continue
             except Exception as retry_exc:
                 print(f"publish retry failed after token refresh: {retry_exc}")
         if args.once:

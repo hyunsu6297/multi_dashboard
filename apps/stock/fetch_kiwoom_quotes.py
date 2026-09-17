@@ -8,8 +8,10 @@ import re
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, time as datetime_time
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -33,6 +35,9 @@ DEFAULT_BATCH_SIZE = 80
 DEFAULT_TOKEN_REFRESH_MINUTES = 50.0
 KOSPI200_PROXY_CODE = "069500"
 KOSDAQ150_PROXY_CODE = "229200"
+SEOUL_TZ = ZoneInfo("Asia/Seoul")
+QUOTE_UPDATE_START = datetime_time(9, 0, 0)
+QUOTE_UPDATE_CUTOFF = datetime_time(15, 30, 30)
 
 COL_FUND_CODE = "\ud380\ub4dc\ucf54\ub4dc"
 COL_LOOKUP_FUND_CODE = "\uc870\ud68c\ud380\ub4dc\ucf54\ub4dc"
@@ -42,6 +47,31 @@ COL_ITEM_CODE = "\uc885\ubaa9\ucf54\ub4dc"
 COL_ITEM_NAME = "\uc885\ubaa9\uba85"
 SHEET_INVESTMENT = "\ud22c\uc790\uc8fc\uc2dd"
 SHEET_PRODUCT = "\uc0c1\ud488\uc8fc\uc2dd"
+
+
+class QuoteUpdateCutoffReached(RuntimeError):
+    pass
+
+
+def quote_updates_allowed(now: datetime | None = None) -> bool:
+    current = now or datetime.now(SEOUL_TZ)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=SEOUL_TZ)
+    else:
+        current = current.astimezone(SEOUL_TZ)
+    current_time = current.time().replace(tzinfo=None)
+    return QUOTE_UPDATE_START <= current_time <= QUOTE_UPDATE_CUTOFF
+
+
+def quote_pause_message(now: datetime | None = None) -> str:
+    current = now or datetime.now(SEOUL_TZ)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=SEOUL_TZ)
+    else:
+        current = current.astimezone(SEOUL_TZ)
+    if current.time().replace(tzinfo=None) < QUOTE_UPDATE_START:
+        return "Waiting for the 09:00:00 KST regular session; preserving the last saved close."
+    return "15:30:30 KST quote cutoff reached; preserving the last saved regular-session quotes."
 
 
 def read_text_file(path: Path) -> str:
@@ -514,6 +544,8 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
 
 
 def run_refresh(args: argparse.Namespace, token: str, codes: dict[str, str]) -> dict[str, Any]:
+    if not quote_updates_allowed():
+        raise QuoteUpdateCutoffReached(quote_pause_message())
     output = args.output if args.output.is_absolute() else BASE_DIR / args.output
     started = time.monotonic()
     quotes = fetch_all_quotes(
@@ -527,6 +559,8 @@ def run_refresh(args: argparse.Namespace, token: str, codes: dict[str, str]) -> 
         args.code,
         getattr(args, "refresh_market_master", False),
     )
+    if not quote_updates_allowed():
+        raise QuoteUpdateCutoffReached(quote_pause_message())
     write_json_atomic(output, quotes)
     if args.build_dashboard:
         print(build_dashboard())
@@ -591,8 +625,6 @@ def main() -> None:
             print("Kiwoom token refreshed.")
         return str(token)
 
-    refresh_token(force=True)
-
     codes = collect_codes(args.source, args.start, args.end)
     mezzanine_codes = collect_mezzanine_codes()
     codes.update(mezzanine_codes)
@@ -600,16 +632,41 @@ def main() -> None:
     if not codes:
         raise SystemExit("No quote codes found.")
 
+    cutoff_logged = False
     while True:
+        if not quote_updates_allowed():
+            if not cutoff_logged:
+                print(quote_pause_message())
+                cutoff_logged = True
+            if args.once:
+                break
+            time.sleep(max(1.0, args.cycle_seconds))
+            continue
+        cutoff_logged = False
         started = time.monotonic()
         refresh_token()
         try:
             quotes = run_refresh(args, str(token), codes)
+        except QuoteUpdateCutoffReached as exc:
+            if not cutoff_logged:
+                print(str(exc))
+                cutoff_logged = True
+            if args.once:
+                break
+            continue
         except Exception:
             if token_from_env:
                 raise
             print("refresh failed; refreshing Kiwoom token and retrying once.")
-            quotes = run_refresh(args, refresh_token(force=True), codes)
+            try:
+                quotes = run_refresh(args, refresh_token(force=True), codes)
+            except QuoteUpdateCutoffReached as exc:
+                if not cutoff_logged:
+                    print(str(exc))
+                    cutoff_logged = True
+                if args.once:
+                    break
+                continue
         if not token_from_env and usable_quote_count(quotes) == 0 and quotes.get("failed", 0):
             print("no usable quotes; refreshing Kiwoom token and retrying once.")
             run_refresh(args, refresh_token(force=True), codes)
