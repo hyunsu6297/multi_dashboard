@@ -3074,6 +3074,8 @@ def build_dashboard(
     let liveQuotes = {{}};
     let liveIndices = {{}};
     let quoteRefreshTimer = null;
+    let performanceAiRefreshTimer = null;
+    let performanceAiRequestInFlight = false;
     let stockSupabaseClient = null;
     function normalizeQuoteCode(value) {{
       const text = String(value ?? "").trim().replace(/,/g, "");
@@ -3395,6 +3397,74 @@ def build_dashboard(
         '<section class="performance-ai-market-box"><h5>' + part.market + '</h5><p>' + performanceAnalysisHtml(part.text) + '</p></section>'
       ).join("");
     }}
+    function performanceAnalysisScope(payload) {{
+      return `${{payload.asOfDate}}\u0000${{payload.selectedFund}}`;
+    }}
+    function performanceAnalysisTime(value) {{
+      const date = new Date(value || Date.now());
+      return new Intl.DateTimeFormat("ko-KR", {{
+        timeZone:"Asia/Seoul", hour:"2-digit", minute:"2-digit", hour12:true,
+      }}).format(date);
+    }}
+    function applySharedPerformanceAnalysis(payload, requestPayload, force = false) {{
+      if (!payload?.analysis) return false;
+      const currentPayload = performanceAnalysisPayload();
+      const scope = performanceAnalysisScope(requestPayload);
+      if (performanceAnalysisScope(currentPayload) !== scope) return false;
+      const panel = dashboard.querySelector("[data-performance-ai-panel]");
+      const title = dashboard.querySelector("[data-performance-ai-title]");
+      const status = dashboard.querySelector("[data-performance-ai-status]");
+      const output = dashboard.querySelector("[data-performance-ai-output]");
+      if (!panel || !output) return false;
+      const generatedAt = String(payload.generatedAt || "");
+      if (!force && panel.dataset.aiScope === scope && panel.dataset.aiGeneratedAt === generatedAt) return false;
+      panel.hidden = false;
+      panel.dataset.aiScope = scope;
+      panel.dataset.aiGeneratedAt = generatedAt;
+      if (title) title.textContent = `AI 성과분석 (기준일 ${{requestPayload.asOfDate}} ${{performanceAnalysisTime(generatedAt)}})`;
+      renderPerformanceAnalysisCards(output, payload.analysis);
+      const rawModel = String(payload.model || "gpt-5.4-mini");
+      if (status) status.textContent = rawModel.startsWith("gpt-5.4-mini") ? "gpt-5.4-mini" : rawModel;
+      return true;
+    }}
+    async function loadSharedPerformanceAnalysis(silent = true) {{
+      if (["127.0.0.1", "localhost"].includes(window.location.hostname)) return;
+      if (activeTab !== "performance" || performanceAiRequestInFlight) return;
+      const requestPayload = performanceAnalysisPayload();
+      const scope = performanceAnalysisScope(requestPayload);
+      const panel = dashboard.querySelector("[data-performance-ai-panel]");
+      const status = dashboard.querySelector("[data-performance-ai-status]");
+      if (panel?.dataset.aiScope && panel.dataset.aiScope !== scope) {{
+        panel.hidden = true;
+        panel.dataset.aiScope = "";
+        panel.dataset.aiGeneratedAt = "";
+      }}
+      try {{
+        const client = await getStockSupabaseClient();
+        const result = await client.functions.invoke("stock-performance-analysis", {{
+          body: {{ action:"latest", asOfDate:requestPayload.asOfDate, selectedFund:requestPayload.selectedFund }},
+        }});
+        if (result.error) {{
+          const detail = await result.error.context?.json?.().catch(() => null);
+          throw new Error(detail?.error || detail?.message || result.error.message);
+        }}
+        if (result.data?.analysis) applySharedPerformanceAnalysis(result.data, requestPayload);
+      }} catch (error) {{
+        if (!silent) {{
+          console.warn("Shared performance AI result load failed", error);
+          if (status) status.textContent = "저장 결과 조회 실패";
+        }}
+      }}
+    }}
+    function setPerformanceAiAutoRefresh() {{
+      if (performanceAiRefreshTimer) window.clearInterval(performanceAiRefreshTimer);
+      performanceAiRefreshTimer = null;
+      if (["127.0.0.1", "localhost"].includes(window.location.hostname)) return;
+      if (activeTab === "performance") loadSharedPerformanceAnalysis(false);
+      performanceAiRefreshTimer = window.setInterval(() => {{
+        if (activeTab === "performance") loadSharedPerformanceAnalysis(true);
+      }}, 30000);
+    }}
     async function requestPerformanceAnalysis() {{
       const button = dashboard.querySelector("[data-performance-ai]");
       const panel = dashboard.querySelector("[data-performance-ai-panel]");
@@ -3406,6 +3476,7 @@ def build_dashboard(
       const requestPayload = performanceAnalysisPayload();
       const requestedTime = new Date().toLocaleTimeString("ko-KR", {{ hour:"2-digit", minute:"2-digit" }});
       panel.hidden = false;
+      performanceAiRequestInFlight = true;
       if (title) title.textContent = "AI 성과분석 (기준일 " + requestPayload.asOfDate + " " + requestedTime + ")";
       button.disabled = true;
       button.textContent = "분석 중";
@@ -3431,15 +3502,17 @@ def build_dashboard(
           payload = result.data || {{}};
           if (payload.error) throw new Error(payload.error);
         }}
-        renderPerformanceAnalysisCards(output, payload.analysis);
-        const rawModel = String(payload.model || "gpt-5.4-mini");
-        const modelLabel = rawModel.startsWith("gpt-5.4-mini") ? "gpt-5.4-mini" : rawModel;
-        if (status) status.textContent = modelLabel;
+        applySharedPerformanceAnalysis(
+          {{ ...payload, generatedAt:payload.generatedAt || new Date().toISOString() }},
+          requestPayload,
+          true,
+        );
       }} catch (error) {{
         console.error("Performance AI analysis failed", error);
         output.textContent = `AI 성과분석을 불러오지 못했습니다. ${{error.message || error}}`;
         if (status) status.textContent = "호출 실패";
       }} finally {{
+        performanceAiRequestInFlight = false;
         button.disabled = false;
         button.textContent = originalText;
       }}
@@ -4360,7 +4433,11 @@ def build_dashboard(
       dashboard.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === activeTab));
       document.querySelectorAll(".quick-nav button").forEach((button) => button.classList.toggle("active", button.dataset.tab === activeTab));
       if (activeTab === "summary") refreshQuotes(false);
-      if (activeTab === "performance") {{ renderPerformanceAnalysis(); refreshQuotes(false); }}
+      if (activeTab === "performance") {{
+        renderPerformanceAnalysis();
+        refreshQuotes(false);
+        loadSharedPerformanceAnalysis(true);
+      }}
       if (activeTab === "holdings") renderHoldingTables();
       if (activeTab === "trades") renderTradeHistory();
       if (activeTab === "timeseries") {{
@@ -4689,6 +4766,7 @@ def build_dashboard(
         drawList();
         render("ALL");
         setQuoteAutoRefresh();
+        setPerformanceAiAutoRefresh();
       }} catch (error) {{
         console.error(error);
         dashboard.innerHTML = `<div class="empty">대시보드 데이터를 불러오지 못했습니다. ${{escHtml(error.message || error)}}</div>`;

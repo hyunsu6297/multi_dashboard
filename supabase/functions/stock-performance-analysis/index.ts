@@ -11,11 +11,11 @@ const json = (body: unknown, status = 200) =>
 
 async function authorized(req: Request) {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-  if (!token) return false;
+  if (!token) return null;
   const publishable = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}").default
     || Deno.env.get("SUPABASE_ANON_KEY") || "";
   const client = createClient(Deno.env.get("SUPABASE_URL") || "", publishable);
-  return Boolean((await client.auth.getUser(token)).data.user);
+  return (await client.auth.getUser(token)).data.user || null;
 }
 
 const number = (value: unknown) => {
@@ -260,15 +260,61 @@ function outputText(payload: any) {
   return parts.join("\n").trim();
 }
 
+const resultKey = (data: Record<string, unknown>) => {
+  const asOfDate = String(data.asOfDate || "").trim();
+  const selectedFund = String(data.selectedFund || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) throw new Error("성과분석 기준일이 올바르지 않습니다.");
+  if (!selectedFund || selectedFund.length > 200) throw new Error("성과분석 대상 펀드가 올바르지 않습니다.");
+  return { asOfDate, selectedFund };
+};
+
+const sharedResult = (row: any) => ({
+  analysis: row.analysis,
+  model: row.model,
+  usage: row.usage || {},
+  generatedAt: row.generated_at,
+  asOfDate: row.as_of_date,
+  selectedFund: row.selected_fund,
+  cached: true,
+});
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST 요청만 지원합니다." }, 405);
   try {
-    if (!await authorized(req)) return json({ error: "로그인 세션이 유효하지 않습니다." }, 401);
+    const user = await authorized(req);
+    if (!user) return json({ error: "로그인 세션이 유효하지 않습니다." }, 401);
+    const data = await req.json();
+    const source = data && typeof data === "object" ? data as Record<string, unknown> : {};
+    const { asOfDate, selectedFund } = resultKey(source);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!serviceKey) throw new Error("Supabase service role key가 설정되지 않았습니다.");
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: profile, error: profileError } = await admin
+      .from("user_profiles")
+      .select("status,must_change_password")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    if (profile?.status !== "approved" || profile?.must_change_password) {
+      return json({ error: "승인된 사용자만 AI 성과분석을 이용할 수 있습니다." }, 403);
+    }
+    if (source.action === "latest") {
+      const { data: cached, error } = await admin
+        .from("stock_performance_ai_results")
+        .select("as_of_date,selected_fund,analysis,model,usage,generated_at")
+        .eq("as_of_date", asOfDate)
+        .eq("selected_fund", selectedFund)
+        .maybeSingle();
+      if (error) throw error;
+      return cached ? json(sharedResult(cached)) : json({ cached: false, analysis: null });
+    }
     const apiKey = Deno.env.get("OPENAI_API_KEY") || "";
     if (!apiKey) throw new Error("OPENAI_API_KEY가 Supabase Edge Function secret에 설정되지 않았습니다.");
-    const data = await req.json();
-    const summary = prepareSummary(data && typeof data === "object" ? data : {});
+    const summary = prepareSummary(source);
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -282,7 +328,25 @@ Deno.serve(async (req) => {
     if (payload.status === "incomplete") throw new Error(`AI 분석 응답이 완성되기 전에 종료되었습니다: ${payload.incomplete_details?.reason || "unknown"}`);
     const analysis = outputText(payload);
     if (!analysis) throw new Error("OpenAI API 응답에 분석 문장이 없습니다.");
-    return json({ analysis, model: payload.model || MODEL, usage: payload.usage || {} });
+    const generatedAt = new Date().toISOString();
+    const model = payload.model || MODEL;
+    const usage = payload.usage || {};
+    const { data: saved, error: saveError } = await admin
+      .from("stock_performance_ai_results")
+      .upsert({
+        as_of_date: asOfDate,
+        selected_fund: selectedFund,
+        holdings_snapshot_date: source.holdingsSnapshotDate || null,
+        analysis,
+        model,
+        usage,
+        generated_at: generatedAt,
+        generated_by: user.id,
+      }, { onConflict: "as_of_date,selected_fund" })
+      .select("as_of_date,selected_fund,analysis,model,usage,generated_at")
+      .single();
+    if (saveError) throw saveError;
+    return json(sharedResult(saved));
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 400);
   }
