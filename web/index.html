@@ -459,17 +459,20 @@
     let liveStockObjectUrl = "";
     let deployedStockDate = "";
 
-    function latestDashboardDate(html) {
-      const dates = String(html || "").match(/\b20\d{2}-\d{2}-\d{2}\b/g) || [];
-      return dates.length ? dates.sort().at(-1) : "";
+    function dashboardSnapshotDate(html) {
+      const match = String(html || "").match(
+        /\b(?:let|const)\s+currentSnapshotDate\s*=\s*["'](20\d{2}-\d{2}-\d{2})["']/
+      );
+      return match?.[1] || "";
     }
 
     async function getDeployedStockDate() {
       if (deployedStockDate) return deployedStockDate;
       try {
-        const response = await fetch("pages/stock/index.html", { cache: "no-store" });
+        const response = await fetch("pages/stock/data/fund_dashboard_index.json", { cache: "no-store" });
         if (!response.ok) return "";
-        deployedStockDate = latestDashboardDate(await response.text());
+        const index = await response.json();
+        deployedStockDate = String(index?.latestDate || "");
       } catch (error) {
         deployedStockDate = "";
       }
@@ -492,7 +495,7 @@
         if (downloadError || !blob) return;
         const buffer = await blob.arrayBuffer();
         const liveHtml = new TextDecoder("utf-8").decode(buffer);
-        const liveDate = latestDashboardDate(liveHtml);
+        const liveDate = dashboardSnapshotDate(liveHtml);
         const snapshotDate = await getDeployedStockDate();
         if (liveDate && snapshotDate && liveDate < snapshotDate) {
           console.warn(`주식 실시간 대시보드가 배포 스냅샷보다 오래되어 유지합니다. live=${liveDate}, deployed=${snapshotDate}`);
