@@ -23,6 +23,7 @@ KFR_MODULE_DIR = REPO_ROOT / "automation" / "kfr"
 if str(KFR_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(KFR_MODULE_DIR))
 from kfr_api import available_dates as available_kfr_dates  # noqa: E402
+from kfr_api import api_shape_rows  # noqa: E402
 from kfr_api import load_frame as load_kfr_frame  # noqa: E402
 from kfr_api import normalize_rows as normalize_kfr_rows  # noqa: E402
 
@@ -344,11 +345,12 @@ def fetch_kfr_snapshots(
     latest_only: bool = False,
 ) -> list[dict[str, object]]:
     filters = {
-        "select": "id,business_date,row_count,file_name,downloaded_at",
+        "select": "id,business_date,row_count,file_name,downloaded_at,source_format",
         "source_key": f"eq.{source_key}",
         "order": "business_date.desc,downloaded_at.desc" if latest_only else "business_date.asc,downloaded_at.asc",
-        "source_format": "eq.kfr_partner_api_json",
     }
+    if source_key != "fund_trades":
+        filters["source_format"] = "eq.kfr_partner_api_json"
     if start_date:
         filters["business_date"] = f"gte.{start_date}"
     if end_date:
@@ -401,7 +403,7 @@ def fetch_kfr_rows(
                 break
             for item in batch:
                 payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
-                normalized = normalize_kfr_rows(source_key, [payload])[0]
+                normalized = normalize_kfr_rows(source_key, api_shape_rows(source_key, [payload]))[0]
                 rows.append({**normalized, "스냅샷일": business_date, "원천파일": snapshot.get("file_name", "")})
             if len(batch) < 1000:
                 break
@@ -705,7 +707,7 @@ def read_inputs(
     if data_source == "supabase":
         assert client is not None
         holdings_ts = fetch_kfr_rows(client, "fund_holdings", start_date=start_date, end_date=end_date)
-        trades = fetch_kfr_rows(client, "fund_trades", start_date=start_date, end_date=end_date)
+        trades = fetch_kfr_rows(client, "fund_trades", end_date=end_date)
         holdings = fetch_kfr_rows(client, "fund_holdings", start_date=start_date, end_date=end_date, latest_only=True)
         source_frames = {"holdings_ts": holdings_ts, "trades_ts": trades}
         if fund_master_versions:
@@ -714,9 +716,7 @@ def read_inputs(
         holdings_ts = load_kfr_frame(
             KFR_DATA_DIR, "fund_holdings", start_date=start_date, end_date=end_date
         )
-        trades = load_kfr_frame(
-            KFR_DATA_DIR, "fund_trades", start_date=start_date, end_date=end_date
-        )
+        trades = load_kfr_frame(KFR_DATA_DIR, "fund_trades", end_date=end_date)
         holdings = load_kfr_frame(
             KFR_DATA_DIR, "fund_holdings", start_date=start_date, end_date=end_date, latest_only=True
         )
