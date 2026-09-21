@@ -161,30 +161,31 @@ def load_fund_return_series(fund_name: str) -> dict:
         return FUND_RETURN_CACHE[code]
 
     source_rows = [{"payload": row} for row in local_fund_price_rows().get(code, [])]
-    if not source_rows:
-        offset = 0
-        while True:
-            query = urllib.parse.urlencode(
-                {
-                    "select": "row_no,payload",
-                    "domain": "eq.fund",
-                    "file_key": "eq.fund_nav",
-                    "payload->>예탁원펀드코드": f"eq.{code}",
-                    "order": "row_no.asc",
-                    "limit": "1000",
-                    "offset": str(offset),
-                },
-                safe=".,()->>",
-            )
-            batch = supabase_get(f"manual_file_rows?{query}")
-            if not batch:
-                break
-            source_rows.extend(batch)
-            if len(batch) < 1000:
-                break
-            offset += 1000
+    manual_rows = []
+    offset = 0
+    while True:
+        query = urllib.parse.urlencode(
+            {
+                "select": "row_no,payload",
+                "domain": "eq.fund",
+                "file_key": "eq.fund_nav",
+                "payload->>예탁원펀드코드": f"eq.{code}",
+                "order": "row_no.asc",
+                "limit": "1000",
+                "offset": str(offset),
+            },
+            safe=".,()->>",
+        )
+        batch = supabase_get(f"manual_file_rows?{query}")
+        if not batch:
+            break
+        manual_rows.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+    source_rows.extend(manual_rows)
     manual_dates = []
-    for item in source_rows:
+    for item in manual_rows:
         payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
         trade_date = str(payload.get("trade_day") or payload.get("기준일") or "").strip()
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", trade_date):
