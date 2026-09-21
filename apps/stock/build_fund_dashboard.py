@@ -3057,7 +3057,6 @@ def build_dashboard(
     </aside>
     <main>
       <div id="dashboard"></div>
-      <div class="audit">검증 메모: {esc(json.dumps(source_note, ensure_ascii=False))}</div>
     </main>
   </div>
   <div id="columnHelpModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="columnHelpTitle">
