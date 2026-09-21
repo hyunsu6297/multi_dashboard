@@ -3204,6 +3204,7 @@ def build_dashboard(
     let periodSummary = null;
     const periodAnalysisCache = new Map();
     let periodAnalysisRequestKey = "";
+    const sortableTableState = new Map();
     let stockSupabaseClient = null;
     function normalizeQuoteCode(value) {{
       const text = String(value ?? "").trim().replace(/,/g, "");
@@ -3902,7 +3903,7 @@ def build_dashboard(
         const totalGap = expectedTotal == null ? null : classifiedActual - expectedTotal;
         const totalActualRate = stockExpTotal ? actualTotal / stockExpTotal * 100 : null;
         const totalRow = `<tr class="total-row"><td class="name-cell total-label">합계</td><td>${{stocks.length}}</td><td class="${{signedClass(stockExpTotal)}}">${{fmtEok1(stockExpTotal)}}</td><td>${{fmtPct1Js(stockExpTotal ? 1 : null)}}</td><td></td><td class="${{signedClass(totalActualRate)}}">${{fmtRateJs(totalActualRate)}}</td><td class="${{signedClass(expectedTotal)}}">${{fmtEok1(expectedTotal)}}</td><td class="${{signedClass(actualTotal)}}">${{fmtEok1(actualTotal)}}</td><td class="${{signedClass(totalGap)}}">${{fmtEok1(totalGap)}}</td><td></td></tr>`;
-        marketHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table"><thead><tr><th data-sort-index="0">구분</th><th data-sort-index="1">종목수</th><th data-sort-index="2">주식 Exp</th><th data-sort-index="3">비중</th><th data-sort-index="4">지수</th><th data-sort-index="5">실제 수익률</th><th data-sort-index="6">지수손익</th><th data-sort-index="7">실제손익</th><th data-sort-index="8">차이</th><th data-sort-index="9">판단</th></tr></thead><tbody>${{marketRowsHtml}}${{totalRow}}</tbody></table></div>`;
+        marketHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="performance-market"><thead><tr><th data-sort-index="0">구분</th><th data-sort-index="1">종목수</th><th data-sort-index="2">주식 Exp</th><th data-sort-index="3">비중</th><th data-sort-index="4">지수</th><th data-sort-index="5">실제 수익률</th><th data-sort-index="6">지수손익</th><th data-sort-index="7">실제손익</th><th data-sort-index="8">차이</th><th data-sort-index="9">판단</th></tr></thead><tbody>${{marketRowsHtml}}${{totalRow}}</tbody></table></div>`;
       }}
       panel.querySelectorAll("[data-performance-sector-market]").forEach((button) => button.classList.toggle("active", button.dataset.performanceSectorMarket === performanceSectorMarket));
       panel.querySelectorAll("[data-performance-sector-level]").forEach((button) => button.classList.toggle("active", button.dataset.performanceSectorLevel === performanceSectorLevel));
@@ -3916,7 +3917,7 @@ def build_dashboard(
         const sectorBenchmarkTotal = sectorRows.some((row) => row.hasBenchmark) ? sectorRows.reduce((sum, row) => sum + (row.hasBenchmark ? row.benchmarkWeight : 0), 0) : null;
         const sectorActiveTotal = sectorBenchmarkTotal == null || !sectorExpTotal ? null : 1 - sectorBenchmarkTotal;
         const sectorTotal = `<tr class="total-row"><td class="name-cell total-label">합계</td><td>${{sectorStocks.length}}</td><td class="${{signedClass(sectorExpTotal)}}">${{fmtEok1(sectorExpTotal)}}</td><td>${{fmtPct1Js(sectorExpTotal ? 1 : null)}}</td><td>${{fmtPct1Js(sectorBenchmarkTotal)}}</td><td class="${{signedClass(sectorActiveTotal)}}">${{fmtPpJs(sectorActiveTotal)}}</td><td class="${{signedClass(sectorActualTotal)}}">${{fmtEok1(sectorActualTotal)}}</td><td class="${{signedClass(sectorActualTotal)}}">${{fmtPctJs(sectorExpTotal ? sectorActualTotal / sectorExpTotal : null)}}p</td></tr>`;
-        sectorHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table"><thead><tr><th data-sort-index="0">섹터</th><th data-sort-index="1">종목수</th><th data-sort-index="2">주식 Exp</th><th data-sort-index="3">비중</th><th data-sort-index="4">BM비중</th><th data-sort-index="5">BM대비</th><th data-sort-index="6">현재 손익</th><th data-sort-index="7">기여도</th></tr></thead><tbody>${{sectorRowsHtml}}${{sectorTotal}}</tbody></table></div>`;
+        sectorHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="performance-sector"><thead><tr><th data-sort-index="0">섹터</th><th data-sort-index="1">종목수</th><th data-sort-index="2">주식 Exp</th><th data-sort-index="3">비중</th><th data-sort-index="4">BM비중</th><th data-sort-index="5">BM대비</th><th data-sort-index="6">현재 손익</th><th data-sort-index="7">기여도</th></tr></thead><tbody>${{sectorRowsHtml}}${{sectorTotal}}</tbody></table></div>`;
       }}
       const stockHost = panel.querySelector('[data-performance-stocks]');
       const filterLabel = panel.querySelector('[data-performance-filter-label]');
@@ -3940,7 +3941,7 @@ def build_dashboard(
         const filteredExp = filteredStocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
         const filteredPl = filteredStocks.reduce((sum, row) => sum + Number(row.pl || 0), 0);
         const totalRow = `<tr class="total-row"><td class="name-cell total-label">합계</td><td></td><td></td><td class="${{signedClass(filteredExp)}}">${{fmtEok1(filteredExp)}}</td><td>${{fmtPct1Js(stockExpTotal ? filteredExp / stockExpTotal : null)}}</td><td></td><td></td><td></td><td class="${{signedClass(filteredPl)}}">${{fmtEok1(filteredPl)}}</td><td class="${{signedClass(filteredPl)}}">${{fmtPctJs(stockExpTotal ? filteredPl / stockExpTotal : null)}}p</td></tr>`;
-        stockHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table"><thead><tr><th data-sort-index="0">종목명</th><th data-sort-index="1">시장</th><th data-sort-index="2">섹터</th><th data-sort-index="3">주식 Exp</th><th data-sort-index="4">비중</th><th data-sort-index="5">BM비중</th><th data-sort-index="6">BM대비</th><th data-sort-index="7">등락률</th><th data-sort-index="8">현재 손익</th><th data-sort-index="9">기여도</th></tr></thead><tbody>${{rowsHtml}}${{totalRow}}</tbody></table></div>`;
+        stockHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="performance-stocks"><thead><tr><th data-sort-index="0">종목명</th><th data-sort-index="1">시장</th><th data-sort-index="2">섹터</th><th data-sort-index="3">주식 Exp</th><th data-sort-index="4">비중</th><th data-sort-index="5">BM비중</th><th data-sort-index="6">BM대비</th><th data-sort-index="7">등락률</th><th data-sort-index="8">현재 손익</th><th data-sort-index="9">기여도</th></tr></thead><tbody>${{rowsHtml}}${{totalRow}}</tbody></table></div>`;
       }}
       const marketPanel = panel.querySelector(".performance-market-panel");
       const sectorPanel = panel.querySelector(".performance-sector-panel");
@@ -5600,6 +5601,29 @@ def build_dashboard(
       if (numericMatch) return {{ type:"number", value:Number(numericMatch[1]) }};
       return {{ type:"text", value:text.toLowerCase() }};
     }}
+    function applyTableSort(table, index, direction, persist = true) {{
+      const tbody = table.tBodies[0];
+      const header = table.querySelector(`th[data-sort-index="${{index}}"]`);
+      if (!tbody || !header) return;
+      table.querySelectorAll("th").forEach((item) => item.classList.remove("sort-asc", "sort-desc"));
+      header.classList.add(direction === "asc" ? "sort-asc" : "sort-desc");
+      const rows = [...tbody.rows];
+      const totalRows = rows.filter((row) => row.cells[0]?.textContent.trim() === "합계");
+      const sortableRows = rows.filter((row) => row.cells[0]?.textContent.trim() !== "합계");
+      sortableRows.sort((a, b) => {{
+        const av = sortableValue(a, index);
+        const bv = sortableValue(b, index);
+        if (av.type === "empty" && bv.type !== "empty") return 1;
+        if (bv.type === "empty" && av.type !== "empty") return -1;
+        let result = 0;
+        if (av.type === "number" && bv.type === "number") result = av.value - bv.value;
+        else result = String(av.value ?? "").localeCompare(String(bv.value ?? ""), "ko");
+        return direction === "asc" ? result : -result;
+      }});
+      [...sortableRows, ...totalRows].forEach((row) => tbody.appendChild(row));
+      const sortKey = table.dataset.sortKey;
+      if (persist && sortKey) sortableTableState.set(sortKey, {{ index, direction }});
+    }}
     function bindSortableTables(root = dashboard) {{
       const tables = root.matches?.(".sortable-table") ? [root] : [...root.querySelectorAll(".sortable-table")];
       tables.forEach((table) => {{
@@ -5607,28 +5631,13 @@ def build_dashboard(
         table.dataset.sortableBound = "1";
         table.querySelectorAll("th[data-sort-index]").forEach((th) => {{
           th.addEventListener("click", () => {{
-            const tbody = table.tBodies[0];
-            if (!tbody) return;
             const index = Number(th.dataset.sortIndex);
             const direction = th.classList.contains("sort-asc") ? "desc" : "asc";
-            table.querySelectorAll("th").forEach((header) => header.classList.remove("sort-asc", "sort-desc"));
-            th.classList.add(direction === "asc" ? "sort-asc" : "sort-desc");
-            const rows = [...tbody.rows];
-            const totalRows = rows.filter((row) => row.cells[0]?.textContent.trim() === "합계");
-            const sortableRows = rows.filter((row) => row.cells[0]?.textContent.trim() !== "합계");
-            sortableRows.sort((a, b) => {{
-              const av = sortableValue(a, index);
-              const bv = sortableValue(b, index);
-              if (av.type === "empty" && bv.type !== "empty") return 1;
-              if (bv.type === "empty" && av.type !== "empty") return -1;
-              let result = 0;
-              if (av.type === "number" && bv.type === "number") result = av.value - bv.value;
-              else result = String(av.value ?? "").localeCompare(String(bv.value ?? ""), "ko");
-              return direction === "asc" ? result : -result;
-            }});
-            [...sortableRows, ...totalRows].forEach((row) => tbody.appendChild(row));
+            applyTableSort(table, index, direction);
           }});
         }});
+        const savedSort = table.dataset.sortKey ? sortableTableState.get(table.dataset.sortKey) : null;
+        if (savedSort) applyTableSort(table, savedSort.index, savedSort.direction, false);
       }});
     }}
     function activeViewKey() {{
