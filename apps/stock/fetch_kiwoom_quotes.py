@@ -37,7 +37,7 @@ KOSPI200_PROXY_CODE = "069500"
 KOSDAQ150_PROXY_CODE = "229200"
 SEOUL_TZ = ZoneInfo("Asia/Seoul")
 QUOTE_UPDATE_START = datetime_time(9, 0, 0)
-QUOTE_UPDATE_CUTOFF = datetime_time(15, 30, 30)
+QUOTE_UPDATE_CUTOFF = datetime_time(15, 33)
 
 COL_FUND_CODE = "\ud380\ub4dc\ucf54\ub4dc"
 COL_LOOKUP_FUND_CODE = "\uc870\ud68c\ud380\ub4dc\ucf54\ub4dc"
@@ -71,7 +71,7 @@ def quote_pause_message(now: datetime | None = None) -> str:
         current = current.astimezone(SEOUL_TZ)
     if current.time().replace(tzinfo=None) < QUOTE_UPDATE_START:
         return "Waiting for the 09:00:00 KST regular session; preserving the last saved close."
-    return "15:30:30 KST quote cutoff reached; preserving the last saved regular-session quotes."
+    return "15:33:00 KST quote cutoff reached; preserving the last saved regular-session quotes."
 
 
 def read_text_file(path: Path) -> str:

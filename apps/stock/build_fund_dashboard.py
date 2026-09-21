@@ -2276,6 +2276,16 @@ def make_view(
           </div>
           <article class="panel performance-stock-panel"><div class="panel-title"><h4>전체 종목별 손익</h4><div class="title-actions"><span data-performance-filter-label>전체 종목</span><button type="button" class="column-help-button" data-performance-filter-reset>초기화</button></div></div><div data-performance-stocks></div></article>
         </div>
+        <div class="fund-history-layout" data-fund-history hidden>
+          <div class="fund-history-sidebar">
+            <article class="panel fund-history-evaluation"><div class="panel-title"><h4>펀드 평가</h4><span data-fund-evaluation-status></span></div><div class="fund-evaluation-chart" data-fund-evaluation-chart></div><div class="fund-evaluation-scores" data-fund-evaluation-scores></div></article>
+            <article class="panel fund-history-commentary"><div class="panel-title"><h4>평가 해설</h4><span>산출 지표 기준</span></div><div class="fund-evaluation-notes" data-fund-evaluation-notes></div></article>
+          </div>
+          <div class="fund-history-content">
+            <article class="panel fund-history-chart-panel"><div class="panel-title fund-history-chart-title"><div class="fund-history-title-left"><h4>펀드 수익률 차트</h4><div class="fund-history-benchmark" role="group" aria-label="비교지수"><button type="button" class="active" data-fund-history-benchmark="kospi">코스피</button><button type="button" data-fund-history-benchmark="kosdaq">코스닥</button><button type="button" data-fund-history-benchmark-toggle>BM 숨기기</button></div></div><div class="fund-history-chart-actions"><div class="fund-history-presets" role="group" aria-label="펀드 차트 기간 프리셋"><button type="button" data-fund-history-preset="ytd">연초</button><button type="button" data-fund-history-preset="6m">6개월</button><button type="button" data-fund-history-preset="1y">1년</button><button type="button" data-fund-history-preset="2y">2년</button><button type="button" data-fund-history-preset="3y">3년</button></div><div class="fund-history-period"><input type="date" data-fund-history-start aria-label="펀드 차트 시작일"><span>~</span><input type="date" data-fund-history-end aria-label="펀드 차트 종료일"><button type="button" data-fund-history-apply>조회</button></div><span data-fund-history-range></span></div></div><div class="fund-history-chart" data-fund-history-chart></div><div class="fund-history-inline-metrics"><div class="panel-title"><h4>성과지표</h4><span data-fund-history-status></span></div><div data-fund-history-metrics></div></div></article>
+            <article class="panel fund-history-ai-panel"><div class="panel-title"><h4>펀드 분석</h4><div class="title-actions"><span data-fund-analysis-status>산출 엔진</span></div></div><div class="fund-analysis-output" data-fund-analysis-output><div class="fund-analysis-placeholder">성과지표와 포트폴리오 자료를 계산해 핵심 내용을 정리합니다.</div></div></article>
+          </div>
+        </div>
       </section>
       <section class="tab-panel" data-panel="period">
         <div class="section-title performance-heading"><div class="performance-heading-actions"><h3>기간분석</h3><div class="period-presets" role="group" aria-label="기간 프리셋"><button type="button" data-period-preset="day">하루</button><button type="button" data-period-preset="week">1주</button><button type="button" data-period-preset="month">1개월</button></div><input type="date" class="period-date" data-period-start aria-label="기간분석 시작일"><span class="period-separator">~</span><input type="date" class="period-date" data-period-end aria-label="기간분석 종료일"><button type="button" class="column-help-button" data-period-load>조회</button><button type="button" class="column-help-button" data-period-ai>AI 기간분석</button></div></div>
@@ -2623,6 +2633,73 @@ def build_dashboard(
     .performance-stock-panel {{ grid-column:2; grid-row:1; min-height:680px; align-self:start; display:flex; flex-direction:column; overflow:hidden; }}
     .performance-stock-panel [data-performance-stocks] {{ flex:1; min-height:0; display:flex; overflow:hidden; }}
     .performance-stock-panel .performance-table {{ width:100%; height:100%; max-height:none; overflow:auto; }}
+    .fund-history-layout {{ display:grid; grid-template-columns:minmax(260px,.42fr) minmax(760px,1.58fr); gap:10px; margin-top:10px; align-items:stretch; }}
+    .fund-history-layout[hidden] {{ display:none; }}
+    .fund-history-sidebar {{ display:grid; grid-template-columns:minmax(0,1fr); gap:10px; align-content:start; min-width:0; }}
+    .fund-history-evaluation {{ min-height:420px; overflow:hidden; }}
+    .fund-evaluation-chart {{ width:100%; height:285px; }}
+    .fund-evaluation-scores {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 12px; padding-top:4px; border-top:1px solid #e0e9e6; }}
+    .fund-evaluation-score {{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px; min-width:0; font-size:11px; }}
+    .fund-evaluation-score span {{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#31534d; }}
+    .fund-evaluation-score strong {{ color:var(--hana); font-size:12px; font-variant-numeric:tabular-nums; }}
+    .fund-history-commentary {{ min-height:260px; }}
+    .fund-evaluation-notes {{ display:grid; grid-template-columns:minmax(0,1fr); gap:0; }}
+    .fund-evaluation-note {{ display:grid; grid-template-columns:82px minmax(0,1fr); align-items:center; gap:10px; padding:8px 2px; border-bottom:1px solid #e4ece9; font-size:11px; line-height:1.55; color:#31534d; }}
+    .fund-evaluation-note:last-child {{ border-bottom:0; }}
+    .fund-evaluation-note-key {{ display:grid; grid-template-columns:minmax(0,1fr); gap:5px; min-width:0; }}
+    .fund-evaluation-label {{ width:100%; height:27px; padding:0 5px; border:1px solid #9fc3ba; border-radius:5px; background:#f7fbfa; color:#064d40; font-size:11px; font-weight:800; letter-spacing:0; cursor:default; }}
+    .fund-evaluation-label.good {{ border-color:#8bcbb7; background:#eaf7f2; color:#087a59; }}
+    .fund-evaluation-label.normal {{ border-color:#e4c66f; background:#fff8dc; color:#a56b00; }}
+    .fund-evaluation-label.bad {{ border-color:#e5a09c; background:#fdeeed; color:#c43b35; }}
+    .fund-evaluation-status {{ display:flex; align-items:center; justify-content:center; gap:5px; min-height:17px; font-size:10px; font-weight:800; }}
+    .fund-evaluation-status.good {{ color:#087a59; }}
+    .fund-evaluation-status.normal {{ color:#a56b00; }}
+    .fund-evaluation-status.bad {{ color:#c43b35; }}
+    .fund-evaluation-face {{ position:relative; display:inline-block; width:13px; height:13px; flex:0 0 13px; border:1.4px solid currentColor; border-radius:50%; }}
+    .fund-evaluation-face::before {{ content:""; position:absolute; top:3px; left:3px; width:1.5px; height:1.5px; border-radius:50%; background:currentColor; box-shadow:5px 0 0 currentColor; }}
+    .fund-evaluation-face::after {{ content:""; position:absolute; left:3px; width:5px; }}
+    .fund-evaluation-status.good .fund-evaluation-face::after {{ top:6px; height:3px; border-bottom:1.4px solid currentColor; border-radius:0 0 7px 7px; }}
+    .fund-evaluation-status.normal .fund-evaluation-face::after {{ top:8px; height:1.4px; background:currentColor; }}
+    .fund-evaluation-status.bad .fund-evaluation-face::after {{ top:7px; height:3px; border-top:1.4px solid currentColor; border-radius:7px 7px 0 0; }}
+    .fund-evaluation-note-text {{ min-width:0; padding-left:10px; border-left:1px solid #d8e5e1; }}
+    .fund-history-content {{ display:grid; grid-template-columns:minmax(0,1fr); gap:10px; align-content:start; min-width:0; }}
+    .fund-history-chart-panel {{ min-width:0; overflow:hidden; }}
+    .fund-history-chart {{ width:100%; height:440px; }}
+    .fund-history-chart-title {{ gap:10px; flex-wrap:wrap; }}
+    .fund-history-title-left {{ display:flex; align-items:center; gap:10px; min-width:0; }}
+    .fund-history-chart-actions {{ display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-left:auto; }}
+    .fund-history-benchmark {{ display:flex; align-items:center; }}
+    .fund-history-benchmark button {{ height:26px; padding:0 10px; border:1px solid #a9c7c0; background:#fff; color:var(--hana); font-size:11px; font-weight:800; cursor:pointer; }}
+    .fund-history-benchmark button:first-child {{ border-radius:6px 0 0 6px; }}
+    .fund-history-benchmark button:not(:first-child) {{ margin-left:-1px; }}
+    .fund-history-benchmark button:last-child {{ border-radius:0 6px 6px 0; }}
+    .fund-history-benchmark button.active {{ background:var(--hana); color:#fff; border-color:var(--hana); }}
+    .fund-history-benchmark button.benchmark-hidden {{ background:#eef3f1; color:#65736f; border-color:#b9c9c5; }}
+    .fund-history-presets {{ display:flex; align-items:center; }}
+    .fund-history-presets button {{ height:26px; padding:0 9px; border:1px solid #a9c7c0; background:#fff; color:var(--hana); font-size:11px; font-weight:800; cursor:pointer; }}
+    .fund-history-presets button:first-child {{ border-radius:6px 0 0 6px; }}
+    .fund-history-presets button:not(:first-child) {{ margin-left:-1px; }}
+    .fund-history-presets button:last-child {{ border-radius:0 6px 6px 0; }}
+    .fund-history-presets button.active {{ position:relative; z-index:1; background:var(--hana); color:#fff; border-color:var(--hana); }}
+    .fund-history-period {{ display:flex; align-items:center; gap:5px; }}
+    .fund-history-period input {{ width:124px; height:26px; padding:0 6px; border:1px solid #b7cbc6; border-radius:4px; background:#fff; color:#173a34; font-size:11px; }}
+    .fund-history-period button {{ height:26px; padding:0 9px; border:1px solid #a9c7c0; border-radius:5px; background:#fff; color:var(--hana); font-size:11px; font-weight:800; cursor:pointer; }}
+    .fund-history-inline-metrics {{ min-width:0; margin-top:2px; padding-top:8px; border-top:1px solid #dbe7e3; overflow:hidden; }}
+    .fund-history-inline-metrics .performance-table {{ max-height:none; overflow:auto; }}
+    .fund-history-inline-metrics table {{ min-width:1180px; table-layout:auto; }}
+    .fund-history-inline-metrics th,.fund-history-inline-metrics td {{ text-align:center; white-space:nowrap; padding:7px 8px; }}
+    .fund-history-inline-metrics th:first-child,.fund-history-inline-metrics td:first-child {{ position:sticky; left:0; z-index:2; min-width:116px; background:#fff; text-align:left; }}
+    .fund-history-inline-metrics thead th:first-child {{ background:#eaf3ef; z-index:4; }}
+    .fund-history-ai-panel {{ min-width:0; min-height:260px; }}
+    .fund-analysis-output {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); color:#173a34; font-size:12px; line-height:1.65; }}
+    .fund-analysis-section {{ min-width:0; padding:12px 14px; border-top:1px solid #dbe7e3; }}
+    .fund-analysis-section:nth-child(odd) {{ border-right:1px solid #dbe7e3; }}
+    .fund-analysis-section h5 {{ margin:0 0 6px; color:var(--hana); font-size:12px; font-weight:900; }}
+    .fund-analysis-section p {{ margin:0; }}
+    .fund-analysis-placeholder,.fund-analysis-loading,.fund-analysis-error {{ grid-column:1/-1; min-height:210px; display:flex; align-items:center; justify-content:center; color:var(--muted); text-align:center; }}
+    .fund-analysis-error {{ color:#b42318; }}
+    .fund-history-loading,.fund-history-error {{ min-height:440px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; }}
+    .fund-history-error {{ color:#b42318; }}
     .performance-heading {{ justify-content:flex-start; align-items:center; }}
     .performance-heading-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
     .performance-heading-actions h3 {{ margin-right:4px; }}
@@ -2941,7 +3018,7 @@ def build_dashboard(
     .trade-dynamic-bar .fill.sell {{ background:#2563eb; }}
     .trade-dynamic-bar em {{ font-style:normal; font-size:10.5px; font-weight:900; text-align:right; }}
     @media (max-width:1280px) {{ .hold-grid {{ grid-template-columns:1fr 1fr; }} .trade-grid {{ grid-template-columns:1fr 1fr; }} .trade-recent {{ grid-column:1 / -1; grid-row:auto; }} .net-buy-panel,.net-sell-panel,.long-panel,.short-panel,.chart-panel {{ grid-column:auto; grid-row:auto; }} }}
-    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.topbar-left {{ flex-wrap:wrap }}.brand {{ font-size:20px }}.quick-nav {{ order:3; width:100%; overflow:auto; padding-bottom:2px; }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.summary-grid,.sector-row,.hold-grid,.detail-grid,.trade-grid,.timeseries-grid,.performance-grid,.period-analysis-grid,.performance-kpis,.performance-ai-output,.pie-wrap {{ grid-template-columns:1fr; }} .performance-stock-panel,.period-stock-panel {{ grid-column:auto;grid-row:auto; }} .trade-recent,.ts-trend-panel,.ts-daily-panel {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
+    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.topbar-left {{ flex-wrap:wrap }}.brand {{ font-size:20px }}.quick-nav {{ order:3; width:100%; overflow:auto; padding-bottom:2px; }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.summary-grid,.sector-row,.hold-grid,.detail-grid,.trade-grid,.timeseries-grid,.performance-grid,.fund-history-layout,.period-analysis-grid,.performance-kpis,.performance-ai-output,.fund-analysis-output,.pie-wrap {{ grid-template-columns:1fr; }} .fund-analysis-section:nth-child(odd) {{ border-right:0; }} .performance-stock-panel,.period-stock-panel {{ grid-column:auto;grid-row:auto; }} .fund-history-commentary {{ min-height:0; }} .trade-recent,.ts-trend-panel,.ts-daily-panel {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
     @media (max-width:980px) {{
       .performance-stock-panel {{ display:block; }}
       .performance-stock-panel [data-performance-stocks] {{ display:block; }}
@@ -3794,6 +3871,554 @@ def build_dashboard(
         stockPanel.style.height = `${{Math.max(680, marketPanel.offsetHeight + sectorPanel.offsetHeight + leftGap)}}px`;
       }} else if (stockPanel) {{
         stockPanel.style.height = "";
+      }}
+      renderFundReturnHistory();
+    }}
+    const fundReturnHistoryCache = new Map();
+    const fundReturnHistoryPending = new Map();
+    let fundReturnHistoryRequest = 0;
+    let fundReturnBenchmark = "kospi";
+    let fundReturnBenchmarkVisible = true;
+    let fundReturnHistoryStart = "2026-01-02";
+    let fundReturnHistoryEnd = "";
+    let fundReturnHistoryPreset = "";
+    let fundReturnChartDraw = Promise.resolve();
+    let fundAnalysisRequest = 0;
+    let plotlyLibraryPromise = null;
+    function fundHistoryPresetStart(preset, endDate) {{
+      const match = String(endDate || "").match(/^([0-9]{{4}})-([0-9]{{2}})-([0-9]{{2}})$/);
+      if (!match) return fundReturnHistoryStart || "2026-01-02";
+      const year = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      const day = Number(match[3]);
+      if (preset === "ytd") return `${{year}}-01-01`;
+      let monthOffset = 0;
+      let yearOffset = 0;
+      if (preset === "6m") monthOffset = 6;
+      else if (preset === "1y") yearOffset = 1;
+      else if (preset === "2y") yearOffset = 2;
+      else if (preset === "3y") yearOffset = 3;
+      else return fundReturnHistoryStart || "2026-01-02";
+      const rawMonth = month - monthOffset;
+      const targetYear = year - yearOffset + Math.floor(rawMonth / 12);
+      const targetMonth = ((rawMonth % 12) + 12) % 12;
+      const targetDay = Math.min(day, new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate());
+      return `${{targetYear}}-${{String(targetMonth + 1).padStart(2,"0")}}-${{String(targetDay).padStart(2,"0")}}`;
+    }}
+    function ensurePlotlyLibrary() {{
+      if (window.Plotly) return Promise.resolve(window.Plotly);
+      if (plotlyLibraryPromise) return plotlyLibraryPromise;
+      plotlyLibraryPromise = new Promise((resolve, reject) => {{
+        const script = document.createElement("script");
+        script.src = "plotly-2.35.2.min.js";
+        script.onload = () => window.Plotly ? resolve(window.Plotly) : reject(new Error("Plotly library unavailable"));
+        script.onerror = () => reject(new Error("Plotly library load failed"));
+        document.head.appendChild(script);
+      }});
+      return plotlyLibraryPromise;
+    }}
+    function shiftHistoryDate(value, unit, amount) {{
+      const date = new Date(`${{value}}T00:00:00`);
+      if (unit === "d") date.setDate(date.getDate() - amount);
+      if (unit === "m") date.setMonth(date.getMonth() - amount);
+      if (unit === "y") date.setFullYear(date.getFullYear() - amount);
+      const pad = (part) => String(part).padStart(2, "0");
+      return `${{date.getFullYear()}}-${{pad(date.getMonth() + 1)}}-${{pad(date.getDate())}}`;
+    }}
+    function fundHistoryStats(series, start = "", end = "") {{
+      const rows = series.filter((row) => (!start || row.date >= start) && (!end || row.date <= end) && Number.isFinite(row.value));
+      if (rows.length < 2) return {{}};
+      const first = rows[0].value;
+      const last = rows.at(-1).value;
+      if (!first) return {{}};
+      const periodReturn = last / first - 1;
+      const returns = rows.slice(1).map((row, index) => row.value / rows[index].value - 1).filter(Number.isFinite);
+      const average = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+      const variance = returns.length > 1 ? returns.reduce((sum, value) => sum + (value - average) ** 2, 0) / (returns.length - 1) : 0;
+      const volatility = Math.sqrt(variance) * Math.sqrt(252);
+      const annualReturn = Math.pow(1 + periodReturn, 252 / returns.length) - 1;
+      let peak = first;
+      let mdd = 0;
+      rows.forEach((row) => {{
+        peak = Math.max(peak, row.value);
+        mdd = Math.min(mdd, row.value / peak - 1);
+      }});
+      return {{ observations:rows.length, periodReturn, annualReturn, volatility, sharpe:volatility ? annualReturn / volatility : null, mdd }};
+    }}
+    function fundHistoryModels(payload, includeBenchmark = fundReturnBenchmarkVisible) {{
+      const benchmark = fundReturnBenchmark === "kosdaq"
+        ? {{ name:"KOSDAQ", key:"kosdaq", color:"#0f766e", width:2.2 }}
+        : {{ name:"KOSPI", key:"kospi", color:"#dc2626", width:2.2 }};
+      const definitions = [
+        {{ name:payload.fund.name, key:"fund", color:"#2463eb", width:2.5 }},
+        ...(includeBenchmark ? [benchmark] : []),
+      ];
+      return definitions.map((definition) => ({{
+        ...definition,
+        series:payload.rows.map((row) => ({{ date:row.date, value:Number(row[definition.key]) }})).filter((row) => Number.isFinite(row.value) && row.value > 0),
+      }}));
+    }}
+    function fundHistoryWindowModels(models, start, end) {{
+      return models.map((model) => ({{
+        ...model,
+        series:model.series.filter((row) => (!start || row.date >= start) && (!end || row.date <= end)),
+      }})).filter((model) => model.series.length > 1);
+    }}
+    function clampFundScore(value) {{
+      return Math.max(0.5, Math.min(5, Number.isFinite(Number(value)) ? Number(value) : 0.5));
+    }}
+    function fundScoreAssessment(score) {{
+      if (score >= 4.2) return "매우 높은 편입니다";
+      if (score >= 3.4) return "높은 편입니다";
+      if (score >= 2.6) return "보통 수준입니다";
+      if (score >= 1.8) return "낮은 편입니다";
+      return "매우 낮은 편입니다";
+    }}
+    function fundScoreStatus(score) {{
+      if (score >= 3.5) return {{ label:"양호", tone:"good" }};
+      if (score >= 2.5) return {{ label:"보통", tone:"normal" }};
+      return {{ label:"나쁨", tone:"bad" }};
+    }}
+    function evaluationPct(value, digits = 1) {{
+      const number = Number(value || 0) * 100;
+      return `${{number > 0 ? "+" : ""}}${{number.toFixed(digits)}}%`;
+    }}
+    function evaluationPctPoint(value, digits = 1) {{
+      return `${{evaluationPct(value, digits)}}p`;
+    }}
+    function evaluationAbsPct(value, digits = 1) {{
+      return `${{(Math.abs(Number(value || 0)) * 100).toFixed(digits)}}%`;
+    }}
+    function downsideVolatility(series) {{
+      const returns = series.slice(1).map((row, index) => row.value / series[index].value - 1).filter((value) => Number.isFinite(value) && value < 0);
+      if (!returns.length) return 0;
+      return Math.sqrt(returns.reduce((sum, value) => sum + value ** 2, 0) / returns.length) * Math.sqrt(252);
+    }}
+    function selectedFundActiveShare(stocks) {{
+      const gross = stocks.reduce((sum, row) => sum + Math.abs(Number(row.exp || 0)), 0);
+      if (!gross) return 0;
+      const portfolio = new Map();
+      const marketGross = new Map();
+      stocks.forEach((row) => {{
+        const code = normalizeQuoteCode(row.benchmarkCode || row.code);
+        portfolio.set(code, (portfolio.get(code) || 0) + Number(row.exp || 0) / gross);
+        marketGross.set(row.market, (marketGross.get(row.market) || 0) + Math.abs(Number(row.exp || 0)) / gross);
+      }});
+      const benchmark = new Map();
+      ["코스피", "코스닥"].forEach((market) => {{
+        const factor = Number(marketGross.get(market) || 0);
+        const weights = quoteSensitiveData.benchmarkWeights?.weights?.[market] || {{}};
+        Object.entries(weights).forEach(([code, weight]) => benchmark.set(normalizeQuoteCode(code), (benchmark.get(normalizeQuoteCode(code)) || 0) + factor * Number(weight || 0)));
+      }});
+      const codes = new Set([...portfolio.keys(), ...benchmark.keys()]);
+      return .5 * [...codes].reduce((sum, code) => sum + Math.abs(Number(portfolio.get(code) || 0) - Number(benchmark.get(code) || 0)), 0);
+    }}
+    function fundEvaluationItems(models, start, end) {{
+      const fundModel = models.find((model) => model.key === "fund") || models[0];
+      const benchmarkModel = models.find((model) => model.key !== "fund");
+      const stats = fundHistoryStats(fundModel?.series || [], start, end);
+      const benchmarkStats = benchmarkModel ? fundHistoryStats(benchmarkModel.series, start, end) : {{}};
+      const returnBlend = Number(stats.periodReturn || 0) * .4 + Number(stats.annualReturn || 0) * .6;
+      const profitability = clampFundScore(2.5 + returnBlend * 4);
+      const sharpeScore = clampFundScore(2.5 + Number(stats.sharpe || 0));
+      const volatilityScore = clampFundScore(5 - Number(stats.volatility || 0) * 5);
+      const stability = clampFundScore((sharpeScore + volatilityScore) / 2);
+      const relativeReturn = benchmarkModel && stats.periodReturn != null && benchmarkStats.periodReturn != null ? Number(stats.periodReturn) - Number(benchmarkStats.periodReturn) : 0;
+      const benchmarkStrength = clampFundScore(2.5 + relativeReturn * 8);
+      const stocks = groupedPerformanceStocks();
+      const activeShare = selectedFundActiveShare(stocks);
+      const basis = currentFundBasis();
+      const investment = Math.abs(Number(basis.investment || basis.fundExp || 0));
+      const trades = tradeHistory.filter((row) => normalizeQuoteCode(row.fundCode) === normalizeQuoteCode(currentKey) && (!start || row.date >= start) && (!end || row.date <= end));
+      const grossTrades = trades.reduce((sum, row) => sum + Math.abs(Number(row.amount || 0)), 0);
+      const observations = Math.max(1, Number(stats.observations || fundModel?.series?.length || 1));
+      const annualTurnover = investment ? grossTrades / (2 * investment) * Math.min(4, 252 / observations) : 0;
+      const activity = clampFundScore(1 + Math.min(1, annualTurnover) * 2 + Math.min(1, activeShare) * 2);
+      const mddScore = clampFundScore(5 - Math.abs(Number(stats.mdd || 0)) * 7);
+      const downsideScore = clampFundScore(5 - downsideVolatility(fundModel?.series || []) * 6);
+      const riskManagement = clampFundScore((mddScore + downsideScore) / 2);
+      const grossExposure = stocks.reduce((sum, row) => sum + Math.abs(Number(row.exp || 0)), 0);
+      const weights = grossExposure ? stocks.map((row) => Math.abs(Number(row.exp || 0)) / grossExposure) : [];
+      const hhi = weights.reduce((sum, weight) => sum + weight ** 2, 0);
+      const effectiveCount = hhi ? 1 / hhi : 1;
+      const sectors = new Map();
+      stocks.forEach((row) => sectors.set(row.sectorLarge || "미분류", (sectors.get(row.sectorLarge || "미분류") || 0) + Math.abs(Number(row.exp || 0))));
+      const topSectorWeight = grossExposure ? Math.max(0, ...sectors.values()) / grossExposure : 1;
+      const breadthScore = clampFundScore(1 + Math.min(1, Math.max(0, effectiveCount - 1) / 24) * 4);
+      const sectorScore = clampFundScore(5 - topSectorWeight * 5);
+      const diversification = clampFundScore((breadthScore + sectorScore) / 2);
+      return [
+        {{
+          label:"수익성",
+          score:profitability,
+          detail:`조회기간 수익률은 ${{evaluationPct(stats.periodReturn)}}이고 연환산 수익률은 ${{evaluationPct(stats.annualReturn)}}로, 수익성이 ${{fundScoreAssessment(profitability)}}`,
+        }},
+        {{
+          label:"안정성",
+          score:stability,
+          detail:`연환산 변동성은 ${{evaluationAbsPct(stats.volatility)}}이고 Sharpe는 ${{Number(stats.sharpe || 0).toFixed(2)}}로, 안정성이 ${{fundScoreAssessment(stability)}}`,
+        }},
+        {{
+          label:"BM대비",
+          score:benchmarkStrength,
+          detail:`조회기간 성과가 ${{benchmarkModel?.name || "BM"}}보다 ${{evaluationPctPoint(relativeReturn)}} ${{relativeReturn >= 0 ? "높아" : "낮아"}}, BM 대비 성과가 ${{fundScoreAssessment(benchmarkStrength)}}`,
+        }},
+        {{
+          label:"액티브",
+          score:activity,
+          detail:`연환산 추정 회전율은 ${{evaluationAbsPct(annualTurnover)}}이고 액티브셰어는 ${{evaluationAbsPct(activeShare)}}로, 액티브 운용 강도가 ${{fundScoreAssessment(activity)}}`,
+        }},
+        {{
+          label:"리스크 관리",
+          score:riskManagement,
+          detail:`최대낙폭은 -${{evaluationAbsPct(stats.mdd)}}이고 하방 변동성은 ${{evaluationAbsPct(downsideVolatility(fundModel?.series || []))}}로, 리스크 관리 수준이 ${{fundScoreAssessment(riskManagement)}}`,
+        }},
+        {{
+          label:"분산도",
+          score:diversification,
+          detail:`보유 종목은 ${{stocks.length.toLocaleString("ko-KR")}}개지만 실질 분산 종목 수는 ${{effectiveCount.toFixed(1)}}개이고 최대 섹터 비중은 ${{evaluationAbsPct(topSectorWeight)}}로, 분산도가 ${{fundScoreAssessment(diversification)}}`,
+        }},
+      ];
+    }}
+    async function drawFundEvaluation(host, listHost, notesHost, statusHost, models, start, end) {{
+      if (!host || !listHost) return;
+      const Plotly = await ensurePlotlyLibrary();
+      const items = fundEvaluationItems(models, start, end);
+      const labels = items.map((item) => item.label);
+      const scores = items.map((item) => Number(item.score.toFixed(2)));
+      await Plotly.react(host, [{{
+        type:"scatterpolar",
+        mode:"lines+markers",
+        theta:[...labels, labels[0]],
+        r:[...scores, scores[0]],
+        fill:"toself",
+        fillcolor:"rgba(0,91,73,.18)",
+        line:{{ color:"#005b49", width:2 }},
+        marker:{{ color:"#005b49", size:5 }},
+        hovertemplate:"%{{theta}}<br>%{{r:.2f}} / 5<extra></extra>",
+        showlegend:false,
+      }}], {{
+        margin:{{ l:42, r:42, t:26, b:26 }},
+        paper_bgcolor:"#ffffff",
+        polar:{{
+          bgcolor:"#fbfcfd",
+          radialaxis:{{ range:[0,5], tickvals:[1,2,3,4,5], tickfont:{{ size:9 }}, gridcolor:"#dce6e3", linecolor:"#b7cbc6" }},
+          angularaxis:{{ tickfont:{{ size:10, color:"#173a34" }}, gridcolor:"#dce6e3", linecolor:"#b7cbc6" }},
+        }},
+        font:{{ family:"Arial, 'Malgun Gothic', sans-serif", color:"#173a34" }},
+      }}, {{ responsive:true, displayModeBar:false }});
+      listHost.innerHTML = items.map((item) => `<div class="fund-evaluation-score"><span>${{escHtml(item.label)}}</span><strong>${{item.score.toFixed(1)}} / 5</strong></div>`).join("");
+      if (notesHost) notesHost.innerHTML = items.map((item) => {{
+        const status = fundScoreStatus(item.score);
+        return `<div class="fund-evaluation-note"><div class="fund-evaluation-note-key"><button type="button" class="fund-evaluation-label ${{status.tone}}" tabindex="-1">${{escHtml(item.label)}}</button><span class="fund-evaluation-status ${{status.tone}}"><span class="fund-evaluation-face" aria-hidden="true"></span>${{status.label}}</span></div><span class="fund-evaluation-note-text">${{escHtml(item.detail)}}</span></div>`;
+      }}).join("");
+      if (statusHost) statusHost.textContent = "조회기간 기준";
+    }}
+    function fundHistoryTrailing(series, end) {{
+      const date = new Date(`${{end}}T00:00:00`);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const starts = {{
+        ytd:`${{year}}-01-01`,
+        mtd:`${{year}}-${{month}}-01`,
+        d1:shiftHistoryDate(end, "d", 1),
+        w1:shiftHistoryDate(end, "d", 7),
+        m1:shiftHistoryDate(end, "m", 1),
+        m3:shiftHistoryDate(end, "m", 3),
+        m6:shiftHistoryDate(end, "m", 6),
+        y1:shiftHistoryDate(end, "y", 1),
+      }};
+      return Object.fromEntries(Object.entries(starts).map(([key, start]) => [key, fundHistoryStats(series, start, end).periodReturn ?? null]));
+    }}
+    function renderFundHistoryMetrics(host, models, end) {{
+      const headers = ["구분", "기간수익률", "연환산 수익률", "연환산 변동성", "Sharpe", "MDD", "YTD", "MTD", "1일", "1주", "1개월", "3개월", "6개월", "1년"];
+      const rows = models.map((model) => {{
+        const stats = fundHistoryStats(model.series, "", end);
+        const trailing = fundHistoryTrailing(model.series, end);
+        const values = [stats.periodReturn, stats.annualReturn, stats.volatility, stats.sharpe, stats.mdd, trailing.ytd, trailing.mtd, trailing.d1, trailing.w1, trailing.m1, trailing.m3, trailing.m6, trailing.y1];
+        return `<tr><td><span style="color:${{model.color}};font-weight:800">${{escHtml(model.name)}}</span></td>${{values.map((value, index) => {{
+          const text = index === 3 ? (value == null ? "-" : Number(value).toFixed(2)) : fmtPctJs(value);
+          const valueClass = index === 2 ? "" : signedClass(value);
+          return `<td class="${{valueClass}}">${{text}}</td>`;
+        }}).join("")}}</tr>`;
+      }}).join("");
+      host.innerHTML = `<div class="table-wrap performance-table"><table><thead><tr>${{headers.map((header) => `<th>${{header}}</th>`).join("")}}</tr></thead><tbody>${{rows}}</tbody></table></div>`;
+    }}
+    function selectedFundAnalysisPositions() {{
+      const grouped = new Map();
+      performanceRows().forEach((row) => {{
+        const name = String(row.name || "미분류");
+        const key = `${{normalizeQuoteCode(row.code)}}|${{name}}`;
+        const item = grouped.get(key) || {{
+          name,
+          code:normalizeQuoteCode(row.code),
+          market:row.market || "미분류",
+          sectorLarge:row.sectorLargeName || "미분류",
+          sectorMid:row.sectorMidName || "미분류",
+          exp:0,
+          cost:0,
+          profit:0,
+        }};
+        const sign = Number(row.sign || 1);
+        item.exp += Number(row.netExp || 0);
+        item.cost += Math.abs(Number(row.cost || 0));
+        item.profit += Number(row.profit || 0) * sign;
+        grouped.set(key, item);
+      }});
+      return [...grouped.values()];
+    }}
+    function fundAnalysisPayload(section) {{
+      const startDate = section?.querySelector("[data-fund-history-start]")?.value || fundReturnHistoryStart || "2026-01-02";
+      const endDate = section?.querySelector("[data-fund-history-end]")?.value || fundReturnHistoryEnd || "";
+      const allFundTrades = tradeHistory
+        .filter((row) => normalizeQuoteCode(row.fundCode) === normalizeQuoteCode(currentKey));
+      const tradeDates = allFundTrades.map((row) => row.date).filter(Boolean).sort();
+      const groupedTrades = new Map();
+      allFundTrades
+        .filter((row) => (!startDate || row.date >= startDate) && (!endDate || row.date <= endDate))
+        .forEach((row) => {{
+          const key = [row.name, row.side, row.sector, row.sectorLarge].map((value) => String(value || "")).join("|");
+          const item = groupedTrades.get(key) || {{
+            date:endDate,
+            name:row.name,
+            sector:row.sector,
+            sectorLarge:row.sectorLarge,
+            side:row.side,
+            amount:0,
+          }};
+          item.amount += Number(row.amount || 0);
+          groupedTrades.set(key, item);
+        }});
+      return {{
+        fundName:selectedPerformanceFundLabel(),
+        fundCode:currentKey,
+        startDate,
+        endDate,
+        benchmark:fundReturnBenchmark,
+        investment:Number(currentFundBasis().investment || 0),
+        positions:selectedFundAnalysisPositions(),
+        tradeDataStart:tradeDates[0] || null,
+        tradeDataEnd:tradeDates[tradeDates.length - 1] || null,
+        trades:[...groupedTrades.values()],
+      }};
+    }}
+    function fundAnalysisScope(payload) {{
+      return [payload.fundCode, payload.benchmark, payload.startDate, payload.endDate].join("|");
+    }}
+    function fundAnalysisParts(value) {{
+      const raw = String(value || "").trim();
+      const labels = ["성과 요약", "운용 스타일", "포트폴리오 변화", "성과 기여"];
+      const markers = labels
+        .map((title) => ({{ title, marker:`[${{title}}]`, index:raw.indexOf(`[${{title}}]`) }}))
+        .filter((item) => item.index >= 0)
+        .sort((left, right) => left.index - right.index);
+      const parts = markers.map((item, index) => ({{
+        title:item.title,
+        text:raw.slice(item.index + item.marker.length, markers[index + 1]?.index ?? raw.length).trim(),
+      }}));
+      return parts.length ? parts : [{{ title:"분석 결과", text:raw || "분석 결과가 없습니다." }}];
+    }}
+    function renderFundAnalysis(element, value) {{
+      element.innerHTML = fundAnalysisParts(value).map((part) =>
+        `<section class="fund-analysis-section"><h5>${{escHtml(part.title)}}</h5><p>${{performanceAnalysisHtml(part.text)}}</p></section>`
+      ).join("");
+    }}
+    function resetFundAnalysisPanel(section, scope) {{
+      const output = section?.querySelector("[data-fund-analysis-output]");
+      const status = section?.querySelector("[data-fund-analysis-status]");
+      if (!output || output.dataset.analysisScope === scope) return;
+      output.dataset.analysisScope = "";
+      output.dataset.analysisLoadingScope = "";
+      output.innerHTML = '<div class="fund-analysis-placeholder">성과지표와 포트폴리오 자료를 계산해 핵심 내용을 정리합니다.</div>';
+      if (status) status.textContent = "산출 엔진";
+    }}
+    async function runFundAnalysis() {{
+      const section = dashboard.querySelector("[data-fund-history]");
+      const output = section?.querySelector("[data-fund-analysis-output]");
+      const status = section?.querySelector("[data-fund-analysis-status]");
+      if (!section || !output || currentKey === "ALL") return;
+      const payload = fundAnalysisPayload(section);
+      const scope = fundAnalysisScope(payload);
+      if (output.dataset.analysisScope === scope || output.dataset.analysisLoadingScope === scope) return;
+      if (!payload.endDate) {{
+        output.innerHTML = '<div class="fund-analysis-error">분석 종료일을 확인해 주세요.</div>';
+        return;
+      }}
+      const requestId = ++fundAnalysisRequest;
+      output.dataset.analysisLoadingScope = scope;
+      if (status) status.textContent = "산출 중";
+      output.innerHTML = '<div class="fund-analysis-loading">선택 기간의 성과와 포트폴리오 변화를 계산하고 있습니다.</div>';
+      try {{
+        let result;
+        if (["127.0.0.1", "localhost"].includes(window.location.hostname)) {{
+          const response = await fetch("/api/fund-analysis", {{
+            method:"POST",
+            headers:{{ "Content-Type":"application/json" }},
+            body:JSON.stringify(payload),
+          }});
+          result = await response.json().catch(() => ({{}}));
+          if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
+        }} else {{
+          const client = await getStockSupabaseClient();
+          const response = await client.functions.invoke("stock-performance-analysis", {{
+            body:{{ action:"fund-analysis", ...payload }},
+          }});
+          if (response.error) {{
+            const detail = await response.error.context?.json?.().catch(() => null);
+            throw new Error(detail?.error || detail?.message || response.error.message);
+          }}
+          result = response.data || {{}};
+          if (result.error) throw new Error(result.error);
+        }}
+        if (requestId !== fundAnalysisRequest || fundAnalysisScope(fundAnalysisPayload(section)) !== scope) return;
+        renderFundAnalysis(output, result.analysis);
+        output.dataset.analysisScope = scope;
+        const model = String(result.model || "Python 엔진");
+        const generatedAt = performanceAnalysisTime(result.generatedAt || Date.now());
+        if (status) status.textContent = `${{model}} · ${{generatedAt}}`;
+      }} catch (error) {{
+        if (requestId !== fundAnalysisRequest) return;
+        output.innerHTML = `<div class="fund-analysis-error">펀드 분석을 불러오지 못했습니다. ${{escHtml(error.message || String(error))}}</div>`;
+        if (status) status.textContent = "분석 실패";
+      }} finally {{
+        if (output.dataset.analysisLoadingScope === scope) output.dataset.analysisLoadingScope = "";
+      }}
+    }}
+    async function drawFundHistoryChart(host, models) {{
+      const Plotly = await ensurePlotlyLibrary();
+      const traces = models.map((model) => {{
+        const base = model.series[0]?.value;
+        return {{
+          type:"scatter",
+          mode:"lines",
+          name:model.name,
+          x:model.series.map((row) => row.date),
+          y:model.series.map((row) => (row.value / base - 1) * 100),
+          line:{{ color:model.color, width:model.width }},
+          hovertemplate:`<b>${{model.name}}</b><br>%{{x|%Y-%m-%d}}<br>누적수익률 %{{y:.2f}}%<extra></extra>`,
+        }};
+      }});
+      const annotations = traces.map((trace) => ({{
+        x:trace.x.at(-1), y:trace.y.at(-1), xref:"x", yref:"y", xanchor:"left", xshift:7,
+        text:`${{trace.name}} ${{trace.y.at(-1).toFixed(2)}}%`, showarrow:false,
+        font:{{ color:trace.line.color, size:10 }}, bgcolor:"rgba(255,255,255,.9)", bordercolor:trace.line.color, borderwidth:1, borderpad:2,
+      }}));
+      await Plotly.react(host, traces, {{
+        margin:{{ l:52, r:125, t:12, b:54 }},
+        paper_bgcolor:"#ffffff", plot_bgcolor:"#fbfcfd",
+        hovermode:"x unified", annotations,
+        legend:{{ orientation:"h", x:.5, xanchor:"center", y:-.16, yanchor:"top" }},
+        xaxis:{{ gridcolor:"#e2e8e6", linecolor:"#9fb5af", fixedrange:false }},
+        yaxis:{{ ticksuffix:"%", gridcolor:"#e2e8e6", zerolinecolor:"#9fb5af", fixedrange:false }},
+        font:{{ family:"Arial, 'Malgun Gothic', sans-serif", size:11, color:"#173a34" }},
+      }}, {{ responsive:true, displaylogo:false, modeBarButtonsToRemove:["lasso2d", "select2d"] }});
+    }}
+    async function renderFundReturnHistory() {{
+      const section = dashboard.querySelector("[data-fund-history]");
+      if (!section) return;
+      if (currentKey === "ALL") {{
+        section.hidden = true;
+        fundReturnHistoryRequest += 1;
+        fundAnalysisRequest += 1;
+        return;
+      }}
+      section.hidden = false;
+      const fundName = selectedPerformanceFundLabel();
+      const chartHost = section.querySelector("[data-fund-history-chart]");
+      const metricsHost = section.querySelector("[data-fund-history-metrics]");
+      const rangeHost = section.querySelector("[data-fund-history-range]");
+      const statusHost = section.querySelector("[data-fund-history-status]");
+      const evaluationHost = section.querySelector("[data-fund-evaluation-chart]");
+      const evaluationScoresHost = section.querySelector("[data-fund-evaluation-scores]");
+      const evaluationNotesHost = section.querySelector("[data-fund-evaluation-notes]");
+      const evaluationStatusHost = section.querySelector("[data-fund-evaluation-status]");
+      const startInput = section.querySelector("[data-fund-history-start]");
+      const endInput = section.querySelector("[data-fund-history-end]");
+      const benchmarkToggle = section.querySelector("[data-fund-history-benchmark-toggle]");
+      section.querySelectorAll("[data-fund-history-benchmark]").forEach((button) => {{
+        button.classList.toggle("active", fundReturnBenchmarkVisible && button.dataset.fundHistoryBenchmark === fundReturnBenchmark);
+      }});
+      section.querySelectorAll("[data-fund-history-preset]").forEach((button) => {{
+        button.classList.toggle("active", button.dataset.fundHistoryPreset === fundReturnHistoryPreset);
+      }});
+      if (benchmarkToggle) {{
+        benchmarkToggle.textContent = fundReturnBenchmarkVisible ? "BM 숨기기" : "BM 보기";
+        benchmarkToggle.classList.toggle("benchmark-hidden", !fundReturnBenchmarkVisible);
+      }}
+      const requestId = ++fundReturnHistoryRequest;
+      if (!chartHost.querySelector(".plot-container")) chartHost.innerHTML = '<div class="fund-history-loading">기준가 데이터를 불러오는 중입니다.</div>';
+      try {{
+        let payload = fundReturnHistoryCache.get(fundName);
+        if (!payload) {{
+          let pending = fundReturnHistoryPending.get(fundName);
+          if (!pending) {{
+            pending = (["127.0.0.1", "localhost"].includes(window.location.hostname)
+              ? fetch(`/api/fund-return-series?fund=${{encodeURIComponent(fundName)}}`, {{ cache:"no-store" }})
+                .then(async (response) => {{
+                  const result = await response.json().catch(() => ({{}}));
+                  if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
+                  return result;
+                }})
+              : getStockSupabaseClient().then(async (client) => {{
+                  const response = await client.functions.invoke("stock-performance-analysis", {{
+                    body:{{ action:"fund-return-series", fundName }},
+                  }});
+                  if (response.error) {{
+                    const detail = await response.error.context?.json?.().catch(() => null);
+                    throw new Error(detail?.error || detail?.message || response.error.message);
+                  }}
+                  if (response.data?.error) throw new Error(response.data.error);
+                  return response.data;
+                }}))
+              .finally(() => fundReturnHistoryPending.delete(fundName));
+            fundReturnHistoryPending.set(fundName, pending);
+          }}
+          payload = await pending;
+          fundReturnHistoryCache.set(fundName, payload);
+        }}
+        if (requestId !== fundReturnHistoryRequest || currentKey === "ALL" || selectedPerformanceFundLabel() !== fundName) return;
+        const minimumDate = payload.dateMin || "";
+        const maximumDate = payload.dateMax || "";
+        const requestedEnd = fundReturnHistoryEnd || maximumDate;
+        const end = maximumDate && requestedEnd > maximumDate ? maximumDate : requestedEnd;
+        const requestedStart = fundReturnHistoryPreset
+          ? fundHistoryPresetStart(fundReturnHistoryPreset, end)
+          : (fundReturnHistoryStart || "2026-01-02");
+        const start = minimumDate && requestedStart < minimumDate ? minimumDate : requestedStart;
+        if (start && end && start > end) throw new Error("시작일은 종료일보다 늦을 수 없습니다.");
+        if (startInput) {{ startInput.min = minimumDate; startInput.max = maximumDate; startInput.value = start; }}
+        if (endInput) {{ endInput.min = minimumDate; endInput.max = maximumDate; endInput.value = end; }}
+        resetFundAnalysisPanel(section, fundAnalysisScope({{ fundCode:currentKey, benchmark:fundReturnBenchmark, startDate:start, endDate:end }}));
+        void runFundAnalysis();
+        const renderKey = `${{fundName}}:${{fundReturnBenchmark}}:${{fundReturnBenchmarkVisible ? "show" : "hide"}}:${{start}}:${{end}}`;
+        if (chartHost.dataset.historyKey === renderKey && chartHost.querySelector(".plot-container")) return;
+        const evaluationModels = fundHistoryWindowModels(fundHistoryModels(payload, true), start, end);
+        const models = fundReturnBenchmarkVisible
+          ? evaluationModels
+          : evaluationModels.filter((model) => model.key === "fund");
+        if (!models.length) throw new Error("표시할 기준가 관측치가 없습니다.");
+        if (rangeHost) rangeHost.textContent = `${{start}} ~ ${{end}}`;
+        const observationCount = models[0]?.series.length || 0;
+        if (statusHost) statusHost.textContent = `${{observationCount.toLocaleString("ko-KR")}}개 관측치`;
+        renderFundHistoryMetrics(metricsHost, models, end);
+        fundReturnChartDraw = fundReturnChartDraw.catch(() => undefined).then(async () => {{
+          if (requestId !== fundReturnHistoryRequest || currentKey === "ALL" || selectedPerformanceFundLabel() !== fundName) return;
+          chartHost.querySelectorAll(".fund-history-loading").forEach((node) => node.remove());
+          await drawFundHistoryChart(chartHost, models);
+          await drawFundEvaluation(evaluationHost, evaluationScoresHost, evaluationNotesHost, evaluationStatusHost, evaluationModels, start, end);
+          chartHost.querySelectorAll(".fund-history-loading").forEach((node) => node.remove());
+          if (requestId === fundReturnHistoryRequest) chartHost.dataset.historyKey = renderKey;
+        }});
+        await fundReturnChartDraw;
+      }} catch (error) {{
+        if (requestId !== fundReturnHistoryRequest) return;
+        chartHost.innerHTML = `<div class="fund-history-error">${{escHtml(error.message || String(error))}}</div>`;
+        metricsHost.innerHTML = "";
+        if (evaluationHost) evaluationHost.innerHTML = "";
+        if (evaluationScoresHost) evaluationScoresHost.innerHTML = "";
+        if (evaluationNotesHost) evaluationNotesHost.innerHTML = "";
+        if (evaluationStatusHost) evaluationStatusHost.textContent = "평가 실패";
+        if (statusHost) statusHost.textContent = "조회 실패";
       }}
     }}
     let xlsxLibraryPromise = null;
@@ -4952,6 +5577,30 @@ def build_dashboard(
         renderPerformanceAnalysis();
         bindSortableTables();
       }}
+      const historyBenchmark = event.target.closest("[data-fund-history-benchmark]");
+      if (historyBenchmark) {{
+        fundReturnBenchmark = historyBenchmark.dataset.fundHistoryBenchmark === "kosdaq" ? "kosdaq" : "kospi";
+        fundReturnBenchmarkVisible = true;
+        renderFundReturnHistory();
+      }}
+      if (event.target.closest("[data-fund-history-benchmark-toggle]")) {{
+        fundReturnBenchmarkVisible = !fundReturnBenchmarkVisible;
+        renderFundReturnHistory();
+      }}
+      const historyPreset = event.target.closest("[data-fund-history-preset]");
+      if (historyPreset) {{
+        const section = dashboard.querySelector("[data-fund-history]");
+        fundReturnHistoryPreset = historyPreset.dataset.fundHistoryPreset || "";
+        fundReturnHistoryEnd = section?.querySelector("[data-fund-history-end]")?.value || fundReturnHistoryEnd;
+        renderFundReturnHistory();
+      }}
+      if (event.target.closest("[data-fund-history-apply]")) {{
+        const section = dashboard.querySelector("[data-fund-history]");
+        fundReturnHistoryPreset = "";
+        fundReturnHistoryStart = section?.querySelector("[data-fund-history-start]")?.value || "2026-01-02";
+        fundReturnHistoryEnd = section?.querySelector("[data-fund-history-end]")?.value || "";
+        renderFundReturnHistory();
+      }}
       const tradeFilter = event.target.closest("[data-trade-filter]");
       if (tradeFilter) {{
         tradeSearch = tradeFilter.dataset.tradeFilter || "";
@@ -5041,10 +5690,10 @@ def _extract_json_const(script: str, name: str, next_name: str | None) -> object
 
 def extract_dashboard_data(html_path: Path, data_dir: Path = DATA_DIR) -> dict[str, object]:
     html_text = html_path.read_text(encoding="utf-8")
-    match = re.search(r"<script>\s*(.*?)\s*</script>", html_text, re.S)
-    if not match:
+    scripts = re.findall(r"<script>\s*(.*?)\s*</script>", html_text, re.S)
+    script = next((value for value in scripts if re.search(r"(?:^|\n)\s*(?:const|let) views = ", value)), "")
+    if not script:
         raise RuntimeError("대시보드 스크립트를 찾지 못했습니다.")
-    script = match.group(1)
     data = {
         "views": _extract_json_const(script, "views", "funds"),
         "funds": _extract_json_const(script, "funds", "snapshotDates"),

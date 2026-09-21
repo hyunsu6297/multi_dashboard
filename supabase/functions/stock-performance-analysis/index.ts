@@ -25,6 +25,224 @@ const number = (value: unknown) => {
 const rounded = (value: number | null) => value == null || !Number.isFinite(value)
   ? null
   : Number(value.toFixed(3));
+
+const FUND_RETURN_CODE_BY_NAME: Record<string, string> = {
+  "밸류알레그로": "KRZ502611211", "밸류프레스토": "KRZ502630622",
+  "웰컴하이일드1호": "KRZ502619770", "웰컴공모주2호": "KRZ502593210",
+  "이지스드래곤4호": "KRZ502620720", "코람코하이일드45호": "KRZ502628640",
+  "보고빌드업": "KRZ502578863", "현대인베1호": "KRZ502627860",
+  "DB알파3호": "KRZ502609750", "브이엠하이일드": "KRZ502493854",
+  "W1000": "KRZ502327923", "안다블루칩": "KRZ502363413",
+  "VIP올인원": "KRZ502274243", "보고VOYAGE": "KRZ502575043",
+  "블래쉬2호": "KRZ502671172", "타임폴리오EH": "KRZ502421551",
+  "DB하이일드3호": "KRZ502641190", "빌리언폴드LS": "KRZ502501108",
+};
+
+const payloadNumber = (payload: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = Number(payload[key]);
+    if (payload[key] != null && payload[key] !== "" && Number.isFinite(value)) return value;
+  }
+  return null;
+};
+
+async function loadFundReturnSeries(admin: any, fundName: string) {
+  const name = String(fundName || "").trim();
+  const code = FUND_RETURN_CODE_BY_NAME[name];
+  if (!code) throw new Error(`${name}의 기준가 매핑이 없습니다.`);
+  const sourceRows: any[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await admin.from("manual_file_rows")
+      .select("row_no,payload")
+      .eq("domain", "eq.fund")
+      .eq("file_key", "eq.fund_nav")
+      .filter("payload->>예탁원펀드코드", "eq", code)
+      .order("row_no", { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw error;
+    sourceRows.push(...(data || []));
+    if ((data || []).length < 1000) break;
+  }
+  const manualDates = sourceRows.map((item) => String(item?.payload?.trade_day || item?.payload?.기준일 || ""))
+    .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
+  const manualLatest = manualDates.sort().at(-1) || "";
+  const { data: snapshots, error: snapshotError } = await admin.from("kfr_source_snapshots")
+    .select("id,business_date,downloaded_at")
+    .eq("source_key", "eq.fund_prices")
+    .eq("source_format", "eq.kfr_partner_api_json")
+    .order("business_date", { ascending: true })
+    .order("downloaded_at", { ascending: true });
+  if (snapshotError) throw snapshotError;
+  const snapshotByDate = new Map<string, number>();
+  for (const row of snapshots || []) snapshotByDate.set(String(row.business_date || ""), Number(row.id));
+  const snapshotIds = [...snapshotByDate.entries()]
+    .filter(([businessDate]) => !manualLatest || businessDate > manualLatest)
+    .map(([, id]) => id);
+  for (let start = 0; start < snapshotIds.length; start += 40) {
+    const { data, error } = await admin.from("kfr_source_rows")
+      .select("snapshot_id,row_no,payload")
+      .in("snapshot_id", snapshotIds.slice(start, start + 40))
+      .filter("payload->>fund_ksd_code", "eq", code)
+      .order("snapshot_id", { ascending: true })
+      .order("row_no", { ascending: true });
+    if (error) throw error;
+    sourceRows.push(...(data || []));
+  }
+  const byDate = new Map<string, Record<string, unknown>>();
+  for (const item of sourceRows) {
+    const payload = item?.payload && typeof item.payload === "object" ? item.payload as Record<string, unknown> : {};
+    const tradeDate = String(payload.trade_day || payload["기준일"] || "").slice(0, 10);
+    const cumulativeReturn = payloadNumber(payload, "cul_ret", "누적수익률");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tradeDate) || cumulativeReturn == null) continue;
+    byDate.set(tradeDate, {
+      date: tradeDate,
+      fund: 1000 + cumulativeReturn * 10,
+      kospi: payloadNumber(payload, "kospi", "KOSPI"),
+      kosdaq: payloadNumber(payload, "kosdaq", "KOSDAQ"),
+    });
+  }
+  const rows = [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (rows.length < 2) throw new Error(`${name}의 기준가 관측치가 부족합니다.`);
+  return { fund: { name, code }, dateMin: rows[0].date, dateMax: rows.at(-1)?.date, rows };
+}
+
+const fundStats = (rows: any[], key: string) => {
+  const series = rows.map((row) => [String(row.date || ""), number(row[key])] as [string, number]).filter((row) => row[1] > 0);
+  if (series.length < 2) return {} as Record<string, any>;
+  const daily = series.slice(1).map((row, index) => row[1] / series[index][1] - 1);
+  const periodReturn = series.at(-1)![1] / series[0][1] - 1;
+  const average = daily.reduce((sum, value) => sum + value, 0) / daily.length;
+  const variance = daily.reduce((sum, value) => sum + (value - average) ** 2, 0) / Math.max(1, daily.length - 1);
+  const volatility = Math.sqrt(variance) * Math.sqrt(252);
+  const annualReturn = periodReturn > -1 ? (1 + periodReturn) ** (252 / daily.length) - 1 : -1;
+  let peak = series[0][1], mdd = 0;
+  for (const [, value] of series) { peak = Math.max(peak, value); mdd = Math.min(mdd, value / peak - 1); }
+  return {
+    observations: series.length, periodReturnPct: rounded(periodReturn * 100),
+    annualReturnPct: rounded(annualReturn * 100), annualVolatilityPct: rounded(volatility * 100),
+    sharpe: rounded(volatility ? annualReturn / volatility : null), mddPct: rounded(mdd * 100), dailyReturns: daily,
+  };
+};
+
+const fundMonths = (rows: any[], key: string) => {
+  const grouped = new Map<string, number[]>();
+  for (const row of rows) {
+    const value = number(row[key]), month = String(row.date || "").slice(0, 7);
+    if (value <= 0 || month.length !== 7) continue;
+    if (!grouped.has(month)) grouped.set(month, []);
+    grouped.get(month)!.push(value);
+  }
+  return [...grouped.entries()].filter(([, values]) => values.length > 1 && values[0])
+    .map(([month, values]) => ({ month, returnPct: rounded((values.at(-1)! / values[0] - 1) * 100) }));
+};
+
+const analysisValue = (value: unknown, suffix = "", showSign = false) => {
+  const numeric = number(value);
+  return `${showSign && numeric > 0 ? "+" : ""}${numeric.toFixed(2)}${suffix}`;
+};
+
+function buildFundAnalysis(data: Record<string, any>, seriesPayload: any) {
+  const fundName = String(data.fundName || "").trim();
+  const startDate = String(data.startDate || ""), endDate = String(data.endDate || "");
+  const benchmarkKey = String(data.benchmark || "").toLowerCase() === "kosdaq" ? "kosdaq" : "kospi";
+  const benchmarkName = benchmarkKey === "kosdaq" ? "KOSDAQ" : "KOSPI";
+  const rows = (seriesPayload.rows || []).filter((row: any) => row.date >= startDate && row.date <= endDate && number(row.fund) > 0 && number(row[benchmarkKey]) > 0);
+  if (rows.length < 2) throw new Error("선택 기간의 펀드·BM 기준가 관측치가 부족합니다.");
+  const fund = fundStats(rows, "fund"), benchmark = fundStats(rows, benchmarkKey);
+  const fundDaily = fund.dailyReturns || [], benchmarkDaily = benchmark.dailyReturns || [];
+  const pairCount = Math.min(fundDaily.length, benchmarkDaily.length);
+  let beta: number | null = null;
+  if (pairCount > 1) {
+    const f = fundDaily.slice(-pairCount), b = benchmarkDaily.slice(-pairCount);
+    const fm = f.reduce((sum: number, value: number) => sum + value, 0) / pairCount;
+    const bm = b.reduce((sum: number, value: number) => sum + value, 0) / pairCount;
+    const covariance = f.reduce((sum: number, value: number, index: number) => sum + (value - fm) * (b[index] - bm), 0) / (pairCount - 1);
+    const variance = b.reduce((sum: number, value: number) => sum + (value - bm) ** 2, 0) / (pairCount - 1);
+    beta = variance ? covariance / variance : null;
+  }
+  const relative = number(fund.periodReturnPct) - number(benchmark.periodReturnPct);
+  const months = fundMonths(rows, "fund");
+  const best = [...months].sort((a, b) => number(b.returnPct) - number(a.returnPct)).slice(0, 2);
+  const worst = [...months].sort((a, b) => number(a.returnPct) - number(b.returnPct)).slice(0, 2);
+  const performanceLines = [
+    `펀드 기간수익률은 **${analysisValue(fund.periodReturnPct, "%", true)}**로, ${benchmarkName} 수익률 ${analysisValue(benchmark.periodReturnPct, "%", true)} 대비 **${analysisValue(relative, "%p", true)} ${relative > 0 ? "상회" : relative < 0 ? "하회" : "동일"}**했습니다.`,
+  ];
+  const monthParts: string[] = [];
+  if (best.length) monthParts.push("강세 구간은 " + best.map((row) => `**${row.month}(${analysisValue(row.returnPct, "%", true)})**`).join(", "));
+  if (worst.length) monthParts.push("약세 구간은 " + worst.map((row) => `**${row.month}(${analysisValue(row.returnPct, "%", true)})**`).join(", "));
+  if (monthParts.length) performanceLines.push(monthParts.join("이며, ") + "입니다.");
+  performanceLines.push(`연환산 변동성은 ${analysisValue(fund.annualVolatilityPct, "%")}이고 Sharpe는 ${analysisValue(fund.sharpe)}, 최대낙폭은 ${analysisValue(fund.mddPct, "%")}입니다.`);
+
+  const positions = Array.isArray(data.positions) ? data.positions.slice(0, 3000) : [];
+  const gross = positions.reduce((sum: number, row: any) => sum + Math.abs(number(row.exp)), 0);
+  const marketValues = new Map<string, number>(), sectorValues = new Map<string, number>();
+  const stockValues: Array<[string, number]> = [];
+  for (const row of positions) {
+    const value = Math.abs(number(row.exp)), market = String(row.market || "미분류");
+    const sector = String(row.sectorMid || row.sectorLarge || "미분류");
+    marketValues.set(market, (marketValues.get(market) || 0) + value);
+    sectorValues.set(sector, (sectorValues.get(sector) || 0) + value);
+    stockValues.push([String(row.name || "미분류"), value]);
+  }
+  const weighted = (source: Map<string, number>) => [...source.entries()].sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, weightPct: gross ? value / gross * 100 : 0 }));
+  const sortedStocks = [...stockValues].sort((a, b) => b[1] - a[1]);
+  const hhi = stockValues.reduce((sum, row) => sum + (gross ? row[1] / gross : 0) ** 2, 0);
+  const marketText = weighted(marketValues).slice(0, 2).map((row) => `**${row.name}** ${analysisValue(row.weightPct, "%")}`).join(", ") || "시장 정보 부족";
+  const sectorText = weighted(sectorValues).slice(0, 3).map((row) => `**${row.name}** ${analysisValue(row.weightPct, "%")}`).join(", ") || "섹터 정보 부족";
+  const investment = Math.abs(number(data.investment));
+  const trades = Array.isArray(data.trades) ? data.trades.filter((row: any) => row.date >= startDate && row.date <= endDate).slice(0, 10000) : [];
+  const grossTrades = trades.reduce((sum: number, row: any) => sum + Math.abs(number(row.amount)), 0);
+  const turnover = investment ? grossTrades / (2 * investment) * Math.min(4, 252 / Math.max(1, rows.length - 1)) * 100 : null;
+  const volatilityRatio = number(benchmark.annualVolatilityPct) ? number(fund.annualVolatilityPct) / number(benchmark.annualVolatilityPct) : null;
+  const profile = beta != null && volatilityRatio != null ? (beta >= 1.10 || volatilityRatio >= 1.10 ? "공격적" : beta <= 0.90 && volatilityRatio <= 0.90 ? "방어적" : "중립적") : "판단 유보";
+  const styleLines = [
+    `시장 비중은 ${marketText}이며, 주요 섹터는 ${sectorText}입니다.`,
+    `상위 1개 종목 비중은 ${analysisValue(gross && sortedStocks.length ? sortedStocks[0][1] / gross * 100 : 0, "%")}, 상위 5개는 ${analysisValue(gross ? sortedStocks.slice(0, 5).reduce((sum, row) => sum + row[1], 0) / gross * 100 : 0, "%")}이고 실질 분산 종목 수는 ${hhi ? (1 / hhi).toFixed(1) : "0.0"}개입니다.`,
+    `연환산 추정 회전율은 ${analysisValue(turnover, "%")}, 베타는 ${analysisValue(beta)}, 변동성비율은 ${analysisValue(volatilityRatio)}으로 **${profile} 성향**입니다.`,
+  ];
+
+  const currentNames = new Set(positions.filter((row: any) => Math.abs(number(row.exp)) > 0).map((row: any) => String(row.name || "")));
+  const tradeByName = new Map<string, { buy: number; sell: number }>();
+  for (const row of trades) {
+    const name = String(row.name || "미분류"), item = tradeByName.get(name) || { buy: 0, sell: 0 };
+    if (String(row.side || "") === "매도") item.sell += Math.abs(number(row.amount)); else item.buy += Math.abs(number(row.amount));
+    tradeByName.set(name, item);
+  }
+  const changes = [...tradeByName.entries()].map(([name, item]) => ({ name, netEok: (item.buy - item.sell) / 100_000_000, currentlyHeld: currentNames.has(name) }));
+  const netBuys = changes.filter((row) => row.netEok > 0).sort((a, b) => b.netEok - a.netEok).slice(0, 5);
+  const netSells = changes.filter((row) => row.netEok < 0).sort((a, b) => a.netEok - b.netEok).slice(0, 5);
+  const named = (values: any[]) => values.slice(0, 3).map((row) => `**${row.name}** ${analysisValue(row.netEok, "억원", true)}`).join(", ");
+  const changeLines: string[] = [];
+  if (netBuys.length) changeLines.push(`주요 순매수는 ${named(netBuys)}입니다.`);
+  if (netSells.length) changeLines.push(`주요 순매도는 ${named(netSells)}입니다.`);
+  const entrants = netBuys.filter((row) => row.currentlyHeld).slice(0, 3);
+  const exits = netSells.filter((row) => !row.currentlyHeld).slice(0, 3);
+  const candidates: string[] = [];
+  if (entrants.length) candidates.push("신규 편입 후보는 " + entrants.map((row) => `**${row.name}**`).join(", "));
+  if (exits.length) candidates.push("전량 매도 후보는 " + exits.map((row) => `**${row.name}**`).join(", "));
+  if (candidates.length) changeLines.push(candidates.join("이며, ") + "입니다.");
+  const tradeStart = String(data.tradeDataStart || ""), tradeEnd = String(data.tradeDataEnd || "");
+  if (tradeStart && tradeStart > startDate) changeLines.push(`가용 매매 데이터가 **${tradeStart}~${tradeEnd}**로 제한되어 이전 변화는 포함되지 않았습니다.`);
+  if (!changeLines.length) changeLines.push("선택 기간에 확인 가능한 주요 매매 변화가 없습니다.");
+
+  const contributions = positions.map((row: any) => {
+    const cost = Math.abs(number(row.cost)), profit = number(row.profit);
+    return { name: String(row.name || "미분류"), profitEok: profit / 100_000_000, returnPct: cost ? profit / cost * 100 : 0 };
+  });
+  const contributors = contributions.filter((row: any) => row.profitEok > 0).sort((a: any, b: any) => b.profitEok - a.profitEok).slice(0, 3);
+  const detractors = contributions.filter((row: any) => row.profitEok < 0).sort((a: any, b: any) => a.profitEok - b.profitEok).slice(0, 3);
+  const contributionLines: string[] = [];
+  for (const [label, values] of [["성과 기여 상위", contributors], ["성과 훼손 상위", detractors]] as const) {
+    if (values.length) contributionLines.push(`${label} 종목은 ` + values.map((row: any) => `**${row.name}** ${analysisValue(row.returnPct, "%", true)}, ${analysisValue(row.profitEok, "억원", true)}`).join(", ") + "입니다.");
+  }
+  contributionLines.push("기여도는 현재 보유 포지션의 누적 평가손익 기준이며 선택 기간의 정밀 성과귀속은 아닙니다.");
+  return [
+    "[성과 요약]\n" + performanceLines.join(" "),
+    "[운용 스타일]\n" + styleLines.join(" "),
+    "[포트폴리오 변화]\n" + changeLines.join(" "),
+    "[성과 기여]\n" + contributionLines.join(" "),
+  ].join("\n\n");
+}
 const assessment = (value: number | null) => {
   if (value == null) return "비교 불가";
   const size = Math.abs(value) < 0.20 ? "소폭" : Math.abs(value) < 0.50 ? "다소" : "큰 폭";
@@ -286,7 +504,6 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "로그인 세션이 유효하지 않습니다." }, 401);
     const data = await req.json();
     const source = data && typeof data === "object" ? data as Record<string, unknown> : {};
-    const { asOfDate, selectedFund } = resultKey(source);
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     if (!serviceKey) throw new Error("Supabase service role key가 설정되지 않았습니다.");
@@ -302,6 +519,19 @@ Deno.serve(async (req) => {
     if (profile?.status !== "approved" || profile?.must_change_password) {
       return json({ error: "승인된 사용자만 AI 성과분석을 이용할 수 있습니다." }, 403);
     }
+    if (source.action === "fund-return-series") {
+      return json(await loadFundReturnSeries(admin, String(source.fundName || "")));
+    }
+    if (source.action === "fund-analysis") {
+      const series = await loadFundReturnSeries(admin, String(source.fundName || ""));
+      return json({
+        analysis: buildFundAnalysis(source, series),
+        model: "산출 엔진",
+        usage: {},
+        generatedAt: new Date().toISOString(),
+      });
+    }
+    const { asOfDate, selectedFund } = resultKey(source);
     if (source.action === "latest") {
       const { data: cached, error } = await admin
         .from("stock_performance_ai_results")

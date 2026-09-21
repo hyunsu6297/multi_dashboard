@@ -33,12 +33,13 @@ def main() -> None:
             shutil.rmtree(target)
         shutil.copytree(stock_data, target)
         print(f"copied stock data -> {target.relative_to(DIST)}")
-    stock_xlsx = ROOT / "apps" / "stock" / "xlsx.full.min.js"
-    if stock_xlsx.is_file():
-        target = DIST / "pages" / "stock" / stock_xlsx.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(stock_xlsx, target)
-        print(f"copied {stock_xlsx.name} -> {target.relative_to(DIST)}")
+    for stock_asset in ("xlsx.full.min.js", "plotly-2.35.2.min.js"):
+        source = ROOT / "apps" / "stock" / stock_asset
+        if source.is_file():
+            target = DIST / "pages" / "stock" / source.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            print(f"copied {source.name} -> {target.relative_to(DIST)}")
     global_script = ROOT / "apps" / "global" / "emp_dashboard_upgrade.js"
     if global_script.is_file():
         target = DIST / "pages" / "global" / "emp_dashboard_upgrade.js"
