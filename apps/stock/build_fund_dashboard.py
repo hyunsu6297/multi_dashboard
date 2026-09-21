@@ -2266,8 +2266,8 @@ def make_view(
           </div>
         </div>
       </section>
+      <div class="section-title performance-heading performance-subnav" data-performance-subnav hidden><div class="performance-heading-actions"><h3>성과분석</h3><button type="button" class="column-help-button" data-performance-main>성과분석메인</button><button type="button" class="column-help-button" data-performance-ai>AI 성과분석</button><button type="button" class="column-help-button" data-performance-snapshot-save>마감 저장</button><button type="button" class="column-help-button" data-performance-export>엑셀 저장</button><button type="button" class="column-help-button" data-performance-period-open>기간분석</button></div></div>
       <section class="tab-panel" data-panel="performance">
-        <div class="section-title performance-heading"><div class="performance-heading-actions"><h3>성과분석</h3><button type="button" class="column-help-button" data-performance-ai>AI 성과분석</button><button type="button" class="column-help-button" data-performance-snapshot-save>마감 저장</button><button type="button" class="column-help-button" data-performance-export>엑셀 저장</button><button type="button" class="column-help-button" data-performance-period-open>기간분석</button></div></div>
         <article class="panel performance-ai-panel" data-performance-ai-panel hidden><div class="panel-title"><h4 data-performance-ai-title>AI 성과분석</h4><span data-performance-ai-status></span></div><div class="performance-ai-output" data-performance-ai-output></div></article>
         <div class="performance-grid">
           <div class="performance-left-column">
@@ -2701,8 +2701,10 @@ def build_dashboard(
     .fund-history-loading,.fund-history-error {{ min-height:440px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; }}
     .fund-history-error {{ color:#b42318; }}
     .performance-heading {{ justify-content:flex-start; align-items:center; }}
+    .performance-subnav[hidden] {{ display:none; }}
     .performance-heading-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
     .performance-heading-actions h3 {{ margin-right:4px; }}
+    .performance-subnav .column-help-button.active {{ background:var(--hana); color:#fff; border-color:var(--hana); }}
     .period-presets {{ display:flex; align-items:center; gap:4px; margin-left:6px; }}
     .period-presets button {{ min-height:30px; padding:4px 9px; border:1px solid #a9c9c0; background:#fff; color:var(--hana); font-weight:800; cursor:pointer; }}
     .period-presets button:first-child {{ border-radius:5px 0 0 5px; }}
@@ -4893,7 +4895,7 @@ def build_dashboard(
     }}
     function initialTabFromLocation() {{
       const tab = new URLSearchParams(window.location.search).get("tab");
-      return ["summary", "performance", "holdings", "trades", "timeseries"].includes(tab) ? tab : "summary";
+      return ["summary", "performance", "period", "holdings", "trades", "timeseries"].includes(tab) ? tab : "summary";
     }}
     async function loadExternalDataIfNeeded() {{
       if (views && Object.keys(views).length) return;
@@ -5364,7 +5366,13 @@ def build_dashboard(
     function showTab(tab) {{
       activeTab = tab || "summary";
       dashboard.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === activeTab));
-      document.querySelectorAll(".quick-nav button").forEach((button) => button.classList.toggle("active", button.dataset.tab === activeTab));
+      document.querySelectorAll(".quick-nav button").forEach((button) => button.classList.toggle("active", button.dataset.tab === (activeTab === "period" ? "performance" : activeTab)));
+      const performanceSubnav = dashboard.querySelector("[data-performance-subnav]");
+      if (performanceSubnav) {{
+        performanceSubnav.hidden = !["performance", "period"].includes(activeTab);
+        performanceSubnav.querySelector("[data-performance-main]")?.classList.toggle("active", activeTab === "performance");
+        performanceSubnav.querySelector("[data-performance-period-open]")?.classList.toggle("active", activeTab === "period");
+      }}
       const snapshotButton = dashboard.querySelector("[data-performance-snapshot-save]");
       if (snapshotButton) snapshotButton.hidden = !["127.0.0.1", "localhost"].includes(window.location.hostname);
       if (activeTab === "summary") refreshQuotes(false);
@@ -5624,7 +5632,11 @@ def build_dashboard(
     }});
     dashboard.addEventListener("click", (event) => {{
       if (event.target.closest("[data-open-column-help]")) setColumnHelp(true);
-      if (event.target.closest("[data-performance-ai]")) requestPerformanceAnalysis();
+      if (event.target.closest("[data-performance-main]")) showTab("performance");
+      if (event.target.closest("[data-performance-ai]")) {{
+        if (activeTab === "period") showTab("performance");
+        requestPerformanceAnalysis();
+      }}
       if (event.target.closest("[data-performance-snapshot-save]")) savePerformanceSnapshot();
       if (event.target.closest("[data-performance-export]")) exportPerformanceWorkbook();
       if (event.target.closest("[data-performance-period-open]")) showTab("period");
