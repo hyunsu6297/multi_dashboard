@@ -166,9 +166,11 @@ jobs:
         with:
           version: latest
 
-      - name: Deploy stock performance AI function
+      - name: Deploy performance AI functions
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        run: supabase functions deploy stock-performance-analysis --project-ref "$SUPABASE_PROJECT_ID"
+        run: |
+          supabase functions deploy stock-performance-analysis --project-ref "$SUPABASE_PROJECT_ID"
+          supabase functions deploy mezzanine-performance-analysis --project-ref "$SUPABASE_PROJECT_ID"
 
       - name: Build bond dashboard
         run: python apps/bond/build_dashboard.py

@@ -5,7 +5,10 @@ import math
 import os
 import re
 import sys
+import urllib.request
+import urllib.parse
 import uuid
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +22,11 @@ if str(KFR_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(KFR_MODULE_DIR))
 from kfr_api import load_frame as load_kfr_frame  # noqa: E402
 
+STOCK_MODULE_DIR = REPO_ROOT / "apps" / "stock"
+if str(STOCK_MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(STOCK_MODULE_DIR))
+from build_fund_dashboard import build_benchmark_sector_weights, read_industry_map  # noqa: E402
+
 KFR_DATA_DIR = Path(os.getenv("KFR_JSON_DIR", str(REPO_ROOT / "data" / "kfr")))
 OUTPUT = ROOT / "메자닌_대시보드.html"
 ALIAS_FILE = ROOT / "instrument_aliases.csv"
@@ -26,6 +34,12 @@ ADDITIONS_FILE = ROOT / "instrument_additions.json"
 DELTA_HISTORY_FILE = ROOT / "delta_history.json"
 CORP_CODES_FILE = ROOT / "opendart_corp_codes.json"
 QUOTE_CANDIDATES = [ROOT / "kiwoom_quotes.json", ROOT.parent / "stock" / "kiwoom_quotes.json"]
+BENCHMARK_CACHE_FILES = {
+    "KOSPI": ROOT / "kospi_benchmark.json",
+    "KOSDAQ": ROOT / "kosdaq_benchmark.json",
+}
+FUND_NAV_FILE = Path(os.getenv("FUND_NAV_FILE", str(REPO_ROOT / "data" / "manual" / "fund_fund_nav.json")))
+DEFAULT_SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co"
 NAMESPACE = uuid.UUID("63ed6f6f-a40b-42da-bab7-835798a8f6be")
 ISSUER_NAME_ALIASES = {
     "티에스인베스트먼트": "TS인베스트먼트",
@@ -217,18 +231,78 @@ def database_deltas(
     return result
 
 
-def load_quotes() -> tuple[dict[str, dict], str]:
+def load_quotes() -> tuple[dict[str, dict], str, dict[str, float]]:
     for path in QUOTE_CANDIDATES:
         if not path.exists():
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             raw = payload.get("quotes") or payload.get("stocks") or payload
-            quotes = {code(k): v for k, v in raw.items() if isinstance(v, dict)}
-            return quotes, str(payload.get("updated_at") or payload.get("generated_at") or path.stat().st_mtime)
+            market_master = payload.get("market_master") or {}
+            quotes = {}
+            for raw_code, item in raw.items():
+                if not isinstance(item, dict):
+                    continue
+                normalized_code = code(raw_code)
+                master_item = market_master.get(raw_code) or market_master.get(normalized_code) or {}
+                quotes[normalized_code] = {
+                    **item,
+                    "market": clean(item.get("market")) or clean(master_item.get("market")),
+                }
+            index_returns = {}
+            for symbol, item in (payload.get("indices") or {}).items():
+                if not isinstance(item, dict):
+                    continue
+                value = finite_number(item.get("change_rate", item.get("changeRate")))
+                if value is not None:
+                    index_returns[str(symbol).upper()] = value / 100.0
+            return quotes, str(payload.get("updated_at") or payload.get("generated_at") or path.stat().st_mtime), index_returns
         except (OSError, ValueError):
             pass
-    return {}, "미연결"
+    return {}, "미연결", {}
+
+
+def load_stock_market_map(stock_codes: set[str]) -> dict[str, str]:
+    """Load KOSPI/KOSDAQ membership for the exchange/underlying company codes."""
+    secret = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not secret or not stock_codes:
+        return {}
+    base_url = os.getenv("SUPABASE_URL", DEFAULT_SUPABASE_URL).rstrip("/")
+    headers = {"apikey": secret}
+    if secret.count(".") == 2:
+        headers["Authorization"] = f"Bearer {secret}"
+    result: dict[str, str] = {}
+    normalized = sorted(value for value in stock_codes if re.fullmatch(r"\d{6}", value))
+    for start in range(0, len(normalized), 100):
+        batch = normalized[start:start + 100]
+        params = urllib.parse.urlencode({"select": "code,market", "code": f"in.({','.join(batch)})"}, safe=".,()")
+        request = urllib.request.Request(
+            f"{base_url}/rest/v1/stock_market_master?{params}", headers=headers
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                rows = json.loads(response.read())
+        except (OSError, ValueError):
+            continue
+        for row in rows:
+            market = clean(row.get("market"))
+            if market in {"코스피", "코스닥"}:
+                result[code(row.get("code"))] = market
+    return result
+
+
+def load_manual_fund_nav() -> pd.DataFrame:
+    """Load the long fund NAV history restored from Supabase manual_file_rows."""
+    if not FUND_NAV_FILE.is_file():
+        return pd.DataFrame()
+    try:
+        payload = json.loads(FUND_NAV_FILE.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return pd.DataFrame()
+    rows: list[dict] = []
+    for sheet in payload.get("sheets", []):
+        rows.extend(item for item in sheet.get("rows", []) if isinstance(item, dict))
+    return pd.DataFrame(rows)
 
 
 def quote_change(quotes: dict[str, dict], stock_code: str) -> float | None:
@@ -250,11 +324,116 @@ def records(df: pd.DataFrame) -> list[dict]:
     return json.loads(df.to_json(orient="records", force_ascii=False, date_format="iso"))
 
 
+def load_market_series(symbol: str, count: int = 800) -> list[dict]:
+    """Load a daily market-index close series, retaining the last successful response as a cache."""
+    normalized_symbol = symbol.upper()
+    cache_file = BENCHMARK_CACHE_FILES[normalized_symbol]
+    url = (
+        "https://fchart.stock.naver.com/sise.nhn?"
+        f"symbol={normalized_symbol}&timeframe=day&count={count}&requestType=0"
+    )
+    items: list[dict] = []
+    try:
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=12) as response:
+            content = response.read()
+        root = ET.fromstring(content.decode("euc-kr", errors="replace"))
+        for node in root.findall(".//item"):
+            parts = str(node.attrib.get("data") or "").split("|")
+            if len(parts) < 5:
+                continue
+            date_text = parts[0]
+            close = finite_number(parts[4])
+            if close is None or not re.fullmatch(r"\d{8}", date_text):
+                continue
+            items.append({"date": f"{date_text[:4]}-{date_text[4:6]}-{date_text[6:]}", "close": close})
+        if items:
+            cache_file.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+    except (OSError, ValueError, ET.ParseError):
+        try:
+            items = json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            items = []
+    items = sorted(items, key=lambda item: item["date"])
+    previous = None
+    cumulative_base = items[0]["close"] if items else None
+    for item in items:
+        item["dailyReturn"] = item["close"] / previous - 1 if previous else 0.0
+        item["cumulativeReturn"] = item["close"] / cumulative_base - 1 if cumulative_base else 0.0
+        previous = item["close"]
+    return items
+
+
+def build_fund_return_series(kfr_history: pd.DataFrame, funds: pd.DataFrame) -> list[dict]:
+    """Build actual fund-NAV return series from the KFR fund price history."""
+    required = {"기준일", "예탁원펀드코드", "일수익률"}
+    if kfr_history.empty or not required.issubset(kfr_history.columns):
+        return []
+    fund_meta = {
+        code(row.get("펀드코드")): {
+            "fund": clean(row.get("펀드명")),
+            "manager": clean(row.get("운용사")),
+        }
+        for _, row in funds.iterrows()
+    }
+
+    def fund_name_key(value: object) -> str:
+        text = clean(value).lower()
+        for token in ("mezzanine", "mezz", "메자닌", "일반사모투자신탁", "사모투자신탁", "전문투자자", "제", "호"):
+            text = text.replace(token, "")
+        return re.sub(r"[^0-9a-z가-힣]", "", text)
+
+    code_by_name_key = {
+        fund_name_key(row.get("펀드명")): code(row.get("펀드코드"))
+        for _, row in funds.iterrows()
+        if fund_name_key(row.get("펀드명"))
+    }
+    frame = kfr_history.copy()
+    frame["fundCode"] = frame["예탁원펀드코드"].map(code)
+    missing_code = ~frame["fundCode"].isin(fund_meta)
+    frame.loc[missing_code, "fundCode"] = frame.loc[missing_code, "펀드명"].map(
+        lambda value: code_by_name_key.get(fund_name_key(value), "")
+    )
+    frame = frame[frame["fundCode"].isin(fund_meta)].copy()
+    frame["date"] = pd.to_datetime(frame["기준일"], errors="coerce")
+    frame["rate"] = pd.to_numeric(frame["일수익률"], errors="coerce") / 100.0
+    frame = frame.dropna(subset=["date", "rate"])
+    rows: list[dict] = []
+    for fund_code, fund_rows in frame.groupby("fundCode"):
+        cumulative = 1.0
+        for business_date, daily in fund_rows.groupby("date"):
+            # -100%는 이후 기준가가 다시 존재하는 KFR 결측 센티널이므로 실제 수익률로 누적하지 않는다.
+            valid = daily[daily["rate"].gt(-1) & daily["rate"].le(1)].copy()
+            if valid.empty:
+                continue
+            daily_return = float(valid["rate"].mean())
+            cumulative *= 1.0 + daily_return
+            meta = fund_meta[fund_code]
+            rows.append({
+                "date": business_date.strftime("%Y-%m-%d"),
+                "fundCode": fund_code,
+                "fund": meta["fund"],
+                "manager": meta["manager"],
+                "dailyReturn": daily_return,
+                "cumulativeReturn": cumulative - 1.0,
+                "assetCount": 1,
+            })
+    return sorted(rows, key=lambda item: (item["date"], item["manager"], item["fund"]))
+
+
 def build_data() -> dict:
     funds = pd.read_excel(ROOT / "펀드정보.xlsx", dtype={"펀드코드": str, "협회코드": str}).fillna("")
     holdings = read_raw("fund_holdings", latest_only=True)
     trades = read_raw("fund_trades")
     kfr = read_raw("mezzanine_price", latest_only=True)
+    fund_price_history = read_raw("fund_prices")
+    manual_fund_nav = load_manual_fund_nav()
+    if not manual_fund_nav.empty:
+        fund_price_history = pd.concat([manual_fund_nav, fund_price_history], ignore_index=True)
+        if {"기준일", "예탁원펀드코드"}.issubset(fund_price_history.columns):
+            fund_price_history = fund_price_history.drop_duplicates(
+                ["기준일", "예탁원펀드코드"], keep="last"
+            )
     master = read_master().astype(object)
     if ADDITIONS_FILE.exists():
         try:
@@ -284,7 +463,11 @@ def build_data() -> dict:
             aliases = build_aliases(master)
         except (OSError, ValueError):
             pass
-    quotes, quote_updated = load_quotes()
+    quotes, quote_updated, current_index_returns = load_quotes()
+    market_by_code = load_stock_market_map({
+        code(row.get("교환코드")) or code(row.get("발행코드"))
+        for _, row in master.iterrows()
+    })
 
     fund_by_ksd = {code(r["펀드코드"]): r for _, r in funds.iterrows()}
     fund_by_assoc = {code(r["협회코드"]): r for _, r in funds.iterrows()}
@@ -330,6 +513,15 @@ def build_data() -> dict:
             "underlyingPrice": current_price,
         })
 
+    security_by_base_name = {
+        re.sub(r"\s+", "", item["name"].split("(", 1)[0]).lower(): item
+        for item in security_rows if item.get("name")
+    }
+    underlying_code_by_name = {
+        clean(item.get("underlying")): code(item.get("underlyingCode"))
+        for item in security_rows if clean(item.get("underlying")) and code(item.get("underlyingCode"))
+    }
+
     holding_rows = []
     latest_hold_date = ""
     for _, row in holdings.iterrows():
@@ -349,14 +541,20 @@ def build_data() -> dict:
             latest_hold_date = max(latest_hold_date, hold_date)
             issuer_name, issuer_code = issuer_from_security_name(raw_name)
             issuer_code = issuer_code or issuer_code_by_name.get(issuer_name, "")
+            similar = security_by_base_name.get(re.sub(r"\s+", "", raw_name.split("(", 1)[0]).lower())
+            similar_underlying_code = code(similar.get("underlyingCode")) if similar else ""
+            similar_delta = number(similar.get("delta"), 0.40) if similar else 0.40
             holding_rows.append({
                 "date": hold_date, "manager": clean(fund.get("운용사")), "fund": clean(fund.get("펀드명")),
-                "fundCode": code(fund.get("펀드코드")), "share": share, "instrumentId": "", "code": sec_code,
-                "name": raw_name, "issuer": issuer_name, "underlying": "", "type": kind_match.group(1).upper(), "sector": "미분류",
+                "fundCode": code(fund.get("펀드코드")), "share": share, "instrumentId": clean(similar.get("instrumentId")) if similar else "", "code": sec_code,
+                "name": raw_name, "issuer": clean(similar.get("issuer")) if similar else issuer_name, "underlying": clean(similar.get("underlying")) if similar else "", "type": kind_match.group(1).upper(), "sector": clean(similar.get("sectorLarge")) if similar else "미분류",
                 "quantity": number(row.get("수량")), "value": value, "cost": cost, "lookthrough": lookthrough,
-                "bookPnl": (value - cost) * share, "delta": 0.40, "underlyingCode": "", "issuerCode": issuer_code,
-                "underlyingChange": None, "estimatedPnl": 0.0, "underlyingPrice": None, "parity": None,
-                "conversionStart": "", "putDate": "", "deltaExposure": lookthrough * 0.40, "needsRegistration": True,
+                "bookPnl": (value - cost) * share, "delta": similar_delta, "underlyingCode": similar_underlying_code, "issuerCode": code(similar.get("issuerCode")) if similar else issuer_code,
+                "underlyingChange": quote_change(quotes, similar_underlying_code), "estimatedPnl": lookthrough * (quote_change(quotes, similar_underlying_code) or 0) * similar_delta, "underlyingPrice": quote_price(quotes, similar_underlying_code), "parity": None,
+                "_conversionPrice": number(similar.get("conversionPrice")) if similar else 0,
+                "conversionStart": clean(similar.get("conversionStart")) if similar else "", "putDate": clean(similar.get("putDate")) if similar else "", "deltaExposure": lookthrough * similar_delta, "needsRegistration": True,
+                "creditRating": clean(row.get("신용등급")), "maturityDate": str(row.get("만기일") or "")[:10],
+                "sectorLarge": clean(similar.get("sectorLarge")) if similar else "미분류", "sectorMid": clean(similar.get("sectorMid")) if similar else "미분류", "market": market_by_code.get(similar_underlying_code, "미분류"),
             })
             continue
         value = number(row.get("평가금"))
@@ -364,6 +562,12 @@ def build_data() -> dict:
         share = number(fund.get("지분율"), 1.0)
         delta = delta_by_code.get(sec_code, 0)
         ucode = code(sec.get("교환코드") or sec.get("발행코드"))
+        if not ucode:
+            underlying_name = clean(sec.get("교환대상명"))
+            legacy_match = re.search(r"구\.([^\)]+)", underlying_name)
+            ucode = underlying_code_by_name.get(underlying_name, "")
+            if not ucode and legacy_match:
+                ucode = underlying_code_by_name.get(clean(legacy_match.group(1)), "")
         change = quote_change(quotes, ucode)
         current_price = quote_price(quotes, ucode)
         lookthrough = value * share
@@ -382,10 +586,15 @@ def build_data() -> dict:
             "underlyingChange": change, "estimatedPnl": estimated_pnl,
             "underlyingPrice": current_price,
             "parity": (current_price / number(sec.get("전환가"))) if current_price and number(sec.get("전환가")) else None,
+            "_conversionPrice": number(sec.get("전환가")),
             "conversionStart": str(sec.get("전환시작일") or "")[:10],
             "putDate": str(sec.get("PUT") or "")[:10],
             "deltaExposure": lookthrough * delta,
             "needsRegistration": False,
+            "creditRating": clean(row.get("신용등급")), "maturityDate": str(row.get("만기일") or "")[:10],
+            "sectorLarge": clean(sec.get("업종(대)")) or "미분류",
+            "sectorMid": clean(sec.get("업종(중)")) or "미분류",
+            "market": market_by_code.get(ucode) or clean(quotes.get(ucode, {}).get("market")) or "미분류",
         })
 
     stock_rows = []
@@ -429,10 +638,25 @@ def build_data() -> dict:
         for value in pd.to_datetime(trades.get("기준일"), errors="coerce").dropna()
     })
     kfr_date = str(kfr["거래일"].max())[:10] if not kfr.empty else ""
+    kospi_series = load_market_series("KOSPI")
+    kosdaq_series = load_market_series("KOSDAQ")
+    benchmark_file = ROOT.parent / "stock" / "benchmark_weights.json"
+    benchmark_weights = json.loads(benchmark_file.read_text(encoding="utf-8")) if benchmark_file.exists() else {}
+    industry_large_by_code, industry_mid_by_code = read_industry_map()
+    benchmark_sectors = build_benchmark_sector_weights(
+        benchmark_weights,
+        industry_large_by_code,
+        industry_mid_by_code,
+    )
     return {
         "generatedAt": datetime.now().isoformat(timespec="seconds"), "holdingDate": latest_hold_date,
-        "kfrDate": kfr_date, "quoteUpdated": quote_updated,
+        "kfrDate": kfr_date, "quoteUpdated": quote_updated, "currentIndexReturns": current_index_returns,
         "funds": records(funds), "securities": security_rows, "holdings": holding_rows, "stockHoldings": stock_rows, "trades": trade_rows,
+        "fundReturnSeries": build_fund_return_series(fund_price_history, funds),
+        "benchmark": {"name": "KOSDAQ", "series": kosdaq_series},
+        "benchmarks": {"KOSPI": kospi_series, "KOSDAQ": kosdaq_series},
+        "benchmarkWeights": benchmark_weights,
+        "benchmarkSectors": benchmark_sectors,
         "tradeMin": raw_trade_dates[0] if raw_trade_dates else "", "tradeMax": raw_trade_dates[-1] if raw_trade_dates else "",
         "methodology": {"window": 10, "exclude": "일일 델타 < 0 또는 > 100%", "identity": "발행사+증권종류+회차 기반 UUID와 종목코드 alias"},
     }

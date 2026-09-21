@@ -125,14 +125,14 @@ def restore_kfr_json(client: SupabaseRest, output_dir: Path) -> None:
         if not snapshot:
             raise RuntimeError(f"No KFR Partner API JSON snapshot found for {source_key}")
         source_snapshots = [snapshot]
-        if source_key == "fund_trades":
+        if source_key in {"fund_prices", "fund_trades", "mezzanine_price"}:
             seen_dates = {snapshot["business_date"]}
             for candidate in snapshots:
                 if candidate["source_key"] != source_key or candidate["business_date"] in seen_dates:
                     continue
                 seen_dates.add(candidate["business_date"])
                 source_snapshots.append(candidate)
-        elif source_key in {"fund_prices", "fund_holdings", "mezzanine_price"}:
+        elif source_key == "fund_holdings":
             latest_date = date.fromisoformat(snapshot["business_date"])
             cutoff = latest_date - timedelta(days=31)
             seen_dates = {snapshot["business_date"]}
@@ -266,6 +266,29 @@ def restore_mezzanine_manual(client: SupabaseRest, mezzanine_dir: Path) -> None:
     print(f"restored mezzanine manual data: instruments={len(rows)}, additions={len(addition_payload)}, overrides={len(override_payload)}, delta_history={len(delta_rows)}")
 
 
+def restore_fund_nav_manual(client: SupabaseRest, output_path: Path) -> None:
+    rows = client.get_all("manual_file_rows", {
+        "select": "sheet_name,row_no,payload", "domain": "eq.fund",
+        "file_key": "eq.fund_nav", "order": "sheet_name.asc,row_no.asc",
+    })
+    if not rows:
+        raise RuntimeError("No manual rows found for fund/fund_nav")
+    sheets: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        sheets[str(row["sheet_name"])].append(row)
+    payload = {
+        "domain": "fund", "file_key": "fund_nav", "file_label": "펀드 기준가.xlsx",
+        "sheets": [{
+            "name": sheet_name,
+            "columns": list(sheet_rows[0]["payload"].keys()) if sheet_rows else [],
+            "rows": [row["payload"] for row in sheet_rows],
+        } for sheet_name, sheet_rows in sheets.items()],
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    print(f"restored fund/fund_nav: rows={len(rows)}")
+
+
 def restore_global_manual(client: SupabaseRest, global_dir: Path) -> None:
     if not global_dir.exists():
         return
@@ -348,6 +371,7 @@ def main() -> None:
     restore_kfr_json(client, Path(args.kfr_json_dir))
     restore_manual(client, Path(args.stock_dir), Path(args.bond_dir))
     restore_mezzanine_manual(client, Path(args.mezzanine_dir))
+    restore_fund_nav_manual(client, REPO_ROOT / "data" / "manual" / "fund_fund_nav.json")
     restore_global_manual(client, Path(args.global_dir))
 
 

@@ -40,6 +40,12 @@ def main() -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
             print(f"copied {source.name} -> {target.relative_to(DIST)}")
+    mezzanine_plotly = ROOT / "apps" / "mezzanine" / "plotly-2.35.2.min.js"
+    if mezzanine_plotly.is_file():
+        target = DIST / "pages" / "mezzanine" / mezzanine_plotly.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(mezzanine_plotly, target)
+        print(f"copied {mezzanine_plotly.name} -> {target.relative_to(DIST)}")
     global_script = ROOT / "apps" / "global" / "emp_dashboard_upgrade.js"
     if global_script.is_file():
         target = DIST / "pages" / "global" / "emp_dashboard_upgrade.js"
