@@ -496,6 +496,165 @@ const sharedResult = (row: any) => ({
   cached: true,
 });
 
+const validPeriodDate = (value: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+
+async function loadPerformanceSnapshots(admin: any, fundScope: string, startDate: string, endDate: string) {
+  if (!fundScope || fundScope.length > 200) throw new Error("조회 대상 펀드가 올바르지 않습니다.");
+  if (!validPeriodDate(startDate) || !validPeriodDate(endDate) || startDate > endDate) {
+    throw new Error("조회 기간이 올바르지 않습니다.");
+  }
+  const { data, error } = await admin.from("stock_performance_snapshots")
+    .select("performance_date,holdings_snapshot_date,fund_scope,captured_at,calculation_version,payload")
+    .eq("environment", "local_test")
+    .eq("fund_scope", fundScope)
+    .gte("performance_date", startDate)
+    .lte("performance_date", endDate)
+    .order("performance_date", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+const compoundedReturn = (rates: number[]) => {
+  if (!rates.length) return null;
+  return (rates.reduce((factor, rate) => factor * (1 + rate / 100), 1) - 1) * 100;
+};
+
+function preparePeriodSummary(rows: any[], startDate: string, endDate: string, fundScope: string) {
+  const markets = ["코스피", "코스닥"];
+  const marketRates = new Map(markets.map((market) => [market, { actual: [] as number[], benchmark: [] as number[] }]));
+  const marketDays = new Map(markets.map((market) => [market, 0]));
+  const sectors = new Map<string, { market: string; sector: string; portfolioWeightSum: number; benchmarkWeightSum: number; contributionPp: number }>();
+  const stocks = new Map<string, { market: string; code: string; name: string; weightSum: number; contributionPp: number; returns: number[] }>();
+  const snapshotDates: string[] = [];
+  const dailyAnalyses: any[] = [];
+
+  for (const record of rows) {
+    const payload: Record<string, any> = record?.payload && typeof record.payload === "object" ? record.payload : {};
+    const positions = Array.isArray(payload.positions) ? payload.positions : [];
+    const snapshotDate = String(record.performance_date || payload.asOfDate || "");
+    if (snapshotDate) snapshotDates.push(snapshotDate);
+    if (payload.dailyAnalysis && typeof payload.dailyAnalysis === "object" && String(payload.dailyAnalysis.analysis || "").trim()) {
+      dailyAnalyses.push({
+        date: snapshotDate,
+        title: String(payload.dailyAnalysis.title || "AI 성과분석"),
+        analysis: String(payload.dailyAnalysis.analysis || "").trim(),
+        model: String(payload.dailyAnalysis.model || ""),
+      });
+    }
+    const indexReturns: Record<string, any> = payload.marketIndexReturns && typeof payload.marketIndexReturns === "object" ? payload.marketIndexReturns : {};
+    const benchmarkSectors: Record<string, any> = payload.benchmarkSectors && typeof payload.benchmarkSectors === "object" ? payload.benchmarkSectors : {};
+
+    for (const market of markets) {
+      const marketPositions = positions.filter((item: any) => String(item?.market || "") === market);
+      const marketExp = marketPositions.reduce((sum: number, item: any) => sum + number(item?.exp), 0);
+      const marketPl = marketPositions.reduce((sum: number, item: any) => sum + number(item?.pl), 0);
+      if (!marketExp) continue;
+      marketDays.set(market, (marketDays.get(market) || 0) + 1);
+      marketRates.get(market)!.actual.push(marketPl / marketExp * 100);
+      if (indexReturns[market] != null) marketRates.get(market)!.benchmark.push(number(indexReturns[market]));
+
+      const grouped = new Map<string, any[]>();
+      for (const item of marketPositions) {
+        const sector = String(item?.sectorMid || item?.sectorLarge || "미분류");
+        if (!grouped.has(sector)) grouped.set(sector, []);
+        grouped.get(sector)!.push(item);
+      }
+      const benchmarkMid = benchmarkSectors?.[market]?.mid && typeof benchmarkSectors[market].mid === "object"
+        ? benchmarkSectors[market].mid : {};
+      const sectorNames = new Set([...grouped.keys(), ...Object.keys(benchmarkMid)]);
+      for (const sector of sectorNames) {
+        const items = grouped.get(sector) || [];
+        const sectorExp = items.reduce((sum, item) => sum + number(item?.exp), 0);
+        const sectorPl = items.reduce((sum, item) => sum + number(item?.pl), 0);
+        const rawBenchmark = benchmarkMid[sector];
+        const benchmarkWeight = number(rawBenchmark && typeof rawBenchmark === "object" ? rawBenchmark.weight : rawBenchmark);
+        const key = `${market}\u0000${sector}`;
+        const aggregate = sectors.get(key) || { market, sector, portfolioWeightSum: 0, benchmarkWeightSum: 0, contributionPp: 0 };
+        aggregate.portfolioWeightSum += sectorExp / marketExp * 100;
+        aggregate.benchmarkWeightSum += benchmarkWeight * 100;
+        aggregate.contributionPp += sectorPl / marketExp * 100;
+        sectors.set(key, aggregate);
+      }
+
+      for (const item of marketPositions) {
+        const code = String(item?.code || item?.name || "");
+        const key = `${market}\u0000${code}`;
+        const aggregate = stocks.get(key) || { market, code, name: String(item?.name || code), weightSum: 0, contributionPp: 0, returns: [] as number[] };
+        aggregate.weightSum += number(item?.exp) / marketExp * 100;
+        aggregate.contributionPp += number(item?.pl) / marketExp * 100;
+        if (item?.changeRatePct != null) aggregate.returns.push(number(item.changeRatePct));
+        stocks.set(key, aggregate);
+      }
+    }
+  }
+
+  const marketRows = markets.map((market) => {
+    const actual = compoundedReturn(marketRates.get(market)!.actual);
+    const benchmark = compoundedReturn(marketRates.get(market)!.benchmark);
+    return {
+      market, days: marketDays.get(market) || 0,
+      actualReturnPct: rounded(actual), benchmarkReturnPct: rounded(benchmark),
+      relativePp: rounded(actual != null && benchmark != null ? actual - benchmark : null),
+    };
+  });
+  const sectorRows = [...sectors.values()].map((item) => {
+    const divisor = marketDays.get(item.market) || 1;
+    const portfolioWeightPct = item.portfolioWeightSum / divisor;
+    const benchmarkWeightPct = item.benchmarkWeightSum / divisor;
+    return {
+      market: item.market, sector: item.sector,
+      portfolioWeightPct: rounded(portfolioWeightPct), benchmarkWeightPct: rounded(benchmarkWeightPct),
+      activeWeightPp: rounded(portfolioWeightPct - benchmarkWeightPct), contributionPp: rounded(item.contributionPp),
+    };
+  }).sort((a, b) => Math.abs(number(b.contributionPp)) - Math.abs(number(a.contributionPp)));
+  const stockRows = [...stocks.values()].map((item) => ({
+    market: item.market, code: item.code, name: item.name,
+    averageWeightPct: rounded(item.weightSum / (marketDays.get(item.market) || 1)),
+    periodReturnPct: rounded(compoundedReturn(item.returns)), contributionPp: rounded(item.contributionPp),
+  })).sort((a, b) => Math.abs(number(b.contributionPp)) - Math.abs(number(a.contributionPp)));
+  return {
+    startDate, endDate, selectedFund: fundScope, environment: "local_test",
+    snapshotCount: rows.length, snapshotDates, marketRows, sectorRows, stockRows, dailyAnalyses,
+    savedDailyAnalysis: dailyAnalyses.length === 1 ? dailyAnalyses[0] : null,
+  };
+}
+
+const periodInstructions = `기관투자자용 기간별 BM 상대성과 분석을 자연스러운 한국어 존댓말로 작성하십시오.
+입력 수치는 계산 엔진에서 산출됐으므로 재계산하거나 외부 뉴스·전망·펀더멘털을 추가하지 마십시오.
+코스피와 코스닥을 분리하여 각각 한 문단으로 작성하고 각 문단은 3~4문장으로 제한하십시오.
+첫 문장에는 기간 누적 포트폴리오 수익률, BM 수익률, 상대성과를 명확히 쓰십시오.
+이후에는 같은 시장의 sectorRows와 stockRows만 이용해 강세 또는 약세의 핵심 원인을 설명하십시오.
+섹터는 평균 포트폴리오 비중, 평균 BM 비중, BM 대비 비중 차이와 기간 기여도를 함께 고려하십시오.
+종목은 기간 기여도가 특징적인 경우에만 시장별 최대 3개를 언급하십시오.
+숫자는 소수점 둘째 자리까지 표시하고 양수에는 + 부호를 붙이십시오.
+snapshotCount가 적으면 분석 첫머리에 데이터 커버리지가 제한적임을 짧게 알리십시오.
+출력은 반드시 [코스피] 문단, 빈 줄, [코스닥] 문단 순서로 작성하십시오.
+중요한 결론과 핵심 섹터·종목명은 **굵게** 표시하십시오.`;
+
+async function analyzePeriodSummary(summary: any) {
+  const apiKey = Deno.env.get("OPENAI_API_KEY") || "";
+  if (!apiKey) throw new Error("OPENAI_API_KEY가 Supabase Edge Function secret에 설정되지 않았습니다.");
+  const compact = {
+    startDate: summary.startDate, endDate: summary.endDate, selectedFund: summary.selectedFund,
+    snapshotCount: summary.snapshotCount, marketRows: summary.marketRows,
+    sectorRows: (summary.sectorRows || []).slice(0, 16), stockRows: (summary.stockRows || []).slice(0, 20),
+  };
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: MODEL, reasoning: { effort: "low" }, store: false, max_output_tokens: 1800,
+      instructions: periodInstructions, input: JSON.stringify(compact), text: { verbosity: "low" },
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload?.error?.message || `OpenAI API HTTP ${response.status}`);
+  if (payload.status === "incomplete") throw new Error(`기간 AI 분석 응답이 완성되기 전에 종료되었습니다: ${payload.incomplete_details?.reason || "unknown"}`);
+  const analysis = outputText(payload);
+  if (!analysis) throw new Error("OpenAI API 응답에 기간 분석 문장이 없습니다.");
+  return { analysis, model: payload.model || MODEL, usage: payload.usage || {}, generatedAt: new Date().toISOString() };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST 요청만 지원합니다." }, 405);
@@ -530,6 +689,16 @@ Deno.serve(async (req) => {
         usage: {},
         generatedAt: new Date().toISOString(),
       });
+    }
+    if (source.action === "period-summary" || source.action === "period-analysis") {
+      const fundScope = String(source.fundScope || "").trim();
+      const startDate = String(source.start || "").trim();
+      const endDate = String(source.end || "").trim();
+      const snapshots = await loadPerformanceSnapshots(admin, fundScope, startDate, endDate);
+      const summary = preparePeriodSummary(snapshots, startDate, endDate, fundScope);
+      if (source.action === "period-summary") return json(summary);
+      if (!snapshots.length) throw new Error("선택한 기간에 저장된 마감 스냅샷이 없습니다.");
+      return json({ ...(await analyzePeriodSummary(summary)), summary });
     }
     const { asOfDate, selectedFund } = resultKey(source);
     if (source.action === "latest") {

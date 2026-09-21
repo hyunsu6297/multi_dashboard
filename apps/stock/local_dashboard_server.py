@@ -609,7 +609,7 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
         lambda: {"name": "", "weightSum": 0.0, "contributionPp": 0.0, "returns": []}
     )
     snapshot_dates: list[str] = []
-    saved_daily_analysis = None
+    daily_analyses: list[dict] = []
 
     for record in rows:
         payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
@@ -617,8 +617,16 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
         snapshot_date = str(record.get("performance_date") or payload.get("asOfDate") or "")
         if snapshot_date:
             snapshot_dates.append(snapshot_date)
-        if start_date == end_date and isinstance(payload.get("dailyAnalysis"), dict):
-            saved_daily_analysis = payload["dailyAnalysis"]
+        if isinstance(payload.get("dailyAnalysis"), dict):
+            daily_analysis = payload["dailyAnalysis"]
+            analysis_text = str(daily_analysis.get("analysis") or "").strip()
+            if analysis_text:
+                daily_analyses.append({
+                    "date": snapshot_date,
+                    "title": str(daily_analysis.get("title") or "AI 성과분석"),
+                    "analysis": analysis_text,
+                    "model": str(daily_analysis.get("model") or ""),
+                })
         index_returns = payload.get("marketIndexReturns") if isinstance(payload.get("marketIndexReturns"), dict) else {}
         benchmark_sectors = payload.get("benchmarkSectors") if isinstance(payload.get("benchmarkSectors"), dict) else {}
 
@@ -719,7 +727,8 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
         "marketRows": market_rows,
         "sectorRows": sector_rows,
         "stockRows": stock_rows,
-        "savedDailyAnalysis": saved_daily_analysis,
+        "dailyAnalyses": daily_analyses,
+        "savedDailyAnalysis": daily_analyses[0] if len(daily_analyses) == 1 else None,
     }
 
 
