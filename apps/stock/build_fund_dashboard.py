@@ -3876,6 +3876,7 @@ def build_dashboard(
     }}
     const fundReturnHistoryCache = new Map();
     const fundReturnHistoryPending = new Map();
+    let hostedFundReturnSeriesPromise = null;
     let fundReturnHistoryRequest = 0;
     let fundReturnBenchmark = "kospi";
     let fundReturnBenchmarkVisible = true;
@@ -4223,6 +4224,96 @@ def build_dashboard(
         `<section class="fund-analysis-section"><h5>${{escHtml(part.title)}}</h5><p>${{performanceAnalysisHtml(part.text)}}</p></section>`
       ).join("");
     }}
+    function hostedAnalysisValue(value, suffix = "", signed = false) {{
+      const numeric = Number(value || 0);
+      return `${{signed && numeric > 0 ? "+" : ""}}${{numeric.toFixed(2)}}${{suffix}}`;
+    }}
+    function buildHostedFundAnalysis(payload, seriesPayload) {{
+      const benchmarkKey = payload.benchmark === "kosdaq" ? "kosdaq" : "kospi";
+      const benchmarkName = benchmarkKey === "kosdaq" ? "KOSDAQ" : "KOSPI";
+      const rows = (seriesPayload.rows || []).filter((row) => row.date >= payload.startDate && row.date <= payload.endDate && Number(row.fund) > 0 && Number(row[benchmarkKey]) > 0);
+      if (rows.length < 2) throw new Error("선택 기간의 펀드·BM 기준가 관측치가 부족합니다.");
+      const fundSeries = rows.map((row) => ({{ date:row.date, value:Number(row.fund) }}));
+      const benchmarkSeries = rows.map((row) => ({{ date:row.date, value:Number(row[benchmarkKey]) }}));
+      const fund = fundHistoryStats(fundSeries), benchmark = fundHistoryStats(benchmarkSeries);
+      const relative = (Number(fund.periodReturn || 0) - Number(benchmark.periodReturn || 0)) * 100;
+      const monthMap = new Map();
+      fundSeries.forEach((row) => {{
+        const month = row.date.slice(0, 7);
+        if (!monthMap.has(month)) monthMap.set(month, []);
+        monthMap.get(month).push(row.value);
+      }});
+      const months = [...monthMap.entries()].filter(([, values]) => values.length > 1 && values[0]).map(([month, values]) => ({{ month, returnPct:(values.at(-1) / values[0] - 1) * 100 }}));
+      const best = [...months].sort((a, b) => b.returnPct - a.returnPct).slice(0, 2);
+      const worst = [...months].sort((a, b) => a.returnPct - b.returnPct).slice(0, 2);
+      const performance = [
+        `펀드 기간수익률은 **${{hostedAnalysisValue(Number(fund.periodReturn || 0) * 100, "%", true)}}**로, ${{benchmarkName}} 수익률 ${{hostedAnalysisValue(Number(benchmark.periodReturn || 0) * 100, "%", true)}} 대비 **${{hostedAnalysisValue(relative, "%p", true)}} ${{relative > 0 ? "상회" : relative < 0 ? "하회" : "동일"}}**했습니다.`,
+        `강세 구간은 ${{best.map((row) => `**${{row.month}}(${{hostedAnalysisValue(row.returnPct, "%", true)}})**`).join(", ") || "없음"}}이며, 약세 구간은 ${{worst.map((row) => `**${{row.month}}(${{hostedAnalysisValue(row.returnPct, "%", true)}})**`).join(", ") || "없음"}}입니다.`,
+        `연환산 변동성은 ${{hostedAnalysisValue(Number(fund.volatility || 0) * 100, "%")}}이고 Sharpe는 ${{hostedAnalysisValue(fund.sharpe)}}, 최대낙폭은 ${{hostedAnalysisValue(Number(fund.mdd || 0) * 100, "%")}}입니다.`,
+      ];
+      const fundReturns = fundSeries.slice(1).map((row, index) => row.value / fundSeries[index].value - 1);
+      const benchmarkReturns = benchmarkSeries.slice(1).map((row, index) => row.value / benchmarkSeries[index].value - 1);
+      let beta = null;
+      if (fundReturns.length > 1) {{
+        const fm = fundReturns.reduce((sum, value) => sum + value, 0) / fundReturns.length;
+        const bm = benchmarkReturns.reduce((sum, value) => sum + value, 0) / benchmarkReturns.length;
+        const covariance = fundReturns.reduce((sum, value, index) => sum + (value - fm) * (benchmarkReturns[index] - bm), 0) / (fundReturns.length - 1);
+        const variance = benchmarkReturns.reduce((sum, value) => sum + (value - bm) ** 2, 0) / (benchmarkReturns.length - 1);
+        beta = variance ? covariance / variance : null;
+      }}
+      const positions = Array.isArray(payload.positions) ? payload.positions : [];
+      const gross = positions.reduce((sum, row) => sum + Math.abs(Number(row.exp || 0)), 0);
+      const markets = new Map(), sectors = new Map(), stockValues = [];
+      positions.forEach((row) => {{
+        const value = Math.abs(Number(row.exp || 0)), market = String(row.market || "미분류"), sector = String(row.sectorMid || row.sectorLarge || "미분류");
+        markets.set(market, (markets.get(market) || 0) + value);
+        sectors.set(sector, (sectors.get(sector) || 0) + value);
+        stockValues.push([String(row.name || "미분류"), value]);
+      }});
+      const weighted = (source) => [...source.entries()].sort((a, b) => b[1] - a[1]).map(([name, value]) => ({{ name, weight:gross ? value / gross * 100 : 0 }}));
+      const sortedStocks = [...stockValues].sort((a, b) => b[1] - a[1]);
+      const hhi = stockValues.reduce((sum, row) => sum + (gross ? row[1] / gross : 0) ** 2, 0);
+      const marketText = weighted(markets).slice(0, 2).map((row) => `**${{row.name}}** ${{hostedAnalysisValue(row.weight, "%")}}`).join(", ") || "시장 정보 부족";
+      const sectorText = weighted(sectors).slice(0, 3).map((row) => `**${{row.name}}** ${{hostedAnalysisValue(row.weight, "%")}}`).join(", ") || "섹터 정보 부족";
+      const trades = Array.isArray(payload.trades) ? payload.trades : [];
+      const investment = Math.abs(Number(payload.investment || 0));
+      const grossTrades = trades.reduce((sum, row) => sum + Math.abs(Number(row.amount || 0)), 0);
+      const turnover = investment ? grossTrades / (2 * investment) * Math.min(4, 252 / Math.max(1, rows.length - 1)) * 100 : 0;
+      const volatilityRatio = Number(benchmark.volatility || 0) ? Number(fund.volatility || 0) / Number(benchmark.volatility) : null;
+      const profile = beta != null && volatilityRatio != null ? (beta >= 1.10 || volatilityRatio >= 1.10 ? "공격적" : beta <= 0.90 && volatilityRatio <= 0.90 ? "방어적" : "중립적") : "판단 유보";
+      const style = [
+        `시장 비중은 ${{marketText}}이며, 주요 섹터는 ${{sectorText}}입니다.`,
+        `상위 1개 종목 비중은 ${{hostedAnalysisValue(gross && sortedStocks.length ? sortedStocks[0][1] / gross * 100 : 0, "%")}}, 상위 5개는 ${{hostedAnalysisValue(gross ? sortedStocks.slice(0, 5).reduce((sum, row) => sum + row[1], 0) / gross * 100 : 0, "%")}}이고 실질 분산 종목 수는 ${{hhi ? (1 / hhi).toFixed(1) : "0.0"}}개입니다.`,
+        `연환산 추정 회전율은 ${{hostedAnalysisValue(turnover, "%")}}, 베타는 ${{hostedAnalysisValue(beta)}}, 변동성비율은 ${{hostedAnalysisValue(volatilityRatio)}}으로 **${{profile}} 성향**입니다.`,
+      ];
+      const currentNames = new Set(positions.filter((row) => Math.abs(Number(row.exp || 0)) > 0).map((row) => String(row.name || "")));
+      const tradeByName = new Map();
+      trades.forEach((row) => {{
+        const name = String(row.name || "미분류"), item = tradeByName.get(name) || {{ buy:0, sell:0 }};
+        if (String(row.side || "") === "매도") item.sell += Math.abs(Number(row.amount || 0)); else item.buy += Math.abs(Number(row.amount || 0));
+        tradeByName.set(name, item);
+      }});
+      const changes = [...tradeByName.entries()].map(([name, item]) => ({{ name, netEok:(item.buy - item.sell) / 100_000_000, currentlyHeld:currentNames.has(name) }}));
+      const buys = changes.filter((row) => row.netEok > 0).sort((a, b) => b.netEok - a.netEok).slice(0, 5);
+      const sells = changes.filter((row) => row.netEok < 0).sort((a, b) => a.netEok - b.netEok).slice(0, 5);
+      const named = (values) => values.slice(0, 3).map((row) => `**${{row.name}}** ${{hostedAnalysisValue(row.netEok, "억원", true)}}`).join(", ");
+      const changesText = [];
+      if (buys.length) changesText.push(`주요 순매수는 ${{named(buys)}}입니다.`);
+      if (sells.length) changesText.push(`주요 순매도는 ${{named(sells)}}입니다.`);
+      const entrants = buys.filter((row) => row.currentlyHeld).slice(0, 3), exits = sells.filter((row) => !row.currentlyHeld).slice(0, 3), candidates = [];
+      if (entrants.length) candidates.push("신규 편입 후보는 " + entrants.map((row) => `**${{row.name}}**`).join(", "));
+      if (exits.length) candidates.push("전량 매도 후보는 " + exits.map((row) => `**${{row.name}}**`).join(", "));
+      if (candidates.length) changesText.push(candidates.join("이며, ") + "입니다.");
+      if (payload.tradeDataStart && payload.tradeDataStart > payload.startDate) changesText.push(`가용 매매 데이터가 **${{payload.tradeDataStart}}~${{payload.tradeDataEnd}}**로 제한되어 이전 변화는 포함되지 않았습니다.`);
+      if (!changesText.length) changesText.push("선택 기간에 확인 가능한 주요 매매 변화가 없습니다.");
+      const contributionRows = positions.map((row) => {{ const cost = Math.abs(Number(row.cost || 0)), profit = Number(row.profit || 0); return {{ name:String(row.name || "미분류"), profitEok:profit / 100_000_000, returnPct:cost ? profit / cost * 100 : 0 }}; }});
+      const contribution = [];
+      [["성과 기여 상위", contributionRows.filter((row) => row.profitEok > 0).sort((a, b) => b.profitEok - a.profitEok).slice(0, 3)], ["성과 훼손 상위", contributionRows.filter((row) => row.profitEok < 0).sort((a, b) => a.profitEok - b.profitEok).slice(0, 3)]].forEach(([label, values]) => {{
+        if (values.length) contribution.push(`${{label}} 종목은 ` + values.map((row) => `**${{row.name}}** ${{hostedAnalysisValue(row.returnPct, "%", true)}}, ${{hostedAnalysisValue(row.profitEok, "억원", true)}}`).join(", ") + "입니다.");
+      }});
+      contribution.push("기여도는 현재 보유 포지션의 누적 평가손익 기준이며 선택 기간의 정밀 성과귀속은 아닙니다.");
+      return ["[성과 요약]\\n" + performance.join(" "), "[운용 스타일]\\n" + style.join(" "), "[포트폴리오 변화]\\n" + changesText.join(" "), "[성과 기여]\\n" + contribution.join(" ")].join("\\n\\n");
+    }}
     function resetFundAnalysisPanel(section, scope) {{
       const output = section?.querySelector("[data-fund-analysis-output]");
       const status = section?.querySelector("[data-fund-analysis-status]");
@@ -4259,16 +4350,13 @@ def build_dashboard(
           result = await response.json().catch(() => ({{}}));
           if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
         }} else {{
-          const client = await getStockSupabaseClient();
-          const response = await client.functions.invoke("stock-performance-analysis", {{
-            body:{{ action:"fund-analysis", ...payload }},
-          }});
-          if (response.error) {{
-            const detail = await response.error.context?.json?.().catch(() => null);
-            throw new Error(detail?.error || detail?.message || response.error.message);
-          }}
-          result = response.data || {{}};
-          if (result.error) throw new Error(result.error);
+          const seriesPayload = fundReturnHistoryCache.get(payload.fundName);
+          if (!seriesPayload) throw new Error("펀드 기준가 데이터가 준비되지 않았습니다.");
+          result = {{
+            analysis:buildHostedFundAnalysis(payload, seriesPayload),
+            model:"산출 엔진",
+            generatedAt:new Date().toISOString(),
+          }};
         }}
         if (requestId !== fundAnalysisRequest || fundAnalysisScope(fundAnalysisPayload(section)) !== scope) return;
         renderFundAnalysis(output, result.analysis);
@@ -4359,16 +4447,16 @@ def build_dashboard(
                   if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
                   return result;
                 }})
-              : getStockSupabaseClient().then(async (client) => {{
-                  const response = await client.functions.invoke("stock-performance-analysis", {{
-                    body:{{ action:"fund-return-series", fundName }},
-                  }});
-                  if (response.error) {{
-                    const detail = await response.error.context?.json?.().catch(() => null);
-                    throw new Error(detail?.error || detail?.message || response.error.message);
-                  }}
-                  if (response.data?.error) throw new Error(response.data.error);
-                  return response.data;
+              : (hostedFundReturnSeriesPromise ||= fetch("fund_return_series.json", {{ cache:"no-store" }})
+                  .then(async (response) => {{
+                    const result = await response.json().catch(() => ({{}}));
+                    if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
+                    return result;
+                  }}))
+                .then((bundle) => {{
+                  const result = bundle?.funds?.[fundName];
+                  if (!result) throw new Error(bundle?.errors?.[fundName] || `${{fundName}}의 기준가 데이터가 없습니다.`);
+                  return result;
                 }}))
               .finally(() => fundReturnHistoryPending.delete(fundName));
             fundReturnHistoryPending.set(fundName, pending);

@@ -33,7 +33,7 @@ def main() -> None:
             shutil.rmtree(target)
         shutil.copytree(stock_data, target)
         print(f"copied stock data -> {target.relative_to(DIST)}")
-    for stock_asset in ("xlsx.full.min.js", "plotly-2.35.2.min.js"):
+    for stock_asset in ("xlsx.full.min.js", "plotly-2.35.2.min.js", "fund_return_series.json"):
         source = ROOT / "apps" / "stock" / stock_asset
         if source.is_file():
             target = DIST / "pages" / "stock" / source.name

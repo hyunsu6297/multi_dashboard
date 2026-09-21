@@ -157,6 +157,9 @@ jobs:
           DASHBOARD_BENCHMARK_DATE: ${{ steps.kfr_date.outputs.business_date }}
         run: python apps/stock/build_fund_dashboard.py --source json --start 2026-08-01 --static-data-bundle --recent-snapshots 1
 
+      - name: Export stock fund return series
+        run: python apps/stock/export_fund_return_series.py --output apps/stock/fund_return_series.json
+
       - name: Set up Supabase CLI
         if: env.SUPABASE_ACCESS_TOKEN != ''
         uses: supabase/setup-cli@v1
