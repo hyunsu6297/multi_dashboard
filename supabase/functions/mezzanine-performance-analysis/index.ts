@@ -110,6 +110,19 @@ function prepareSummary(source: Record<string, unknown>) {
           .sort((a, b) => primaryDirection === "negative" ? number(b.impactSignal) - number(a.impactSignal) : number(a.impactSignal) - number(b.impactSignal)).slice(0, 3)
         : [];
       const ranked = [...rows].sort((a, b) => number(b.pl) - number(a.pl));
+      const stockSignal = (row: Position) => ({
+        name: row.name,
+        sector: String(row.sectorMid || row.sectorLarge || "미분류"),
+        returnPct: rounded(row.changeRatePct == null ? null : number(row.changeRatePct)),
+        plEok: rounded(number(row.pl) / 100_000_000),
+      });
+      const stockCandidates = rows.filter((row) => row.name && row.changeRatePct != null && Number.isFinite(Number(row.changeRatePct)));
+      const positiveStocks = stockCandidates.filter((row) => number(row.changeRatePct) > 0)
+        .sort((a, b) => number(b.pl) - number(a.pl)).slice(0, 4).map(stockSignal);
+      const negativeStocks = stockCandidates.filter((row) => number(row.changeRatePct) < 0)
+        .sort((a, b) => number(a.pl) - number(b.pl)).slice(0, 4).map(stockSignal);
+      const characteristicStocks = [...stockCandidates]
+        .sort((a, b) => Math.abs(number(b.pl)) - Math.abs(number(a.pl))).slice(0, 6).map(stockSignal);
       const creditBase = rows.reduce((sum, row) => sum + Math.max(0, number(row.lookthrough)), 0);
       const issuers = new Map<string, number>();
       let creditWeighted = 0, investment = 0, speculative = 0, unrated = 0, deltaWeighted = 0, parityWeighted = 0, parityBase = 0;
@@ -140,6 +153,11 @@ function prepareSummary(source: Record<string, unknown>) {
           offset: offsetSectors,
           offsetStocks: offsetSectors.flatMap((row) => row.topStocks).slice(0, 3),
         },
+        stockSignals: {
+          primary: primaryDirection === "negative" ? negativeStocks : positiveStocks,
+          offset: primaryDirection === "negative" ? positiveStocks : negativeStocks,
+          characteristic: characteristicStocks,
+        },
       };
     }),
   };
@@ -147,7 +165,7 @@ function prepareSummary(source: Record<string, unknown>) {
 
 const instructions = `기관투자자용 메자닌 포트폴리오 성과분석을 자연스러운 한국어 존댓말로 작성하십시오.
 모든 계산과 선별은 서버에서 끝났습니다. 입력 숫자만 해석하고 재계산, 외부 추정, 뉴스, 전망, 종목 펀더멘털을 추가하지 마십시오. 섹터는 모두 중분류 기준입니다.
-코스닥 문단은 market='코스닥' 객체 안의 performance와 sectorSignals만 사용하고, 코스피 문단은 market='코스피' 객체 안의 값만 사용하십시오. 다른 시장의 섹터·종목·비중을 가져오거나 두 시장을 합산하지 마십시오. sectorSignals.primary는 상대성과와 같은 방향의 핵심 요인이며, offset은 BM과 성과가 가까울 때 제공되는 반대 방향의 상쇄 요인입니다.
+코스닥 문단은 market='코스닥' 객체 안의 performance, sectorSignals, stockSignals만 사용하고, 코스피 문단은 market='코스피' 객체 안의 값만 사용하십시오. 다른 시장의 섹터·종목·비중을 가져오거나 두 시장을 합산하지 마십시오. sectorSignals.primary는 상대성과와 같은 방향의 핵심 섹터 요인이며, offset은 BM과 성과가 가까울 때 제공되는 반대 방향의 상쇄 요인입니다. stockSignals.primary는 같은 방향으로 손익 영향이 컸던 종목, offset은 반대 방향 종목, characteristic은 절대 손익 영향이 큰 종목 순서입니다.
 
 출력 형식은 반드시 다음 순서와 표식을 지키십시오.
 [코스닥]
@@ -158,9 +176,9 @@ const instructions = `기관투자자용 메자닌 포트폴리오 성과분석�
 
 각 시장 문단은 정확히 세 문장으로 작성하십시오.
 1. 첫 문장은 반드시 '포트폴리오는 코스닥보다 [relativeAssessment]입니다([relativeDisplay]).' 또는 코스피 형식으로 짧게 작성하고 입력값을 그대로 쓰십시오.
-2. 이어지는 문장은 primary의 가장 중요한 중분류 섹터 하나를 골라 'BM 대비 비중이 +3.20%p 높은 IT-하드웨어 섹터가 -1.10%로 약세를 보였고, 특히 A종목(-2.30%)이 부진했습니다.'처럼 비중 차이, 섹터 수익률, 대표 종목을 쉽고 자연스럽게 연결하십시오.
-3. offset이 있으면 '다만 B섹터의 강세와 C종목(+1.20%), D종목(+0.80%)이 약세를 일부 만회했습니다.'처럼 반대 방향 요인이 주된 흐름을 일부 만회하거나 상승 폭을 제한했다고 설명하십시오. offset이 없으면 primary의 같은 방향 요인을 한 문장 더 설명하고 확인되지 않은 상쇄 요인을 만들지 마십시오.
-문장 구조와 접속사는 숫자의 방향에 맞게 자연스럽게 바꾸십시오. 양수인 수익률·상대성과·비중 차이에는 + 부호를 붙이고 모든 숫자는 소수점 둘째 자리까지 표시하십시오. 비중·수익률은 %, 상대성과와 BM 대비 비중 차이는 %p입니다. 종목은 같은 시장의 제공된 목록에서 최대 3개만 골라 '종목명(+3.66%)' 형식으로 쓰십시오. 핵심 결론과 중요한 섹터명·종목명은 **굵게** 표시하되 문장 전체는 굵게 쓰지 마십시오. 델타, 패리티, 신용등급, 발행사 집중도, 기여도 수치, 내부 필드명, 계산법, 방법론, JSON, 제목, 기준일은 본문에서 언급하지 마십시오.`;
+2. 이어지는 문장은 primary의 가장 중요한 중분류 섹터 하나를 먼저 설명한 뒤 stockSignals.primary의 특징적인 종목을 반드시 연결하십시오. 예: 'BM 대비 비중이 +3.20%p 높은 IT-하드웨어 섹터가 -1.10%로 약세를 보였고, 특히 A종목(-2.30%)과 B종목(-1.40%)이 부진했습니다.' 섹터만 설명하고 종목을 생략하지 마십시오.
+3. stockSignals.offset이 있으면 대표 종목을 우선 언급하고, sectorSignals.offset이 있으면 해당 섹터도 함께 연결해 '다만 C종목(+1.20%)과 D종목(+0.80%), 생활소비재 섹터의 강세가 약세를 일부 만회했습니다.'처럼 설명하십시오. offset 종목이 없으면 stockSignals.primary 또는 characteristic에서 아직 쓰지 않은 다음 중요 종목을 골라 같은 방향의 영향을 설명하십시오. 확인되지 않은 상쇄 요인은 만들지 마십시오.
+종목 데이터가 2개 이상이면 각 시장 문단에 서로 다른 특징 종목을 최소 2개, 최대 3개 반드시 포함하십시오. 단순 나열하지 말고 어떤 종목의 강세·약세가 주된 흐름을 만들거나 반대 흐름을 일부 상쇄했는지 자연스럽게 설명하십시오. 문장 구조와 접속사는 숫자의 방향에 맞게 바꾸십시오. 양수인 수익률·상대성과·비중 차이에는 + 부호를 붙이고 모든 숫자는 소수점 둘째 자리까지 표시하십시오. 비중·수익률은 %, 상대성과와 BM 대비 비중 차이는 %p입니다. 종목은 같은 시장의 제공된 목록에서 '종목명(+3.66%)' 형식으로 쓰십시오. 핵심 결론과 중요한 섹터명·종목명은 **굵게** 표시하되 문장 전체는 굵게 쓰지 마십시오. 델타, 패리티, 신용등급, 발행사 집중도, 기여도 수치, 내부 필드명, 계산법, 방법론, JSON, 제목, 기준일은 본문에서 언급하지 마십시오.`;
 
 function outputText(payload: any) {
   if (typeof payload.output_text === "string") return payload.output_text.trim();
