@@ -348,11 +348,18 @@ def fetch_index_quote(
         },
         timeout=timeout,
     )
+    price = abs(parse_float(data.get("cur_prc"), 0.0) or 0.0)
+    change_rate = parse_float(data.get("flu_rt"), None)
+    if price <= 0 or change_rate is None:
+        raise RuntimeError(
+            f"Kiwoom returned an incomplete {name} index quote "
+            f"(cur_prc={data.get('cur_prc')!r}, flu_rt={data.get('flu_rt')!r})"
+        )
     return {
         "name": name,
         "code": index_code,
-        "price": abs(parse_float(data.get("cur_prc"), 0.0) or 0.0),
-        "change_rate": parse_float(data.get("flu_rt"), None),
+        "price": price,
+        "change_rate": change_rate,
     }
 
 
@@ -417,6 +424,12 @@ def fetch_all_quotes(
             indices[key] = fetch_index_quote(host, token, market_type, index_code, name, timeout)
         except Exception as exc:
             previous_index = previous_payload.get("indices", {}).get(key, {})
+            previous_date = str(previous_payload.get("updated_at") or "")[:10]
+            today = datetime.now(SEOUL_TZ).date().isoformat()
+            previous_price = parse_float(previous_index.get("price"), 0.0) if isinstance(previous_index, dict) else 0.0
+            previous_rate = parse_float(previous_index.get("change_rate"), None) if isinstance(previous_index, dict) else None
+            if previous_date != today or not previous_price or previous_rate is None:
+                previous_index = {}
             indices[key] = {**previous_index, "name": name, "code": index_code, "error": str(exc)[:300]}
     rest_items: list[tuple[str, str, str, str | None]] = []
     skipped_derivatives: list[str] = []
