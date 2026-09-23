@@ -351,9 +351,11 @@ def fetch_kfr_snapshots(
     }
     if source_key != "fund_trades":
         filters["source_format"] = "eq.kfr_partner_api_json"
-    if start_date:
+    if start_date and end_date:
+        filters["and"] = f"(business_date.gte.{start_date},business_date.lte.{end_date})"
+    elif start_date:
         filters["business_date"] = f"gte.{start_date}"
-    if end_date:
+    elif end_date:
         filters["business_date"] = f"lte.{end_date}"
     if latest_only:
         filters["limit"] = "1"
@@ -2266,7 +2268,7 @@ def make_view(
           </div>
         </div>
       </section>
-      <div class="section-title performance-heading performance-subnav" data-performance-subnav hidden><div class="performance-heading-actions"><h3>성과분석</h3><button type="button" class="column-help-button" data-performance-main>성과분석메인</button><button type="button" class="column-help-button" data-performance-ai>AI 성과분석</button><button type="button" class="column-help-button" data-performance-snapshot-save>마감 저장</button><button type="button" class="column-help-button" data-performance-export>엑셀 저장</button><button type="button" class="column-help-button" data-performance-period-open>기간분석</button></div></div>
+      <div class="section-title performance-heading performance-subnav" data-performance-subnav hidden><div class="performance-heading-actions"><h3>성과분석</h3><button type="button" class="column-help-button" data-performance-main>당일분석</button><button type="button" class="column-help-button" data-performance-period-open>기간분석</button><div class="performance-daily-actions" data-performance-daily-actions><span class="performance-menu-divider" aria-hidden="true">/</span><button type="button" class="column-help-button" data-performance-ai>AI 성과분석</button><button type="button" class="column-help-button" data-performance-export>엑셀 저장</button></div></div></div>
       <section class="tab-panel" data-panel="performance">
         <article class="panel performance-ai-panel" data-performance-ai-panel hidden><div class="panel-title"><h4 data-performance-ai-title>AI 성과분석</h4><span data-performance-ai-status></span></div><div class="performance-ai-output" data-performance-ai-output></div></article>
         <div class="performance-grid">
@@ -2288,17 +2290,18 @@ def make_view(
         </div>
       </section>
       <section class="tab-panel" data-panel="period">
-        <div class="section-title performance-heading"><div class="performance-heading-actions"><h3>기간분석</h3><div class="period-presets" role="group" aria-label="기간 프리셋"><button type="button" data-period-preset="week">1주</button><button type="button" data-period-preset="month">1개월</button></div><input type="date" class="period-date" data-period-start aria-label="기간분석 시작일"><span class="period-separator">~</span><input type="date" class="period-date" data-period-end aria-label="기간분석 종료일"><button type="button" class="column-help-button" data-period-load>조회</button><button type="button" class="column-help-button" data-period-ai>AI 기간분석</button></div></div>
-        <article class="panel period-status-panel"><div class="panel-title"><h4 data-period-title>저장된 마감 스냅샷</h4><span data-period-status>기간을 선택해 주세요.</span></div></article>
+        <div class="section-title performance-heading"><div class="performance-heading-actions"><div class="period-presets" role="group" aria-label="기간 프리셋"><button type="button" class="column-help-button" data-period-preset="week">1주</button><button type="button" class="column-help-button" data-period-preset="month">1개월</button><button type="button" class="column-help-button" data-period-preset="custom">직접선택</button></div><input type="date" class="period-date" data-period-start aria-label="기간분석 시작일" disabled><span class="period-separator">~</span><input type="date" class="period-date" data-period-end aria-label="기간분석 종료일" disabled><button type="button" class="column-help-button" data-period-load>조회</button><span class="period-query-status" data-period-status>기간을 선택해 주세요.</span></div></div>
+        <article class="panel period-ai-panel" data-period-ai-panel><div class="panel-title"><div class="period-ai-heading"><h4>AI 성과분석</h4><button type="button" class="column-help-button" data-period-ai>AI 성과분석</button></div><span data-period-ai-status>분석 대기</span></div><div class="period-ai-output" data-period-ai-output><div class="empty">버튼을 누르면 선택 기간을 분석합니다.</div></div></article>
         <div class="period-workspace">
-          <article class="panel period-daily-panel"><div class="panel-title"><h4>일별 AI 마감분석</h4><span>저장일 최신순</span></div><div class="period-daily-list" data-period-daily></div></article>
           <div class="period-summary-column">
-            <article class="panel period-ai-panel" data-period-ai-panel><div class="panel-title"><h4>기간 종합 분석</h4><span data-period-ai-status>분석 대기</span></div><div class="period-ai-output" data-period-ai-output><div class="empty">기간을 선택하면 종합 분석을 표시합니다.</div></div></article>
-            <article class="panel period-market-panel"><div class="panel-title"><h4>시장별 누적 성과</h4><span>저장된 일별 수익률 복리</span></div><div data-period-markets></div></article>
+            <article class="panel period-market-panel"><div class="panel-title"><h4>시장별 누적 성과</h4><span>포트 단리 합산 · BM 복리</span></div><div data-period-markets></div></article>
+            <article class="panel period-daily-panel"><div class="panel-title"><h4>일별 성과 요약</h4><div class="title-actions"><span>행 선택 시 해당 일자 상세 표시</span><button type="button" class="column-help-button" data-period-date-reset disabled>선택 초기화</button></div></div><div class="period-daily-list" data-period-daily></div></article>
           </div>
           <div class="period-detail-column">
-            <article class="panel"><div class="panel-title"><h4>섹터별 기간 성과</h4><span>중분류 기준</span></div><div data-period-sectors></div></article>
-            <article class="panel period-stock-panel"><div class="panel-title"><h4>종목별 기간 성과</h4><span>절대 기여도순</span></div><div data-period-stocks></div></article>
+            <article class="panel"><div class="panel-title"><div class="period-panel-heading"><h4 data-period-sector-title>섹터별 기간 성과</h4><span data-period-sector-date hidden></span></div><div class="sector-panel-controls"><div class="sector-market-toggle" role="group" aria-label="기간 섹터 시장 선택"><button type="button" class="active" data-period-sector-market="코스피">코스피</button><button type="button" data-period-sector-market="코스닥">코스닥</button><button type="button" data-period-sector-market="ALL">전체</button></div><div class="sector-level-toggle" role="group" aria-label="기간 섹터 분류 선택"><button type="button" data-period-sector-level="large">대분류</button><button type="button" class="active" data-period-sector-level="mid">중분류</button></div><button type="button" class="column-help-button" data-period-sector-reset disabled>선택 초기화</button></div></div><div data-period-sectors></div></article>
+          </div>
+          <div class="period-stock-column">
+            <article class="panel period-stock-panel"><div class="panel-title"><div class="period-panel-heading"><h4 data-period-stock-title>종목별 기간 성과</h4><span data-period-stock-date hidden></span></div><div class="sector-market-toggle" role="group" aria-label="기간 종목 시장 선택"><button type="button" class="active" data-period-stock-market="코스피">코스피</button><button type="button" data-period-stock-market="코스닥">코스닥</button><button type="button" data-period-stock-market="ALL">전체</button></div></div><div data-period-stocks></div></article>
           </div>
         </div>
       </section>
@@ -2709,31 +2712,70 @@ def build_dashboard(
     .performance-subnav[hidden] {{ display:none; }}
     .performance-heading-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
     .performance-heading-actions h3 {{ margin-right:4px; }}
+    .performance-daily-actions {{ display:flex; align-items:center; gap:8px; }}
+    .performance-daily-actions[hidden] {{ display:none; }}
+    .performance-menu-divider {{ color:#7d918a; font-size:13px; font-weight:900; line-height:1; }}
     .performance-subnav .column-help-button.active {{ background:var(--hana); color:#fff; border-color:var(--hana); }}
-    .period-presets {{ display:flex; align-items:center; gap:4px; margin-left:6px; }}
-    .period-presets button {{ min-height:30px; padding:4px 9px; border:1px solid #a9c9c0; background:#fff; color:var(--hana); font-weight:800; cursor:pointer; }}
-    .period-presets button:first-child {{ border-radius:5px 0 0 5px; }}
-    .period-presets button:last-child {{ border-radius:0 5px 5px 0; }}
+    .period-presets {{ display:flex; align-items:center; gap:8px; }}
+    .period-presets button {{ min-height:0; border-radius:6px; padding:5px 8px; font-size:11px; font-weight:900; white-space:nowrap; }}
     .period-presets button.active {{ background:var(--hana); color:#fff; border-color:var(--hana); }}
     .period-date {{ width:132px; min-height:30px; border:1px solid #a9c9c0; border-radius:5px; padding:4px 7px; color:#173a34; background:#fff; }}
+    .period-date:disabled {{ color:#73847f; background:#f1f5f3; cursor:not-allowed; }}
     .period-separator {{ color:var(--muted); font-size:12px; }}
-    .period-status-panel {{ margin-bottom:10px; padding:10px 12px; }}
-    .period-workspace {{ display:grid; grid-template-columns:minmax(300px,.9fr) minmax(360px,1.05fr) minmax(480px,1.35fr); gap:10px; align-items:start; }}
+    .period-query-status {{ margin-left:auto; color:var(--muted); font-size:11px; white-space:nowrap; }}
+    .period-ai-panel {{ min-height:0; margin-bottom:10px; }}
+    .period-workspace {{ display:grid; grid-template-columns:minmax(300px,.9fr) minmax(410px,1fr) minmax(600px,1.55fr); gap:10px; align-items:start; }}
     .period-workspace .panel {{ min-width:0; }}
-    .period-summary-column,.period-detail-column {{ display:grid; gap:10px; min-width:0; }}
+    .period-summary-column,.period-detail-column,.period-stock-column {{ display:grid; gap:10px; min-width:0; }}
     .period-workspace .performance-table {{ max-height:310px; overflow:auto; }}
-    .period-daily-list {{ display:grid; gap:8px; max-height:700px; overflow:auto; padding-right:2px; }}
-    .period-daily-card {{ border:1px solid #cadbd6; border-radius:5px; background:#fbfdfc; overflow:hidden; }}
-    .period-daily-card-title {{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 9px; background:#edf5f2; color:#123c35; font-size:11px; font-weight:900; }}
-    .period-daily-card-title span:last-child {{ color:var(--muted); font-size:10px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-    .period-daily-markets {{ display:grid; gap:7px; padding:8px 9px; }}
-    .period-daily-market h6 {{ margin:0 0 3px; color:var(--hana); font-size:11px; }}
-    .period-daily-market p {{ margin:0; color:#173a34; font-size:11.5px; line-height:1.55; }}
-    .period-ai-panel {{ min-height:300px; }}
-    .period-ai-output {{ display:grid; gap:8px; color:#173a34; font-size:12px; line-height:1.65; }}
-    .period-ai-output .performance-ai-market-box {{ padding:9px 10px; }}
-    .period-detail-column .panel {{ min-height:0; }}
-    .period-detail-column .performance-table {{ max-height:332px; }}
+    .period-daily-list {{ display:grid; max-height:700px; overflow:auto; padding-right:2px; }}
+    .period-daily-header,.period-daily-row {{ display:grid; grid-template-columns:112px minmax(0,1fr) minmax(0,1fr); gap:8px; align-items:center; }}
+    .period-daily-header {{ min-height:30px; padding:5px 9px; border-bottom:1px solid #cbded8; background:#edf5f2; color:#244b44; font-size:11px; font-weight:900; text-align:center; }}
+    .period-daily-row {{ width:100%; min-height:35px; padding:6px 9px; border:0; border-bottom:1px solid #dce8e4; background:#fff; color:#173a34; font:inherit; font-size:11.5px; text-align:center; cursor:pointer; }}
+    .period-daily-row:last-child {{ border-bottom:0; }}
+    .period-daily-row:hover {{ background:#f4f9f7; }}
+    .period-daily-row.active {{ background:#e5f2ee; box-shadow:inset 3px 0 0 var(--hana); }}
+    .period-daily-row time {{ color:#173a34; font-weight:400; text-align:center; white-space:nowrap; }}
+    .period-daily-market-value {{ display:flex; align-items:center; justify-content:center; min-width:0; white-space:nowrap; }}
+    .period-daily-result {{ min-width:92px; padding:3px 7px; border:1px solid currentColor; border-radius:4px; font-size:10.5px; font-weight:400; line-height:1.25; text-align:center; font-variant-numeric:tabular-nums; }}
+    .period-daily-result.over {{ color:#c62828; background:#fff0ef; }}
+    .period-daily-result.under {{ color:#1565c0; background:#edf5ff; }}
+    [data-period-date-reset]:disabled {{ opacity:.42; cursor:default; }}
+    .period-workspace th.sort-asc::after {{ content:" ▲"; display:inline; color:var(--hana); font-size:8px; }}
+    .period-workspace th.sort-desc::after {{ content:" ▼"; display:inline; color:var(--hana); font-size:8px; }}
+    .period-ai-output {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; color:#173a34; font-size:12px; line-height:1.65; }}
+    .period-ai-output > .empty {{ grid-column:1/-1; }}
+    .period-ai-output .period-ai-market-row {{ display:grid; align-content:start; gap:8px; min-width:0; padding:11px 12px; border:1px solid #c9ddd7; border-radius:5px; background:#fbfdfc; }}
+    .period-ai-market-heading {{ display:grid; gap:4px; min-width:0; padding-bottom:7px; border-bottom:1px solid #d9e7e2; }}
+    .period-ai-market-heading h5 {{ flex:0 0 auto; margin:0; color:var(--hana); font-size:13px; font-weight:900; }}
+    .period-ai-market-heading p {{ min-width:0; margin:0; color:#173a34; }}
+    .period-ai-market-analysis h6 {{ margin:0 0 6px; color:var(--hana); font-size:11.5px; font-weight:900; }}
+    .period-ai-bullets {{ display:grid; gap:8px; }}
+    .period-ai-bullet {{ position:relative; display:block; padding-left:13px; }}
+    .period-ai-bullet::before {{ content:"•"; position:absolute; left:0; top:0; color:var(--hana); font-weight:900; }}
+    .period-ai-heading {{ display:flex; align-items:center; gap:7px; }}
+    .period-detail-column .panel,.period-stock-column .panel {{ min-height:0; }}
+    .period-detail-column .performance-table {{ max-height:none; overflow:visible; }}
+    .period-stock-column .performance-table {{ max-height:700px; }}
+    .period-panel-heading {{ display:grid; gap:2px; min-width:0; }}
+    .period-panel-heading span {{ text-align:left; white-space:nowrap; }}
+    .period-detail-column .sector-panel-controls {{ flex:0 0 auto; }}
+    .period-detail-column .sector-level-toggle button,.period-detail-column .sector-market-toggle button {{ flex:0 0 auto; padding-left:7px; padding-right:7px; white-space:nowrap; }}
+    .period-stock-column .performance-table table {{ table-layout:fixed; width:100%; }}
+    .period-stock-column .performance-table .name-cell {{ max-width:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+    .period-stock-column .performance-table th:nth-child(1),.period-stock-column .performance-table td:nth-child(1) {{ width:20%; }}
+    .period-stock-column .performance-table th:nth-child(2),.period-stock-column .performance-table td:nth-child(2) {{ width:18%; }}
+    .period-stock-column .performance-table th:nth-child(3),.period-stock-column .performance-table td:nth-child(3),
+    .period-stock-column .performance-table th:nth-child(4),.period-stock-column .performance-table td:nth-child(4),
+    .period-stock-column .performance-table th:nth-child(5),.period-stock-column .performance-table td:nth-child(5) {{ width:10%; }}
+    .period-stock-column .performance-table th:nth-child(6),.period-stock-column .performance-table td:nth-child(6),
+    .period-stock-column .performance-table th:nth-child(7),.period-stock-column .performance-table td:nth-child(7) {{ width:11%; }}
+    .period-stock-column .performance-table th:nth-child(8),.period-stock-column .performance-table td:nth-child(8) {{ width:10%; }}
+    .period-sector-row {{ cursor:pointer; }}
+    .period-sector-row:hover td,.period-sector-row.active td {{ background:#e8f4f0; }}
+    [data-period-sector-reset]:disabled {{ opacity:.42; cursor:default; }}
+    .period-stock-groups {{ display:grid; gap:10px; }}
+    .period-stock-group h5 {{ margin:0; padding:7px 9px; border:1px solid var(--line); border-bottom:0; background:#f5f9f7; color:#244b44; font-size:11.5px; }}
     .performance-ai-panel {{ margin-bottom:10px; padding:12px 14px; }}
     .performance-ai-panel[hidden] {{ display:none; }}
     .performance-ai-output {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; color:#173a34; font-size:13px; line-height:1.65; }}
@@ -3037,8 +3079,8 @@ def build_dashboard(
     .trade-dynamic-bar .fill.sell {{ background:#2563eb; }}
     .trade-dynamic-bar em {{ font-style:normal; font-size:10.5px; font-weight:900; text-align:right; }}
     @media (max-width:1280px) {{ .hold-grid {{ grid-template-columns:1fr 1fr; }} .trade-grid {{ grid-template-columns:1fr 1fr; }} .trade-recent {{ grid-column:1 / -1; grid-row:auto; }} .net-buy-panel,.net-sell-panel,.long-panel,.short-panel,.chart-panel {{ grid-column:auto; grid-row:auto; }} }}
-    @media (max-width:1180px) {{ .period-workspace {{ grid-template-columns:1fr 1fr; }} .period-detail-column {{ grid-column:1 / -1; grid-template-columns:1fr 1fr; }} }}
-    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.topbar-left {{ flex-wrap:wrap }}.brand {{ font-size:20px }}.quick-nav {{ order:3; width:100%; overflow:auto; padding-bottom:2px; }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.summary-grid,.sector-row,.hold-grid,.detail-grid,.trade-grid,.timeseries-grid,.performance-grid,.fund-history-layout,.period-workspace,.performance-kpis,.performance-ai-output,.fund-analysis-output,.pie-wrap {{ grid-template-columns:1fr; }} .period-detail-column {{ grid-column:auto; grid-template-columns:1fr; }} .fund-analysis-section:nth-child(odd) {{ border-right:0; }} .performance-stock-panel,.period-stock-panel {{ grid-column:auto;grid-row:auto; }} .fund-history-commentary {{ min-height:0; }} .trade-recent,.ts-trend-panel,.ts-daily-panel {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
+    @media (max-width:1180px) {{ .period-workspace {{ grid-template-columns:1fr 1fr; }} .period-ai-panel {{ grid-column:1 / -1; }} }}
+    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.topbar-left {{ flex-wrap:wrap }}.brand {{ font-size:20px }}.quick-nav {{ order:3; width:100%; overflow:auto; padding-bottom:2px; }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.summary-grid,.sector-row,.hold-grid,.detail-grid,.trade-grid,.timeseries-grid,.performance-grid,.fund-history-layout,.period-workspace,.performance-kpis,.performance-ai-output,.period-ai-output,.fund-analysis-output,.pie-wrap {{ grid-template-columns:1fr; }} .period-detail-column {{ grid-column:auto; grid-template-columns:1fr; }} .fund-analysis-section:nth-child(odd) {{ border-right:0; }} .performance-stock-panel,.period-stock-panel {{ grid-column:auto;grid-row:auto; }} .fund-history-commentary {{ min-height:0; }} .trade-recent,.ts-trend-panel,.ts-daily-panel {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
     @media (max-width:980px) {{
       .performance-stock-panel {{ display:block; }}
       .performance-stock-panel [data-performance-stocks] {{ display:block; }}
@@ -3190,6 +3232,14 @@ def build_dashboard(
     function fmtRateJs(value) {{
       return value == null || !Number.isFinite(Number(value)) ? "-" : `${{Number(value).toFixed(2)}}%`;
     }}
+    function fmtRate1Js(value) {{
+      return value == null || !Number.isFinite(Number(value)) ? "-" : `${{Number(value).toFixed(1)}}%`;
+    }}
+    function fmtPp1Js(value) {{
+      if (value == null || !Number.isFinite(Number(value))) return "-";
+      const number = Number(value);
+      return `${{number > 0 ? "+" : ""}}${{number.toFixed(1)}}%p`;
+    }}
     function signedClass(value) {{
       return Number(value) < 0 ? "loss-cell" : "profit-cell";
     }}
@@ -3202,7 +3252,15 @@ def build_dashboard(
     let performanceAiRequestInFlight = false;
     let periodPreset = "week";
     let periodSummary = null;
-    const periodAnalysisCache = new Map();
+    let periodRecentDailyAnalyses = [];
+    let periodRecentDailyKey = "";
+    let periodDetailSummary = null;
+    let periodSelectedDate = "";
+    let periodDetailRequestKey = "";
+    let periodSectorMarket = "코스피";
+    let periodSectorLevel = "mid";
+    let periodStockMarket = "코스피";
+    let periodSectorFilter = "";
     let periodAnalysisRequestKey = "";
     const sortableTableState = new Map();
     let stockSupabaseClient = null;
@@ -3527,8 +3585,8 @@ def build_dashboard(
       ];
       return [{{ market:"분석 결과", text:paragraphs.join(" ") || raw }}];
     }}
-    function performanceAnalysisHtml(value) {{
-      return String(value || "")
+    function performanceAnalysisHtml(value, breakSentences = true) {{
+      const html = String(value || "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -3536,6 +3594,7 @@ def build_dashboard(
         .replace(/'/g, "&#39;")
         .replace(/\\*\\*([^*\\n]+)\\*\\*/g, "<strong>$1</strong>")
         .replace(/\\r?\\n/g, " ");
+      return breakSentences ? html.replace(/([.!?])(<\\/strong>)?\\s+/g, "$1$2<br>") : html;
     }}
     function renderPerformanceAnalysisCards(element, value) {{
       element.innerHTML = performanceAnalysisMarketParts(value).map((part) =>
@@ -3608,6 +3667,7 @@ def build_dashboard(
       if (activeTab === "performance") loadSharedPerformanceAnalysis(false);
       performanceAiRefreshTimer = window.setInterval(() => {{
         if (activeTab === "performance") loadSharedPerformanceAnalysis(true);
+        if (activeTab === "period") loadSharedPeriodAnalysis(true);
       }}, 30000);
     }}
     function localKoreaDate(value = new Date()) {{
@@ -3623,62 +3683,259 @@ def build_dashboard(
       do {{ previous.setDate(previous.getDate() - 1); }} while ([0, 6].includes(previous.getDay()));
       return localKoreaDate(previous);
     }}
+    function setPeriodDateInputMode(editable) {{
+      const startInput = dashboard.querySelector("[data-period-start]");
+      const endInput = dashboard.querySelector("[data-period-end]");
+      if (startInput) startInput.disabled = !editable;
+      if (endInput) endInput.disabled = !editable;
+    }}
     async function setPeriodPreset(preset, load = true) {{
       periodPreset = preset;
       const endInput = dashboard.querySelector("[data-period-end]");
       const startInput = dashboard.querySelector("[data-period-start]");
       if (!startInput || !endInput) return;
+      const isCustom = preset === "custom";
+      setPeriodDateInputMode(isCustom);
+      dashboard.querySelectorAll("[data-period-preset]").forEach((button) => button.classList.toggle("active", button.dataset.periodPreset === preset));
       const endText = previousPeriodTradingDate();
       const end = new Date(`${{endText}}T12:00:00`);
       const start = new Date(end);
-      if (preset === "week") start.setDate(start.getDate() - 6);
+      if (preset === "week" || isCustom) start.setDate(start.getDate() - 6);
       else if (preset === "month") start.setDate(start.getDate() - 29);
       startInput.value = localKoreaDate(start);
       endInput.value = endText;
-      dashboard.querySelectorAll("[data-period-preset]").forEach((button) => button.classList.toggle("active", button.dataset.periodPreset === preset));
+      if (isCustom) return;
       if (load) {{
-        const summary = await loadPeriodSummary();
-        if (summary?.snapshotCount) requestPeriodAnalysis(true);
+        await loadPeriodSummary();
       }}
     }}
     function renderDailyPeriodAnalyses(host, analyses) {{
       if (!host) return;
-      const rows = [...(analyses || [])].filter((item) => item?.analysis).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+      const resetButton = dashboard.querySelector("[data-period-date-reset]");
+      if (resetButton) resetButton.disabled = !periodSelectedDate;
+      const rows = [...(analyses || [])].filter((item) => Array.isArray(item?.markets) && item.markets.length).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
       if (!rows.length) {{
-        host.innerHTML = '<div class="empty">선택 기간에 저장된 일별 AI 마감분석이 없습니다.</div>';
+        host.innerHTML = '<div class="empty">선택 기간에 계산 가능한 일별 성과가 없습니다.</div>';
         return;
       }}
-      host.innerHTML = rows.map((item) => {{
-        const markets = performanceAnalysisMarketParts(item.analysis).map((part) =>
-          `<section class="period-daily-market"><h6>${{escHtml(part.market)}}</h6><p>${{performanceAnalysisHtml(part.text)}}</p></section>`
-        ).join("");
-        return `<article class="period-daily-card"><div class="period-daily-card-title"><span>${{escHtml(item.date || "")}}</span><span>${{escHtml(item.model || "저장된 분석")}}</span></div><div class="period-daily-markets">${{markets}}</div></article>`;
+      const body = rows.map((item) => {{
+        const values = new Map((item.markets || []).map((row) => [String(row.market || ""), row]));
+        const marketCell = (market) => {{
+          const row = values.get(market) || {{}};
+          const relative = Number(row.relativePp);
+          if (!Number.isFinite(relative)) return '<span class="period-daily-market-value">-</span>';
+          const label = relative >= 0 ? "Over" : "Under";
+          const value = `${{relative >= 0 ? "+" : ""}}${{relative.toFixed(2)}}%p`;
+          return `<span class="period-daily-market-value"><span class="period-daily-result ${{relative >= 0 ? "over" : "under"}}">${{label}} ${{value}}</span></span>`;
+        }};
+        const date = String(item.date || "");
+        const dateValue = new Date(`${{date}}T12:00:00`);
+        const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+        const weekday = Number.isNaN(dateValue.getTime()) ? "" : ` (${{weekdays[dateValue.getDay()]}})`;
+        return `<button type="button" class="period-daily-row${{date === periodSelectedDate ? " active" : ""}}" data-period-date="${{escHtml(date)}}" aria-pressed="${{date === periodSelectedDate ? "true" : "false"}}" title="${{escHtml(date)}} 상세 스냅샷 보기"><time>${{escHtml(date + weekday)}}</time>${{marketCell("코스피")}}${{marketCell("코스닥")}}</button>`;
+      }}).join("");
+      host.innerHTML = `<div class="period-daily-header"><span>일자</span><span>vs 코스피</span><span>vs 코스닥</span></div>${{body}}`;
+    }}
+    function renderPeriodAnalysisCards(element, value) {{
+      const marketOrder = new Map([["코스피", 0], ["코스닥", 1]]);
+      const parts = performanceAnalysisMarketParts(value).sort((a, b) => (marketOrder.get(a.market) ?? 9) - (marketOrder.get(b.market) ?? 9));
+      element.innerHTML = parts.map((part) => {{
+        const rawText = String(part.text || "").trim();
+        const firstBulletIndex = rawText.search(/[-•]\\s+/);
+        const summaryMatch = rawText.match(/^([\\s\\S]*?(?:다\\.|요\\.|[!?])(?:\\*\\*)?)(?=\\s|$)/);
+        const summaryText = firstBulletIndex > 0 ? rawText.slice(0, firstBulletIndex) : (summaryMatch?.[1] || "");
+        const summary = (summaryText || "기간 누적 성과를 확인할 수 없습니다.").replace(/^[-•]\\s*/, "").trim();
+        const remainder = firstBulletIndex >= 0
+          ? rawText.slice(firstBulletIndex).trim()
+          : (summaryMatch ? rawText.slice(summaryMatch[0].length).trim() : "");
+        let bullets = [];
+        remainder.replace(/(^|\\s)([-•])\\s+/g, "\\n$2 ").split(/\\r?\\n/).forEach((line) => {{
+          const text = line.trim();
+          if (!text || text === "BM 대비 핵심 요인") return;
+          if (/^[-•]\\s*/.test(text) || !bullets.length) bullets.push(text.replace(/^[-•]\\s*/, "").trim());
+          else bullets[bullets.length - 1] += " " + text;
+        }});
+        if (!bullets.length) bullets = ["확인 가능한 핵심 요인이 없습니다."];
+        const bulletHtml = bullets.map((text) => `<span class="period-ai-bullet">${{performanceAnalysisHtml(text, false)}}</span>`).join("");
+        return `<section class="period-ai-market-row"><div class="period-ai-market-heading"><h5>${{escHtml(part.market)}}</h5><p>${{performanceAnalysisHtml(summary, false)}}</p></div><section class="period-ai-market-analysis"><h6>BM 대비 핵심 요인</h6><div class="period-ai-bullets">${{bulletHtml}}</div></section></section>`;
       }}).join("");
     }}
-    function renderPeriodSummary(summary) {{
-      periodSummary = summary;
-      const status = dashboard.querySelector("[data-period-status]");
-      const title = dashboard.querySelector("[data-period-title]");
-      const dailyHost = dashboard.querySelector("[data-period-daily]");
-      const marketHost = dashboard.querySelector("[data-period-markets]");
+    function periodAnalysisScope(start, end) {{
+      return `${{selectedPerformanceFundLabel()}}\u0000${{start}}\u0000${{end}}`;
+    }}
+    function applySharedPeriodAnalysis(payload, start, end, force = false) {{
+      if (!payload?.analysis) return false;
+      const currentStart = dashboard.querySelector("[data-period-start]")?.value || "";
+      const currentEnd = dashboard.querySelector("[data-period-end]")?.value || "";
+      const scope = periodAnalysisScope(start, end);
+      if (currentStart !== start || currentEnd !== end || periodAnalysisScope(currentStart, currentEnd) !== scope) return false;
+      const panel = dashboard.querySelector("[data-period-ai-panel]");
+      const output = dashboard.querySelector("[data-period-ai-output]");
+      const status = dashboard.querySelector("[data-period-ai-status]");
+      if (!panel || !output) return false;
+      const generatedAt = String(payload.generatedAt || "");
+      if (!force && panel.dataset.aiScope === scope && panel.dataset.aiGeneratedAt === generatedAt) return false;
+      panel.dataset.aiScope = scope;
+      panel.dataset.aiGeneratedAt = generatedAt;
+      renderPeriodAnalysisCards(output, payload.analysis);
+      const rawModel = String(payload.model || "gpt-5.4-mini");
+      if (status) status.textContent = `${{rawModel.startsWith("gpt-5.4-mini") ? "gpt-5.4-mini" : rawModel}} · ${{periodSummary?.snapshotCount || 0}}영업일`;
+      return true;
+    }}
+    async function loadSharedPeriodAnalysis(silent = true) {{
+      if (["127.0.0.1", "localhost"].includes(window.location.hostname)) return;
+      if (activeTab !== "period" || periodAnalysisRequestKey) return;
+      const start = dashboard.querySelector("[data-period-start]")?.value || "";
+      const end = dashboard.querySelector("[data-period-end]")?.value || "";
+      if (!start || !end) return;
+      const status = dashboard.querySelector("[data-period-ai-status]");
+      try {{
+        const client = await getStockSupabaseClient();
+        const invoked = await client.functions.invoke("stock-performance-analysis", {{
+          body:{{ action:"period-latest", start, end, fundScope:selectedPerformanceFundLabel() }},
+        }});
+        if (invoked.error) {{
+          const detail = await invoked.error.context?.json?.().catch(() => null);
+          throw new Error(detail?.error || detail?.message || invoked.error.message);
+        }}
+        if (invoked.data?.analysis) applySharedPeriodAnalysis(invoked.data, start, end);
+      }} catch (error) {{
+        if (!silent) {{
+          console.warn("Shared period AI result load failed", error);
+          if (status) status.textContent = "저장 결과 조회 실패";
+        }}
+      }}
+    }}
+    function renderPeriodDetailTables(summary) {{
       const sectorHost = dashboard.querySelector("[data-period-sectors]");
       const stockHost = dashboard.querySelector("[data-period-stocks]");
+      const sectorTitle = dashboard.querySelector("[data-period-sector-title]");
+      const stockTitle = dashboard.querySelector("[data-period-stock-title]");
+      const sectorDate = dashboard.querySelector("[data-period-sector-date]");
+      const stockDate = dashboard.querySelector("[data-period-stock-date]");
+      const count = Number(summary?.snapshotCount || 0);
+      const isDaily = Boolean(periodSelectedDate && summary === periodDetailSummary);
+      if (sectorTitle) sectorTitle.textContent = isDaily ? "섹터별 성과" : "섹터별 기간 성과";
+      if (stockTitle) stockTitle.textContent = isDaily ? "종목별 성과" : "종목별 기간 성과";
+      if (sectorDate) {{ sectorDate.textContent = isDaily ? periodSelectedDate : ""; sectorDate.hidden = !isDaily; }}
+      if (stockDate) {{ const details = [isDaily ? periodSelectedDate : "", periodSectorFilter].filter(Boolean); stockDate.textContent = details.join(" · "); stockDate.hidden = !details.length; }}
+      dashboard.querySelectorAll("[data-period-sector-market]").forEach((button) => button.classList.toggle("active", button.dataset.periodSectorMarket === periodSectorMarket));
+      dashboard.querySelectorAll("[data-period-sector-level]").forEach((button) => button.classList.toggle("active", button.dataset.periodSectorLevel === periodSectorLevel));
+      dashboard.querySelectorAll("[data-period-stock-market]").forEach((button) => button.classList.toggle("active", button.dataset.periodStockMarket === periodStockMarket));
+      const sectorReset = dashboard.querySelector("[data-period-sector-reset]");
+      if (sectorReset) sectorReset.disabled = !periodSectorFilter;
+      const sectorSource = summary?.sectorRowsByLevel?.[periodSectorLevel] || summary?.sectorRows || [];
+      const scopedSectorRows = sectorSource.filter((row) => String(row.market || "") === periodSectorMarket);
+      const sectorRows = scopedSectorRows.map((row) => {{ const excessContribution = row.excessContributionPp ?? row.contributionPp; const excessProfit = row.excessProfitLoss ?? row.profitLoss; return `<tr class="period-sector-row${{periodSectorFilter === String(row.sector || "") ? " active" : ""}}" data-period-sector-filter="${{escHtml(row.sector)}}"><td class="name-cell"><button type="button" class="performance-filter-button">${{escHtml(row.sector)}}</button></td><td>${{fmtRate1Js(row.portfolioWeightPct)}}</td><td>${{fmtRate1Js(row.benchmarkWeightPct)}}</td><td class="${{signedClass(row.activeWeightPp)}}">${{fmtPp1Js(row.activeWeightPp)}}</td><td class="${{signedClass(excessContribution)}}">${{fmtPpJs(excessContribution == null ? null : excessContribution / 100)}}</td><td class="${{signedClass(excessProfit)}}">${{fmtEok1(excessProfit)}}</td></tr>`; }}).join("");
+      const sectorTotals = scopedSectorRows.reduce((totals, row) => ({{ portfolio:totals.portfolio + Number(row.portfolioWeightPct || 0), benchmark:totals.benchmark + Number(row.benchmarkWeightPct || 0), active:totals.active + Number(row.activeWeightPp || 0), contribution:totals.contribution + Number(row.excessContributionPp ?? row.contributionPp ?? 0), profitLoss:totals.profitLoss + Number(row.excessProfitLoss ?? row.profitLoss ?? 0) }}), {{ portfolio:0, benchmark:0, active:0, contribution:0, profitLoss:0 }});
+      const sectorTotalRow = `<tr class="total-row"><td class="name-cell total-label">합계</td><td>${{fmtRate1Js(sectorTotals.portfolio)}}</td><td>${{fmtRate1Js(sectorTotals.benchmark)}}</td><td class="${{signedClass(sectorTotals.active)}}">${{fmtPp1Js(sectorTotals.active)}}</td><td class="${{signedClass(sectorTotals.contribution)}}">${{fmtPpJs(sectorTotals.contribution / 100)}}</td><td class="${{signedClass(sectorTotals.profitLoss)}}">${{fmtEok1(sectorTotals.profitLoss)}}</td></tr>`;
+      const sectorHeaders = isDaily ? ["섹터", "비중", "BM비중", "BM 대비", "초과기여도", "초과손익(억)"] : ["섹터", "평균 비중", "평균 BM", "BM 대비", "초과기여도", "초과손익(억)"];
+      if (sectorHost) {{
+        sectorHost.innerHTML = count ? `<div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="period-sector"><thead><tr>${{sectorHeaders.map((label, index) => `<th data-sort-index="${{index}}">${{label}}</th>`).join("")}}</tr></thead><tbody>${{sectorRows}}${{sectorTotalRow}}</tbody></table></div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
+        if (!sortableTableState.has("period-sector")) sortableTableState.set("period-sector", {{ index:4, direction:"desc" }});
+        bindSortableTables(sectorHost);
+      }}
+      let stockSource = summary?.stockRowsByMarket?.[periodStockMarket] || (summary?.stockRows || []).filter((row) => periodStockMarket === "ALL" || String(row.market || "") === periodStockMarket);
+      if (periodSectorFilter) stockSource = stockSource.filter((row) => String(row[periodSectorLevel === "large" ? "sectorLarge" : "sectorMid"] || "미분류") === periodSectorFilter);
+      const stockHeaders = isDaily ? ["종목명", "섹터", "비중", "BM비중", "BM 대비", "수익률", "초과기여도", "BM대비손익"] : ["종목명", "섹터", "평균 비중", "평균 BM", "BM 대비", "수익률", "초과기여도", "BM대비손익"];
+      const stockRowHtml = (rows) => rows.map((row) => {{ const excessContribution = row.excessContributionPp ?? row.contributionPp; const excessProfit = row.excessProfitLoss ?? row.profitLoss; const stockName = String(row.name || ""); const sectorName = String(row[periodSectorLevel === "large" ? "sectorLarge" : "sectorMid"] || "미분류"); return `<tr><td class="name-cell" title="${{escHtml(stockName)}}">${{escHtml(stockName)}}</td><td class="name-cell" title="${{escHtml(sectorName)}}">${{escHtml(sectorName)}}</td><td>${{fmtRateJs(row.averageWeightPct)}}</td><td>${{fmtRateJs(row.averageBenchmarkWeightPct)}}</td><td class="${{signedClass(row.activeWeightPp)}}">${{fmtPp1Js(row.activeWeightPp)}}</td><td class="${{signedClass(row.periodReturnPct)}}">${{fmtRateJs(row.periodReturnPct)}}</td><td class="${{signedClass(excessContribution)}}">${{fmtPpJs(excessContribution == null ? null : excessContribution / 100)}}</td><td class="${{signedClass(excessProfit)}}">${{fmtEok1(excessProfit)}}</td></tr>`; }}).join("");
+      const stockTable = (rows, label, key) => `<section class="period-stock-group"><h5>${{label}}</h5><div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="${{key}}"><thead><tr>${{stockHeaders.map((header, index) => `<th data-sort-index="${{index}}">${{header}}</th>`).join("")}}</tr></thead><tbody>${{stockRowHtml(rows)}}</tbody></table></div></section>`;
+      const topStocks = [...stockSource].sort((a, b) => Number(b.excessContributionPp ?? b.contributionPp ?? 0) - Number(a.excessContributionPp ?? a.contributionPp ?? 0)).slice(0, 10);
+      const bottomStocks = [...stockSource].sort((a, b) => Number(a.excessContributionPp ?? a.contributionPp ?? 0) - Number(b.excessContributionPp ?? b.contributionPp ?? 0)).slice(0, 10);
+      if (stockHost) {{
+        stockHost.innerHTML = count ? `<div class="period-stock-groups">${{stockTable(topStocks, "BM대비 성과 양호 TOP10", "period-stock-top")}}${{stockTable(bottomStocks, "BM대비 성과 부진 TOP10", "period-stock-bottom")}}</div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
+        if (!sortableTableState.has("period-stock-top")) sortableTableState.set("period-stock-top", {{ index:4, direction:"desc" }});
+        if (!sortableTableState.has("period-stock-bottom")) sortableTableState.set("period-stock-bottom", {{ index:4, direction:"asc" }});
+        bindSortableTables(stockHost);
+      }}
+    }}
+    function renderPeriodSummary(summary, resetAi = true) {{
+      periodSummary = summary;
+      periodDetailSummary = null;
+      periodSelectedDate = "";
+      periodSectorFilter = "";
+      const status = dashboard.querySelector("[data-period-status]");
+      const dailyHost = dashboard.querySelector("[data-period-daily]");
+      const marketHost = dashboard.querySelector("[data-period-markets]");
       const aiPanel = dashboard.querySelector("[data-period-ai-panel]");
       const aiOutput = dashboard.querySelector("[data-period-ai-output]");
       const aiStatus = dashboard.querySelector("[data-period-ai-status]");
       const count = Number(summary?.snapshotCount || 0);
-      if (title) title.textContent = `${{summary.startDate || ""}} ~ ${{summary.endDate || ""}}`;
-      if (status) status.textContent = count ? `${{count}}영업일 저장 · ${{summary.selectedFund || ""}} · local_test` : "선택한 기간에 저장된 스냅샷이 없습니다.";
-      renderDailyPeriodAnalyses(dailyHost, summary?.dailyAnalyses || []);
+      if (status) status.textContent = count ? `${{count}}영업일 저장 · ${{summary.selectedFund || ""}}` : "선택한 기간에 저장된 스냅샷이 없습니다.";
+      renderDailyPeriodAnalyses(dailyHost, periodRecentDailyAnalyses.length ? periodRecentDailyAnalyses : (summary?.dailyAnalyses || []));
       const marketRows = (summary?.marketRows || []).map((row) => `<tr><td>${{escHtml(row.market)}}</td><td>${{row.days || 0}}</td><td class="${{signedClass(row.actualReturnPct)}}">${{fmtRateJs(row.actualReturnPct)}}</td><td class="${{signedClass(row.benchmarkReturnPct)}}">${{fmtRateJs(row.benchmarkReturnPct)}}</td><td class="${{signedClass(row.relativePp)}}">${{fmtPpJs(row.relativePp == null ? null : row.relativePp / 100)}}</td></tr>`).join("");
       if (marketHost) marketHost.innerHTML = count ? `<div class="table-wrap performance-table"><table><thead><tr><th>시장</th><th>영업일</th><th>포트 수익률</th><th>BM 수익률</th><th>상대성과</th></tr></thead><tbody>${{marketRows}}</tbody></table></div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
-      const sectorRows = (summary?.sectorRows || []).slice(0, 14).map((row) => `<tr><td>${{escHtml(row.market)}}</td><td class="name-cell">${{escHtml(row.sector)}}</td><td>${{fmtRateJs(row.portfolioWeightPct)}}</td><td>${{fmtRateJs(row.benchmarkWeightPct)}}</td><td class="${{signedClass(row.activeWeightPp)}}">${{fmtPpJs(row.activeWeightPp == null ? null : row.activeWeightPp / 100)}}</td><td class="${{signedClass(row.contributionPp)}}">${{fmtPpJs(row.contributionPp == null ? null : row.contributionPp / 100)}}</td></tr>`).join("");
-      if (sectorHost) sectorHost.innerHTML = count ? `<div class="table-wrap performance-table"><table><thead><tr><th>시장</th><th>섹터</th><th>평균 비중</th><th>평균 BM</th><th>BM 대비</th><th>기간 기여도</th></tr></thead><tbody>${{sectorRows}}</tbody></table></div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
-      const stockRows = (summary?.stockRows || []).slice(0, 16).map((row) => `<tr><td>${{escHtml(row.market)}}</td><td class="name-cell">${{escHtml(row.name)}}</td><td>${{fmtRateJs(row.averageWeightPct)}}</td><td class="${{signedClass(row.periodReturnPct)}}">${{fmtRateJs(row.periodReturnPct)}}</td><td class="${{signedClass(row.contributionPp)}}">${{fmtPpJs(row.contributionPp == null ? null : row.contributionPp / 100)}}</td></tr>`).join("");
-      if (stockHost) stockHost.innerHTML = count ? `<div class="table-wrap performance-table"><table><thead><tr><th>시장</th><th>종목명</th><th>평균 비중</th><th>기간 수익률</th><th>기간 기여도</th></tr></thead><tbody>${{stockRows}}</tbody></table></div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
-      if (aiPanel && aiOutput && !count) {{
-        aiOutput.innerHTML = '<div class="empty">분석할 저장 데이터가 없습니다.</div>';
+      renderPeriodDetailTables(summary);
+      if (resetAi && aiPanel && aiOutput) {{
+        aiOutput.innerHTML = count ? '<div class="empty">버튼을 누르면 선택 기간을 분석합니다.</div>' : '<div class="empty">분석할 저장 데이터가 없습니다.</div>';
         if (aiStatus) aiStatus.textContent = "분석 대기";
+      }}
+    }}
+    async function fetchPeriodSummaryRange(start, end) {{
+      if (["127.0.0.1", "localhost"].includes(window.location.hostname)) {{
+        const params = new URLSearchParams({{ start, end, fundScope:selectedPerformanceFundLabel() }});
+        const response = await fetch(`/api/performance-period?${{params}}`, {{ cache:"no-store" }});
+        const result = await response.json().catch(() => ({{}}));
+        if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
+        return result;
+      }}
+      const client = await getStockSupabaseClient();
+      const invoked = await client.functions.invoke("stock-performance-analysis", {{
+        body:{{ action:"period-summary", start, end, fundScope:selectedPerformanceFundLabel() }},
+      }});
+      if (invoked.error) {{
+        const detail = await invoked.error.context?.json?.().catch(() => null);
+        throw new Error(detail?.error || detail?.message || invoked.error.message);
+      }}
+      return invoked.data || {{}};
+    }}
+    async function loadRecentPeriodDailyAnalyses() {{
+      const end = previousPeriodTradingDate();
+      const startDate = new Date(`${{end}}T12:00:00`);
+      startDate.setDate(startDate.getDate() - 45);
+      const start = localKoreaDate(startDate);
+      const key = `${{selectedPerformanceFundLabel()}}\u0000${{start}}\u0000${{end}}`;
+      if (periodRecentDailyKey === key && periodRecentDailyAnalyses.length) return periodRecentDailyAnalyses;
+      const recent = await fetchPeriodSummaryRange(start, end);
+      periodRecentDailyAnalyses = [...(recent?.dailyAnalyses || [])]
+        .filter((item) => Array.isArray(item?.markets) && item.markets.length)
+        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+        .slice(0, 20);
+      periodRecentDailyKey = key;
+      return periodRecentDailyAnalyses;
+    }}
+    async function selectPeriodDate(date) {{
+      if (!periodSummary || !date) return;
+      const dailyHost = dashboard.querySelector("[data-period-daily]");
+      if (periodSelectedDate === date) {{
+        periodSelectedDate = "";
+        periodDetailSummary = null;
+        periodDetailRequestKey = "";
+        renderDailyPeriodAnalyses(dailyHost, periodRecentDailyAnalyses.length ? periodRecentDailyAnalyses : (periodSummary.dailyAnalyses || []));
+        renderPeriodDetailTables(periodSummary);
+        return;
+      }}
+      periodSelectedDate = date;
+      periodDetailSummary = null;
+      const requestKey = `${{date}}\u0000${{selectedPerformanceFundLabel()}}`;
+      periodDetailRequestKey = requestKey;
+      renderDailyPeriodAnalyses(dailyHost, periodRecentDailyAnalyses.length ? periodRecentDailyAnalyses : (periodSummary.dailyAnalyses || []));
+      const sectorHost = dashboard.querySelector("[data-period-sectors]");
+      const stockHost = dashboard.querySelector("[data-period-stocks]");
+      if (sectorHost) sectorHost.innerHTML = '<div class="empty">선택 일자의 섹터 스냅샷을 불러오는 중입니다.</div>';
+      if (stockHost) stockHost.innerHTML = '<div class="empty">선택 일자의 종목 스냅샷을 불러오는 중입니다.</div>';
+      try {{
+        const result = await fetchPeriodSummaryRange(date, date);
+        if (periodDetailRequestKey !== requestKey || periodSelectedDate !== date) return;
+        periodDetailSummary = result;
+        renderPeriodDetailTables(result);
+      }} catch (error) {{
+        console.error("Daily period snapshot load failed", error);
+        if (periodDetailRequestKey !== requestKey) return;
+        periodSelectedDate = "";
+        periodDetailSummary = null;
+        renderDailyPeriodAnalyses(dailyHost, periodRecentDailyAnalyses.length ? periodRecentDailyAnalyses : (periodSummary.dailyAnalyses || []));
+        renderPeriodDetailTables(periodSummary);
       }}
     }}
     async function loadPeriodSummary() {{
@@ -3691,24 +3948,15 @@ def build_dashboard(
       if (!start || !end) return null;
       if (status) status.textContent = "저장된 스냅샷을 불러오는 중입니다.";
       try {{
-        let result;
-        if (["127.0.0.1", "localhost"].includes(window.location.hostname)) {{
-          const params = new URLSearchParams({{ start, end, fundScope:selectedPerformanceFundLabel() }});
-          const response = await fetch(`/api/performance-period?${{params}}`, {{ cache:"no-store" }});
-          result = await response.json().catch(() => ({{}}));
-          if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
-        }} else {{
-          const client = await getStockSupabaseClient();
-          const invoked = await client.functions.invoke("stock-performance-analysis", {{
-            body:{{ action:"period-summary", start, end, fundScope:selectedPerformanceFundLabel() }},
-          }});
-          if (invoked.error) {{
-            const detail = await invoked.error.context?.json?.().catch(() => null);
-            throw new Error(detail?.error || detail?.message || invoked.error.message);
-          }}
-          result = invoked.data || {{}};
-        }}
+        const [result] = await Promise.all([
+          fetchPeriodSummaryRange(start, end),
+          loadRecentPeriodDailyAnalyses().catch((error) => {{
+            console.warn("Recent daily period summary load failed", error);
+            return [];
+          }}),
+        ]);
         renderPeriodSummary(result);
+        loadSharedPeriodAnalysis(true);
         return result;
       }} catch (error) {{
         console.error("Period performance load failed", error);
@@ -3724,10 +3972,11 @@ def build_dashboard(
         setPeriodPreset(periodPreset, false).then(() => loadPeriodSummary());
         return;
       }}
+      setPeriodDateInputMode(periodPreset === "custom");
       dashboard.querySelectorAll("[data-period-preset]").forEach((button) => button.classList.toggle("active", button.dataset.periodPreset === periodPreset));
       loadPeriodSummary();
     }}
-    async function requestPeriodAnalysis(automatic = false) {{
+    async function requestPeriodAnalysis() {{
       const button = dashboard.querySelector("[data-period-ai]");
       const start = dashboard.querySelector("[data-period-start]")?.value || "";
       const end = dashboard.querySelector("[data-period-end]")?.value || "";
@@ -3741,17 +3990,11 @@ def build_dashboard(
         return;
       }}
       const requestKey = `${{selectedPerformanceFundLabel()}}\u0000${{start}}\u0000${{end}}`;
-      if (periodAnalysisCache.has(requestKey)) {{
-        const cached = periodAnalysisCache.get(requestKey);
-        renderPerformanceAnalysisCards(output, cached.analysis);
-        if (status) status.textContent = `${{cached.model || "gpt-5.4-mini"}} · ${{periodSummary.snapshotCount}}영업일`;
-        return;
-      }}
       if (periodAnalysisRequestKey === requestKey) return;
       const originalText = button.textContent;
       periodAnalysisRequestKey = requestKey;
       button.disabled = true;
-      button.textContent = automatic ? "자동 분석 중" : "분석 중";
+      button.textContent = "분석 중";
       output.textContent = "선택 기간의 BM 상대성과를 분석하고 있습니다.";
       if (status) status.textContent = `${{periodSummary.snapshotCount}}영업일 분석 중`;
       try {{
@@ -3774,61 +4017,15 @@ def build_dashboard(
           }}
           result = invoked.data || {{}};
         }}
-        periodAnalysisCache.set(requestKey, result);
-        renderPerformanceAnalysisCards(output, result.analysis);
-        if (status) status.textContent = `${{result.model || "gpt-5.4-mini"}} · ${{periodSummary.snapshotCount}}영업일`;
+        applySharedPeriodAnalysis(result, start, end, true);
       }} catch (error) {{
         console.error("Period AI analysis failed", error);
-        output.textContent = `AI 기간분석을 불러오지 못했습니다. ${{error.message || error}}`;
+        output.textContent = `AI 성과분석을 불러오지 못했습니다. ${{error.message || error}}`;
         if (status) status.textContent = "호출 실패";
       }} finally {{
         periodAnalysisRequestKey = "";
         button.disabled = false;
         button.textContent = originalText;
-      }}
-    }}
-    async function savePerformanceSnapshot() {{
-      const button = dashboard.querySelector("[data-performance-snapshot-save]");
-      if (!button) return;
-      if (!["127.0.0.1", "localhost"].includes(window.location.hostname)) {{
-        button.hidden = true;
-        return;
-      }}
-      const payload = performanceAnalysisPayload();
-      const aiPanel = dashboard.querySelector("[data-performance-ai-panel]");
-      const aiOutput = dashboard.querySelector("[data-performance-ai-output]");
-      const aiTitle = dashboard.querySelector("[data-performance-ai-title]");
-      const aiStatus = dashboard.querySelector("[data-performance-ai-status]");
-      const analysis = !aiPanel?.hidden ? String(aiOutput?.innerText || "").trim() : "";
-      payload.snapshotSchemaVersion = 1;
-      if (analysis) {{
-        payload.dailyAnalysis = {{
-          title:String(aiTitle?.textContent || "AI 성과분석").trim(),
-          analysis,
-          model:String(aiStatus?.textContent || "").trim(),
-        }};
-      }}
-      const originalText = button.textContent;
-      button.disabled = true;
-      button.textContent = "저장 중";
-      try {{
-        const response = await fetch("/api/performance-snapshot", {{
-          method:"POST",
-          headers:{{ "Content-Type":"application/json" }},
-          body:JSON.stringify(payload),
-        }});
-        const result = await response.json().catch(() => ({{}}));
-        if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
-        button.textContent = "저장 완료";
-        button.title = `${{result.performanceDate || payload.asOfDate}} · ${{result.positionCount || payload.positions.length}}종목 · local_test`;
-        window.setTimeout(() => {{ if (!button.disabled) button.textContent = originalText; }}, 2200);
-      }} catch (error) {{
-        console.error("Performance snapshot save failed", error);
-        button.textContent = "저장 실패";
-        button.title = String(error.message || error);
-        window.setTimeout(() => {{ if (!button.disabled) button.textContent = originalText; }}, 3500);
-      }} finally {{
-        button.disabled = false;
       }}
     }}
     async function requestPerformanceAnalysis() {{
@@ -5451,9 +5648,9 @@ def build_dashboard(
         performanceSubnav.hidden = !["performance", "period"].includes(activeTab);
         performanceSubnav.querySelector("[data-performance-main]")?.classList.toggle("active", activeTab === "performance");
         performanceSubnav.querySelector("[data-performance-period-open]")?.classList.toggle("active", activeTab === "period");
+        const dailyActions = performanceSubnav.querySelector("[data-performance-daily-actions]");
+        if (dailyActions) dailyActions.hidden = activeTab !== "performance";
       }}
-      const snapshotButton = dashboard.querySelector("[data-performance-snapshot-save]");
-      if (snapshotButton) snapshotButton.hidden = !["127.0.0.1", "localhost"].includes(window.location.hostname);
       if (activeTab === "summary") refreshQuotes(false);
       if (activeTab === "performance") {{
         renderPerformanceAnalysis();
@@ -5724,13 +5921,44 @@ def build_dashboard(
         if (activeTab === "period") showTab("performance");
         requestPerformanceAnalysis();
       }}
-      if (event.target.closest("[data-performance-snapshot-save]")) savePerformanceSnapshot();
       if (event.target.closest("[data-performance-export]")) exportPerformanceWorkbook();
       if (event.target.closest("[data-performance-period-open]")) showTab("period");
       const periodPresetButton = event.target.closest("[data-period-preset]");
       if (periodPresetButton) setPeriodPreset(periodPresetButton.dataset.periodPreset || "week");
       if (event.target.closest("[data-period-load]")) loadPeriodSummary();
       if (event.target.closest("[data-period-ai]")) requestPeriodAnalysis();
+      if (event.target.closest("[data-period-date-reset]") && periodSelectedDate) selectPeriodDate(periodSelectedDate);
+      const periodDateRow = event.target.closest("[data-period-date]");
+      if (periodDateRow) selectPeriodDate(periodDateRow.dataset.periodDate || "");
+      const periodSectorMarketButton = event.target.closest("[data-period-sector-market]");
+      if (periodSectorMarketButton) {{
+        const value = periodSectorMarketButton.dataset.periodSectorMarket || "코스피";
+        periodSectorMarket = value === "코스피" || value === "코스닥" ? value : "ALL";
+        periodSectorFilter = "";
+        if (periodSummary) renderPeriodDetailTables(periodDetailSummary || periodSummary);
+      }}
+      const periodSectorLevelButton = event.target.closest("[data-period-sector-level]");
+      if (periodSectorLevelButton) {{
+        periodSectorLevel = periodSectorLevelButton.dataset.periodSectorLevel === "mid" ? "mid" : "large";
+        periodSectorFilter = "";
+        if (periodSummary) renderPeriodDetailTables(periodDetailSummary || periodSummary);
+      }}
+      const periodSectorRow = event.target.closest("[data-period-sector-filter]");
+      if (periodSectorRow) {{
+        periodSectorFilter = periodSectorRow.dataset.periodSectorFilter || "";
+        periodStockMarket = periodSectorMarket;
+        if (periodSummary) renderPeriodDetailTables(periodDetailSummary || periodSummary);
+      }}
+      if (event.target.closest("[data-period-sector-reset]")) {{
+        periodSectorFilter = "";
+        if (periodSummary) renderPeriodDetailTables(periodDetailSummary || periodSummary);
+      }}
+      const periodStockMarketButton = event.target.closest("[data-period-stock-market]");
+      if (periodStockMarketButton) {{
+        const value = periodStockMarketButton.dataset.periodStockMarket || "코스피";
+        periodStockMarket = value === "코스피" || value === "코스닥" ? value : "ALL";
+        if (periodSummary) renderPeriodDetailTables(periodDetailSummary || periodSummary);
+      }}
       const sectorMarket = event.target.closest("[data-performance-sector-market]");
       if (sectorMarket) {{
         const value = sectorMarket.dataset.performanceSectorMarket || "ALL";

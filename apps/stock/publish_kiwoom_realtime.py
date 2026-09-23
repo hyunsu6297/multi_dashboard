@@ -6,14 +6,16 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from build_fund_dashboard import build_dashboard
 from fetch_kiwoom_quotes import (
@@ -42,6 +44,21 @@ MEZZANINE_DIR = REPOSITORY_ROOT / "apps" / "mezzanine"
 if str(MEZZANINE_DIR) not in sys.path:
     sys.path.insert(0, str(MEZZANINE_DIR))
 from update_delta_history import run_update  # noqa: E402
+
+
+def start_previous_day_snapshot() -> None:
+    def worker() -> None:
+        target = datetime.now(ZoneInfo("Asia/Seoul")).date() - timedelta(days=1)
+        while target.weekday() >= 5:
+            target -= timedelta(days=1)
+        try:
+            from generate_performance_snapshots import generate_snapshots
+
+            generate_snapshots(target.isoformat(), target.isoformat(), "production")
+        except Exception as exc:
+            print(f"previous-day performance snapshot deferred: {exc}")
+
+    threading.Thread(target=worker, name="stock-performance-snapshot", daemon=True).start()
 
 
 DEFAULT_SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co"
@@ -361,6 +378,7 @@ def main() -> None:
         os.getenv("SUPABASE_URL", DEFAULT_SUPABASE_URL),
         required_secret(),
     )
+    start_previous_day_snapshot()
 
     cutoff_logged = False
     while True:

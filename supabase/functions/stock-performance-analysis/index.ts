@@ -498,6 +498,23 @@ const sharedResult = (row: any) => ({
 
 const validPeriodDate = (value: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 
+const periodResultKey = (fundScope: string, startDate: string, endDate: string) => {
+  if (!fundScope || fundScope.length > 160) throw new Error("조회 대상 펀드가 올바르지 않습니다.");
+  if (!validPeriodDate(startDate) || !validPeriodDate(endDate) || startDate > endDate) throw new Error("조회 기간이 올바르지 않습니다.");
+  return `기간:${startDate}:${endDate}:${fundScope}`;
+};
+
+async function loadSharedPeriodResult(admin: any, fundScope: string, startDate: string, endDate: string) {
+  const cacheScope = periodResultKey(fundScope, startDate, endDate);
+  const { data, error } = await admin.from("stock_performance_ai_results")
+    .select("as_of_date,selected_fund,analysis,model,usage,generated_at")
+    .eq("as_of_date", endDate)
+    .eq("selected_fund", cacheScope)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? { ...sharedResult(data), startDate, endDate, fundScope } : { cached: false, analysis: null, startDate, endDate, fundScope };
+}
+
 async function loadPerformanceSnapshots(admin: any, fundScope: string, startDate: string, endDate: string) {
   if (!fundScope || fundScope.length > 200) throw new Error("조회 대상 펀드가 올바르지 않습니다.");
   if (!validPeriodDate(startDate) || !validPeriodDate(endDate) || startDate > endDate) {
@@ -505,7 +522,7 @@ async function loadPerformanceSnapshots(admin: any, fundScope: string, startDate
   }
   const { data, error } = await admin.from("stock_performance_snapshots")
     .select("performance_date,holdings_snapshot_date,fund_scope,captured_at,calculation_version,payload")
-    .eq("environment", "local_test")
+    .eq("environment", "production")
     .eq("fund_scope", fundScope)
     .gte("performance_date", startDate)
     .lte("performance_date", endDate)
@@ -523,8 +540,8 @@ function preparePeriodSummary(rows: any[], startDate: string, endDate: string, f
   const markets = ["코스피", "코스닥"];
   const marketRates = new Map(markets.map((market) => [market, { actual: [] as number[], benchmark: [] as number[] }]));
   const marketDays = new Map(markets.map((market) => [market, 0]));
-  const sectors = new Map<string, { market: string; sector: string; portfolioWeightSum: number; benchmarkWeightSum: number; contributionPp: number }>();
-  const stocks = new Map<string, { market: string; code: string; name: string; weightSum: number; contributionPp: number; returns: number[] }>();
+  const sectors = new Map<string, { market: string; sector: string; portfolioWeightSum: number; benchmarkWeightSum: number; contributionPp: number; profitLoss: number; excessContributionPp: number; excessProfitLoss: number }>();
+  const stocks = new Map<string, { market: string; code: string; name: string; weightSum: number; contributionPp: number; profitLoss: number; excessContributionPp: number; excessProfitLoss: number; returns: number[] }>();
   const snapshotDates: string[] = [];
   const dailyAnalyses: any[] = [];
 
@@ -549,6 +566,7 @@ function preparePeriodSummary(rows: any[], startDate: string, endDate: string, f
       const marketExp = marketPositions.reduce((sum: number, item: any) => sum + number(item?.exp), 0);
       const marketPl = marketPositions.reduce((sum: number, item: any) => sum + number(item?.pl), 0);
       if (!marketExp) continue;
+      const benchmarkRate = indexReturns[market] != null ? number(indexReturns[market]) : 0;
       marketDays.set(market, (marketDays.get(market) || 0) + 1);
       marketRates.get(market)!.actual.push(marketPl / marketExp * 100);
       if (indexReturns[market] != null) marketRates.get(market)!.benchmark.push(number(indexReturns[market]));
@@ -569,19 +587,29 @@ function preparePeriodSummary(rows: any[], startDate: string, endDate: string, f
         const rawBenchmark = benchmarkMid[sector];
         const benchmarkWeight = number(rawBenchmark && typeof rawBenchmark === "object" ? rawBenchmark.weight : rawBenchmark);
         const key = `${market}\u0000${sector}`;
-        const aggregate = sectors.get(key) || { market, sector, portfolioWeightSum: 0, benchmarkWeightSum: 0, contributionPp: 0 };
+        const expectedPl = sectorExp * benchmarkRate / 100;
+        const excessPl = sectorPl - expectedPl;
+        const aggregate = sectors.get(key) || { market, sector, portfolioWeightSum: 0, benchmarkWeightSum: 0, contributionPp: 0, profitLoss: 0, excessContributionPp: 0, excessProfitLoss: 0 };
         aggregate.portfolioWeightSum += sectorExp / marketExp * 100;
         aggregate.benchmarkWeightSum += benchmarkWeight * 100;
         aggregate.contributionPp += sectorPl / marketExp * 100;
+        aggregate.profitLoss += sectorPl;
+        aggregate.excessContributionPp += excessPl / marketExp * 100;
+        aggregate.excessProfitLoss += excessPl;
         sectors.set(key, aggregate);
       }
 
       for (const item of marketPositions) {
         const code = String(item?.code || item?.name || "");
         const key = `${market}\u0000${code}`;
-        const aggregate = stocks.get(key) || { market, code, name: String(item?.name || code), weightSum: 0, contributionPp: 0, returns: [] as number[] };
+        const itemPl = number(item?.pl);
+        const excessPl = itemPl - number(item?.exp) * benchmarkRate / 100;
+        const aggregate = stocks.get(key) || { market, code, name: String(item?.name || code), weightSum: 0, contributionPp: 0, profitLoss: 0, excessContributionPp: 0, excessProfitLoss: 0, returns: [] as number[] };
         aggregate.weightSum += number(item?.exp) / marketExp * 100;
-        aggregate.contributionPp += number(item?.pl) / marketExp * 100;
+        aggregate.contributionPp += itemPl / marketExp * 100;
+        aggregate.profitLoss += itemPl;
+        aggregate.excessContributionPp += excessPl / marketExp * 100;
+        aggregate.excessProfitLoss += excessPl;
         if (item?.changeRatePct != null) aggregate.returns.push(number(item.changeRatePct));
         stocks.set(key, aggregate);
       }
@@ -604,14 +632,44 @@ function preparePeriodSummary(rows: any[], startDate: string, endDate: string, f
     return {
       market: item.market, sector: item.sector,
       portfolioWeightPct: rounded(portfolioWeightPct), benchmarkWeightPct: rounded(benchmarkWeightPct),
-      activeWeightPp: rounded(portfolioWeightPct - benchmarkWeightPct), contributionPp: rounded(item.contributionPp),
+      activeWeightPp: rounded(portfolioWeightPct - benchmarkWeightPct), contributionPp: rounded(item.contributionPp), profitLoss: rounded(item.profitLoss),
+      excessContributionPp: rounded(item.excessContributionPp), excessProfitLoss: rounded(item.excessProfitLoss),
     };
-  }).sort((a, b) => Math.abs(number(b.contributionPp)) - Math.abs(number(a.contributionPp)));
+  }).sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp)));
   const stockRows = [...stocks.values()].map((item) => ({
     market: item.market, code: item.code, name: item.name,
     averageWeightPct: rounded(item.weightSum / (marketDays.get(item.market) || 1)),
-    periodReturnPct: rounded(compoundedReturn(item.returns)), contributionPp: rounded(item.contributionPp),
-  })).sort((a, b) => Math.abs(number(b.contributionPp)) - Math.abs(number(a.contributionPp)));
+    periodReturnPct: rounded(compoundedReturn(item.returns)), contributionPp: rounded(item.contributionPp), profitLoss: rounded(item.profitLoss),
+    excessContributionPp: rounded(item.excessContributionPp), excessProfitLoss: rounded(item.excessProfitLoss),
+  })).sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp)));
+  const relativeByMarket = new Map(marketRows.map((row) => [row.market, row.relativePp]));
+  for (const market of markets) {
+    const target = relativeByMarket.get(market);
+    const sectorScope = sectorRows.filter((row) => row.market === market);
+    const sectorRaw = sectorScope.reduce((sum, row) => sum + number(row.excessContributionPp), 0);
+    if (target != null && Math.abs(sectorRaw) > 1e-12) {
+      const factor = number(target) / sectorRaw;
+      sectorScope.forEach((row) => { row.excessContributionPp = rounded(number(row.excessContributionPp) * factor); });
+      const residual = rounded(number(target) - sectorScope.reduce((sum, row) => sum + number(row.excessContributionPp), 0));
+      if (residual && sectorScope.length) {
+        const anchor = [...sectorScope].sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp)))[0];
+        anchor.excessContributionPp = rounded(number(anchor.excessContributionPp) + residual);
+      }
+    }
+    const stockScope = stockRows.filter((row) => row.market === market);
+    const stockRaw = stockScope.reduce((sum, row) => sum + number(row.excessContributionPp), 0);
+    if (target != null && Math.abs(stockRaw) > 1e-12) {
+      const factor = number(target) / stockRaw;
+      stockScope.forEach((row) => { row.excessContributionPp = rounded(number(row.excessContributionPp) * factor); });
+      const residual = rounded(number(target) - stockScope.reduce((sum, row) => sum + number(row.excessContributionPp), 0));
+      if (residual && stockScope.length) {
+        const anchor = [...stockScope].sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp)))[0];
+        anchor.excessContributionPp = rounded(number(anchor.excessContributionPp) + residual);
+      }
+    }
+  }
+  sectorRows.sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp)));
+  stockRows.sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp)));
   return {
     startDate, endDate, selectedFund: fundScope, environment: "local_test",
     snapshotCount: rows.length, snapshotDates, marketRows, sectorRows, stockRows, dailyAnalyses,
@@ -619,16 +677,173 @@ function preparePeriodSummary(rows: any[], startDate: string, endDate: string, f
   };
 }
 
+function preparePeriodSummaryV2(rows: any[], startDate: string, endDate: string, fundScope: string) {
+  const markets = ["코스피", "코스닥"];
+  const scopes = [...markets, "ALL"];
+  const marketRates = new Map(markets.map((market) => [market, { actual: [] as number[], benchmark: [] as number[] }]));
+  const marketDays = new Map(markets.map((market) => [market, 0]));
+  const sectorDays = new Map(scopes.map((scope) => [scope, 0]));
+  const stockDays = new Map(scopes.map((scope) => [scope, 0]));
+  const sectors = new Map<string, any>();
+  const stocks = new Map<string, any>();
+  const snapshotDates: string[] = [];
+  const dailyAnalyses: any[] = [];
+
+  for (const record of rows) {
+    const payload = record?.payload && typeof record.payload === "object" ? record.payload : {};
+    const positions = Array.isArray(payload.positions) ? payload.positions : [];
+    const snapshotDate = String(record.performance_date || payload.asOfDate || "");
+    const indexReturns = payload.marketIndexReturns && typeof payload.marketIndexReturns === "object" ? payload.marketIndexReturns : {};
+    const benchmarkSectors = payload.benchmarkSectors && typeof payload.benchmarkSectors === "object" ? payload.benchmarkSectors : {};
+    if (snapshotDate) snapshotDates.push(snapshotDate);
+    const dailyMarkets: any[] = [];
+    for (const market of markets) {
+      const marketPositions = positions.filter((item: any) => String(item?.market || "") === market);
+      const marketExp = marketPositions.reduce((sum: number, item: any) => sum + number(item?.exp), 0);
+      const marketPl = marketPositions.reduce((sum: number, item: any) => sum + number(item?.pl), 0);
+      if (!marketExp) continue;
+      const actual = marketPl / marketExp * 100;
+      const benchmark = indexReturns[market] == null ? null : number(indexReturns[market]);
+      marketDays.set(market, (marketDays.get(market) || 0) + 1);
+      marketRates.get(market)!.actual.push(actual);
+      if (benchmark != null) marketRates.get(market)!.benchmark.push(benchmark);
+      dailyMarkets.push({ market, actualReturnPct: rounded(actual), benchmarkReturnPct: rounded(benchmark), relativePp: benchmark == null ? null : rounded(actual - benchmark) });
+    }
+    if (snapshotDate && dailyMarkets.length) dailyAnalyses.push({ date: snapshotDate, markets: dailyMarkets });
+
+    for (const scope of scopes) {
+      const scopePositions = scope === "ALL" ? positions : positions.filter((item: any) => String(item?.market || "") === scope);
+      const scopeExp = scopePositions.reduce((sum: number, item: any) => sum + number(item?.exp), 0);
+      if (!scopeExp) continue;
+      sectorDays.set(scope, (sectorDays.get(scope) || 0) + 1);
+      stockDays.set(scope, (stockDays.get(scope) || 0) + 1);
+      const benchmarkByLevel: Record<string, Record<string, number>> = { large: {}, mid: {} };
+      for (const level of ["large", "mid"]) {
+        if (markets.includes(scope)) {
+          const raw = benchmarkSectors?.[scope]?.[level] || {};
+          benchmarkByLevel[level] = Object.fromEntries(Object.entries(raw).map(([name, value]: [string, any]) => [name, number(value && typeof value === "object" ? value.weight : value)]));
+        } else {
+          const grouped: Record<string, number> = {};
+          for (const market of markets) {
+            const marketExp = positions.filter((item: any) => String(item?.market || "") === market).reduce((sum: number, item: any) => sum + number(item?.exp), 0);
+            const raw = benchmarkSectors?.[market]?.[level] || {};
+            for (const [name, value] of Object.entries(raw)) grouped[name] = number(grouped[name]) + number(value && typeof value === "object" ? (value as any).weight : value) * marketExp / scopeExp;
+          }
+          const unclassified = positions.filter((item: any) => String(item?.market || "") === "미분류").reduce((sum: number, item: any) => sum + number(item?.exp), 0);
+          if (unclassified) grouped["미분류"] = number(grouped["미분류"]) + unclassified / scopeExp;
+          benchmarkByLevel[level] = grouped;
+        }
+      }
+
+      for (const [level, field] of [["large", "sectorLarge"], ["mid", "sectorMid"]] as const) {
+        const grouped = new Map<string, any[]>();
+        for (const item of scopePositions) {
+          const sector = String(item?.[field] || "미분류");
+          if (!grouped.has(sector)) grouped.set(sector, []);
+          grouped.get(sector)!.push(item);
+        }
+        for (const sector of new Set([...grouped.keys(), ...Object.keys(benchmarkByLevel[level])])) {
+          const items = grouped.get(sector) || [];
+          const sectorExp = items.reduce((sum, item) => sum + number(item?.exp), 0);
+          const sectorPl = items.reduce((sum, item) => sum + number(item?.pl), 0);
+          let excessContribution = 0, excessProfit = 0;
+          for (const market of markets) {
+            if (markets.includes(scope) && market !== scope) continue;
+            const marketPositions = scopePositions.filter((item: any) => String(item?.market || "") === market);
+            const marketExp = marketPositions.reduce((sum, item) => sum + number(item?.exp), 0);
+            const marketSector = items.filter((item: any) => String(item?.market || "") === market);
+            const marketSectorExp = marketSector.reduce((sum, item) => sum + number(item?.exp), 0);
+            const marketSectorPl = marketSector.reduce((sum, item) => sum + number(item?.pl), 0);
+            if (!marketExp || indexReturns[market] == null) continue;
+            const rawBenchmark = benchmarkSectors?.[market]?.[level]?.[sector];
+            const benchmarkWeight = number(rawBenchmark && typeof rawBenchmark === "object" ? rawBenchmark.weight : rawBenchmark);
+            const portfolioWeight = marketSectorExp / marketExp;
+            const sectorReturn = marketSectorExp ? marketSectorPl / marketSectorExp * 100 : 0;
+            const activeEffect = (portfolioWeight - benchmarkWeight) * (sectorReturn - number(indexReturns[market]));
+            const scale = scope === "ALL" ? marketExp / scopeExp : 1;
+            excessContribution += activeEffect * scale;
+            excessProfit += marketExp * activeEffect / 100;
+          }
+          const key = `${scope}\u0000${level}\u0000${sector}`;
+          const aggregate = sectors.get(key) || { market: scope, level, sector, portfolioWeightSum: 0, benchmarkWeightSum: 0, returnPctSum: 0, contributionPp: 0, profitLoss: 0, excessContributionPp: 0, excessProfitLoss: 0 };
+          aggregate.portfolioWeightSum += sectorExp / scopeExp * 100;
+          aggregate.benchmarkWeightSum += number(benchmarkByLevel[level][sector]) * 100;
+          aggregate.returnPctSum += sectorExp ? sectorPl / sectorExp * 100 : 0;
+          aggregate.contributionPp += sectorPl / scopeExp * 100;
+          aggregate.profitLoss += sectorPl;
+          aggregate.excessContributionPp += excessContribution;
+          aggregate.excessProfitLoss += excessProfit;
+          sectors.set(key, aggregate);
+        }
+      }
+
+      const byCode = new Map<string, any[]>();
+      for (const item of scopePositions) {
+        const code = String(item?.code || item?.name || "");
+        if (!byCode.has(code)) byCode.set(code, []);
+        byCode.get(code)!.push(item);
+      }
+      for (const [code, codePositions] of byCode) {
+        const item = codePositions[0];
+        const codeExp = codePositions.reduce((sum, row) => sum + number(row?.exp), 0);
+        const codePl = codePositions.reduce((sum, row) => sum + number(row?.pl), 0);
+        const itemMarket = String(item?.market || "");
+        const marketExp = scopePositions.filter((row: any) => String(row?.market || "") === itemMarket).reduce((sum, row) => sum + number(row?.exp), 0);
+        const portfolioWeight = marketExp ? codeExp / marketExp : 0;
+        const benchmarkCode = String(item?.benchmarkCode || code);
+        const benchmarkWeight = code === benchmarkCode ? number(codePositions.find((row: any) => row?.benchmarkWeight != null)?.benchmarkWeight) : 0;
+        const securityReturn = codeExp ? codePl / codeExp * 100 : 0;
+        const activeEffect = indexReturns[itemMarket] != null && marketExp ? (portfolioWeight - benchmarkWeight) * (securityReturn - number(indexReturns[itemMarket])) : 0;
+        const scale = scope === "ALL" && scopeExp ? marketExp / scopeExp : 1;
+        const key = `${scope}\u0000${code}`;
+        const aggregate = stocks.get(key) || { market: scope, code, name: String(item?.name || code), sectorLarge: String(item?.sectorLarge || "미분류"), sectorMid: String(item?.sectorMid || "미분류"), weightSum: 0, benchmarkWeightSum: 0, activeWeightSum: 0, contributionPp: 0, profitLoss: 0, excessContributionPp: 0, excessProfitLoss: 0, returnsByDate: {} as Record<string, number> };
+        aggregate.weightSum += codeExp / scopeExp * 100;
+        aggregate.benchmarkWeightSum += benchmarkWeight * scale * 100;
+        aggregate.activeWeightSum += (portfolioWeight - benchmarkWeight) * scale * 100;
+        aggregate.contributionPp += codePl / scopeExp * 100;
+        aggregate.profitLoss += codePl;
+        aggregate.excessContributionPp += activeEffect * scale;
+        aggregate.excessProfitLoss += marketExp * activeEffect / 100;
+        aggregate.returnsByDate[snapshotDate] = securityReturn;
+        stocks.set(key, aggregate);
+      }
+    }
+  }
+
+  const marketRows = markets.map((market) => {
+    const rates = marketRates.get(market)!;
+    const actual = rates.actual.length ? rates.actual.reduce((sum, rate) => sum + rate, 0) : null;
+    const benchmark = compoundedReturn(rates.benchmark);
+    return { market, days: marketDays.get(market) || 0, actualReturnPct: rounded(actual), benchmarkReturnPct: rounded(benchmark), relativePp: actual == null || benchmark == null ? null : rounded(actual - benchmark) };
+  });
+  const sectorRowsByLevel: Record<string, any[]> = { large: [], mid: [] };
+  for (const item of sectors.values()) {
+    const divisor = sectorDays.get(item.market) || 1;
+    const portfolioWeight = item.portfolioWeightSum / divisor;
+    const benchmarkWeight = item.benchmarkWeightSum / divisor;
+    sectorRowsByLevel[item.level].push({ market: item.market, sector: item.sector, portfolioWeightPct: rounded(portfolioWeight), benchmarkWeightPct: rounded(benchmarkWeight), activeWeightPp: rounded(portfolioWeight - benchmarkWeight), periodReturnPct: rounded(item.returnPctSum), contributionPp: rounded(item.contributionPp), profitLoss: rounded(item.profitLoss), excessContributionPp: rounded(item.excessContributionPp), excessProfitLoss: rounded(item.excessProfitLoss) });
+  }
+  Object.values(sectorRowsByLevel).forEach((items) => items.sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp))));
+  const stockRowsByMarket: Record<string, any[]> = { "코스피": [], "코스닥": [], ALL: [] };
+  for (const item of stocks.values()) stockRowsByMarket[item.market].push({ market: item.market, code: item.code, name: item.name, sectorLarge: item.sectorLarge, sectorMid: item.sectorMid, averageWeightPct: rounded(item.weightSum / (stockDays.get(item.market) || 1)), averageBenchmarkWeightPct: rounded(item.benchmarkWeightSum / (stockDays.get(item.market) || 1)), activeWeightPp: rounded(item.activeWeightSum / (stockDays.get(item.market) || 1)), periodReturnPct: rounded(compoundedReturn(Object.keys(item.returnsByDate).sort().map((day) => item.returnsByDate[day]))), contributionPp: rounded(item.contributionPp), profitLoss: rounded(item.profitLoss), excessContributionPp: rounded(item.excessContributionPp), excessProfitLoss: rounded(item.excessProfitLoss) });
+  Object.values(stockRowsByMarket).forEach((items) => items.sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp))));
+  const stockRows = [...stockRowsByMarket["코스피"], ...stockRowsByMarket["코스닥"]].sort((a, b) => Math.abs(number(b.excessContributionPp)) - Math.abs(number(a.excessContributionPp)));
+  return { startDate, endDate, selectedFund: fundScope, environment: "production", snapshotCount: rows.length, snapshotDates, marketRows, sectorRows: sectorRowsByLevel.mid.filter((row) => markets.includes(row.market)), sectorRowsByLevel, stockRows, stockRowsByMarket, fundRows: [], dailyAnalyses, savedDailyAnalysis: dailyAnalyses.length === 1 ? dailyAnalyses[0] : null };
+}
+
 const periodInstructions = `기관투자자용 기간별 BM 상대성과 분석을 자연스러운 한국어 존댓말로 작성하십시오.
 입력 수치는 계산 엔진에서 산출됐으므로 재계산하거나 외부 뉴스·전망·펀더멘털을 추가하지 마십시오.
-코스피와 코스닥을 분리하여 각각 한 문단으로 작성하고 각 문단은 3~4문장으로 제한하십시오.
-첫 문장에는 기간 누적 포트폴리오 수익률, BM 수익률, 상대성과를 명확히 쓰십시오.
-이후에는 같은 시장의 sectorRows와 stockRows만 이용해 강세 또는 약세의 핵심 원인을 설명하십시오.
-섹터는 평균 포트폴리오 비중, 평균 BM 비중, BM 대비 비중 차이와 기간 기여도를 함께 고려하십시오.
-종목은 기간 기여도가 특징적인 경우에만 시장별 최대 3개를 언급하십시오.
-숫자는 소수점 둘째 자리까지 표시하고 양수에는 + 부호를 붙이십시오.
-snapshotCount가 적으면 분석 첫머리에 데이터 커버리지가 제한적임을 짧게 알리십시오.
-출력은 반드시 [코스피] 문단, 빈 줄, [코스닥] 문단 순서로 작성하십시오.
+코스피와 코스닥을 분리하십시오. 각 시장은 첫 문장 하나와 'BM 대비 핵심 요인' 아래의 글머리표 2~3개로 작성하십시오.
+각 시장의 첫 문장은 기간 누적 포트폴리오 수익률, BM 수익률, 상대성과만 간결하게 작성하십시오. 펀드별 성과나 펀드명은 언급하지 마십시오.
+분석의 중심은 포트폴리오 절대성과가 아니라 BM 대비 상대성과입니다. relativePp가 +0.50%p를 초과하면 초과성과에 기여한 요인을 중심으로 설명하고, -0.50%p 미만이면 부진 원인을 중심으로 설명하십시오.
+relativePp가 0%p 이상 +0.50%p 이하이면 잘한 요인을 먼저 설명한 뒤 어떤 부진 요인이 초과성과를 제한했는지 덧붙이십시오. relativePp가 -0.50%p 이상 0%p 미만이면 부진 원인을 먼저 설명한 뒤 어떤 긍정적 요인이 약세를 일부 만회했는지 덧붙이십시오.
+글머리표마다 같은 시장의 sectorRows에서 핵심 섹터를 먼저 설명한 뒤, 바로 이어서 그 섹터의 움직임을 보여주는 stockRows 종목 1~3개를 함께 설명하십시오. 섹터와 해당 종목은 반드시 하나의 글머리표 안에 두십시오.
+섹터는 평균 포트폴리오 비중, 평균 BM 비중, BM 대비 비중 차이와 초과기여도를 함께 고려하십시오. 비중 차이를 쓸 때는 반드시 'OO 섹터는 BM 대비 비중이 +5.9%p 높았으며' 또는 'OO 섹터는 BM 대비 비중이 -3.2%p 낮았으며'처럼 BM 대비라는 기준을 문장에 명시하십시오.
+excessContributionPp, excessProfitLossEok 같은 내부 필드명은 결과 문장에 절대 노출하지 말고 각각 '초과기여도', '초과손익'으로 자연스럽게 표현하십시오.
+운용보고서에서 자연스럽게 쓰는 표현을 사용하고 문장을 짧고 명확하게 작성하십시오. '훼손을 남겼다', '성과를 남겼다', '기여도가 약했습니다', '기여도는 -0.30%p였습니다'처럼 어색하거나 수치만 나열하는 표현은 쓰지 마십시오. 양의 초과기여도는 'BM 대비 초과성과에 기여했습니다' 또는 '초과성과에 보탬이 됐습니다', 음의 초과기여도는 'BM 대비 성과에 부정적으로 작용했습니다' 또는 '상대성과에 부담이 됐습니다'처럼 완결된 의미로 표현하십시오.
+포트폴리오 비중, BM 비중, BM 대비 비중 차이 등 비중 관련 수치는 소수점 첫째 자리까지 표시하십시오. 수익률, 상대성과와 기여도는 소수점 둘째 자리까지 표시하십시오. 양수에는 + 부호를 붙이십시오.
+표본 수, 분석 기간이 짧다는 경고, 데이터 커버리지 제한 문구는 쓰지 마십시오.
+출력은 반드시 [코스피], 첫 문장, 'BM 대비 핵심 요인', 글머리표 2~3개, [코스닥], 첫 문장, 'BM 대비 핵심 요인', 글머리표 2~3개 순서로 작성하십시오.
 중요한 결론과 핵심 섹터·종목명은 **굵게** 표시하십시오.`;
 
 async function analyzePeriodSummary(summary: any) {
@@ -637,7 +852,19 @@ async function analyzePeriodSummary(summary: any) {
   const compact = {
     startDate: summary.startDate, endDate: summary.endDate, selectedFund: summary.selectedFund,
     snapshotCount: summary.snapshotCount, marketRows: summary.marketRows,
-    sectorRows: (summary.sectorRows || []).slice(0, 16), stockRows: (summary.stockRows || []).slice(0, 20),
+    sectorRows: (summary.sectorRows || []).slice(0, 16).map((row: any) => ({
+      ...row,
+      portfolioWeightPct: Math.round(number(row.portfolioWeightPct) * 10) / 10,
+      benchmarkWeightPct: Math.round(number(row.benchmarkWeightPct) * 10) / 10,
+      activeWeightPp: Math.round(number(row.activeWeightPp) * 10) / 10,
+      excessContributionPp: rounded(number(row.excessContributionPp)),
+      excessProfitLossEok: Math.round(number(row.excessProfitLoss) / 10_000_000) / 10,
+    })),
+    stockRows: (summary.stockRows || []).slice(0, 20).map((row: any) => ({
+      ...row,
+      excessContributionPp: rounded(number(row.excessContributionPp)),
+      excessProfitLossEok: Math.round(number(row.excessProfitLoss) / 10_000_000) / 10,
+    })),
   };
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -690,15 +917,39 @@ Deno.serve(async (req) => {
         generatedAt: new Date().toISOString(),
       });
     }
+    if (source.action === "period-latest") {
+      return json(await loadSharedPeriodResult(
+        admin,
+        String(source.fundScope || "").trim(),
+        String(source.start || "").trim(),
+        String(source.end || "").trim(),
+      ));
+    }
     if (source.action === "period-summary" || source.action === "period-analysis") {
       const fundScope = String(source.fundScope || "").trim();
       const startDate = String(source.start || "").trim();
       const endDate = String(source.end || "").trim();
       const snapshots = await loadPerformanceSnapshots(admin, fundScope, startDate, endDate);
-      const summary = preparePeriodSummary(snapshots, startDate, endDate, fundScope);
+      const summary = preparePeriodSummaryV2(snapshots, startDate, endDate, fundScope);
       if (source.action === "period-summary") return json(summary);
       if (!snapshots.length) throw new Error("선택한 기간에 저장된 마감 스냅샷이 없습니다.");
-      return json({ ...(await analyzePeriodSummary(summary)), summary });
+      const result = await analyzePeriodSummary(summary);
+      const cacheScope = periodResultKey(fundScope, startDate, endDate);
+      const { data: saved, error: saveError } = await admin.from("stock_performance_ai_results")
+        .upsert({
+          as_of_date: endDate,
+          selected_fund: cacheScope,
+          holdings_snapshot_date: startDate,
+          analysis: result.analysis,
+          model: result.model,
+          usage: result.usage,
+          generated_at: result.generatedAt,
+          generated_by: user.id,
+        }, { onConflict: "as_of_date,selected_fund" })
+        .select("as_of_date,selected_fund,analysis,model,usage,generated_at")
+        .single();
+      if (saveError) throw saveError;
+      return json({ ...sharedResult(saved), startDate, endDate, fundScope, summary });
     }
     const { asOfDate, selectedFund } = resultKey(source);
     if (source.action === "latest") {

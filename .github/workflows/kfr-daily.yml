@@ -143,6 +143,18 @@ jobs:
         if: steps.kiwoom_quotes.outcome == 'failure'
         run: echo "Kiwoom quote refresh was blocked; building with the latest Supabase source data."
 
+      - name: Build previous-day stock performance snapshots
+        id: stock_performance_snapshots
+        continue-on-error: true
+        run: >-
+          python apps/stock/generate_performance_snapshots.py
+          --start "${{ steps.kfr_date.outputs.business_date }}"
+          --environment production
+
+      - name: Warn when stock performance snapshot is not ready
+        if: steps.stock_performance_snapshots.outcome == 'failure'
+        run: echo "The previous-day performance snapshot is not ready yet; a later scheduled run will retry the same idempotent upsert."
+
       - name: Update mezzanine delta history
         id: mezzanine_delta
         continue-on-error: true
