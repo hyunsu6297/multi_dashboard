@@ -2745,7 +2745,7 @@ def build_dashboard(
     .period-workspace th.sort-desc::after {{ content:" ▼"; display:inline; color:var(--hana); font-size:8px; }}
     .period-ai-output {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; color:#173a34; font-size:12px; line-height:1.65; }}
     .period-ai-output > .empty {{ grid-column:1/-1; }}
-    .period-ai-output .period-ai-market-row {{ display:grid; align-content:start; gap:8px; min-width:0; padding:11px 12px; border:1px solid #c9ddd7; border-radius:5px; background:#fbfdfc; }}
+    .period-ai-output .period-ai-market-row,.performance-ai-output .period-ai-market-row {{ display:grid; align-content:start; gap:8px; min-width:0; padding:11px 12px; border:1px solid #c9ddd7; border-radius:5px; background:#fbfdfc; }}
     .period-ai-market-heading {{ display:grid; gap:4px; min-width:0; padding-bottom:7px; border-bottom:1px solid #d9e7e2; }}
     .period-ai-market-heading h5 {{ flex:0 0 auto; margin:0; color:var(--hana); font-size:13px; font-weight:900; }}
     .period-ai-market-heading p {{ min-width:0; margin:0; color:#173a34; }}
@@ -3597,9 +3597,7 @@ def build_dashboard(
       return breakSentences ? html.replace(/([.!?])(<\\/strong>)?\\s+/g, "$1$2<br>") : html;
     }}
     function renderPerformanceAnalysisCards(element, value) {{
-      element.innerHTML = performanceAnalysisMarketParts(value).map((part) =>
-        '<section class="performance-ai-market-box"><h5>' + part.market + '</h5><p>' + performanceAnalysisHtml(part.text) + '</p></section>'
-      ).join("");
+      renderPeriodAnalysisCards(element, value);
     }}
     function performanceAnalysisScope(payload) {{
       return `${{payload.asOfDate}}\u0000${{payload.selectedFund}}`;
@@ -3881,6 +3879,8 @@ def build_dashboard(
       renderPeriodDetailTables(summary);
       if (resetAi && aiPanel && aiOutput) {{
         aiOutput.innerHTML = count ? '<div class="empty">버튼을 누르면 선택 기간을 분석합니다.</div>' : '<div class="empty">분석할 저장 데이터가 없습니다.</div>';
+        aiPanel.dataset.aiScope = "";
+        aiPanel.dataset.aiGeneratedAt = "";
         if (aiStatus) aiStatus.textContent = "분석 대기";
       }}
     }}

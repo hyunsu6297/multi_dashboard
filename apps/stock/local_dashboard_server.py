@@ -1047,10 +1047,20 @@ def rounded(value: float | None, digits: int = 2) -> float | None:
     return None if value is None else round(value, digits)
 
 
-def compact_position(row: dict) -> dict:
+def compact_position(row: dict, market_exp: float) -> dict:
+    portfolio_weight = number(row.get("exp")) / market_exp * 100 if market_exp else 0.0
+    benchmark_weight = number(row.get("benchmarkWeight")) * 100
+    active_weight = portfolio_weight - benchmark_weight
+    return_pct = number(row.get("changeRatePct"))
+    impact_signal = active_weight * return_pct / 100
     return {
         "name": str(row.get("name") or "미분류"),
-        "returnPct": rounded(number(row.get("changeRatePct"))),
+        "portfolioWeightPct": rounded(portfolio_weight),
+        "benchmarkWeightPct": rounded(benchmark_weight),
+        "activeWeightPp": rounded(active_weight),
+        "returnPct": rounded(return_pct),
+        "excessContributionPp": rounded(impact_signal),
+        "excessProfitLossEok": rounded(impact_signal / 100 * market_exp / 100_000_000),
     }
 
 
@@ -1181,7 +1191,12 @@ def prepare_analysis_summary(data: dict) -> dict:
                 "sectorReturnPct": rounded(sector_return),
                 "portfolioContributionPp": rounded(contribution),
                 "allocationSignalPp": rounded(allocation_signal),
-                "topStocks": [compact_position(row) for row in ranked_stocks[:3]],
+                "excessContributionPp": rounded(allocation_signal),
+                "excessProfitLossEok": rounded(
+                    allocation_signal / 100 * market_exp / 100_000_000
+                    if allocation_signal is not None else None
+                ),
+                "topStocks": [compact_position(row, market_exp) for row in ranked_stocks[:3]],
             })
         support = sorted(
             (row for row in signals if (row["allocationSignalPp"] or 0) > 0),
@@ -1294,30 +1309,34 @@ def analyze_performance(data: dict) -> dict:
 
 입력의 marketAnalysis는 시장별로 완전히 분리되어 있습니다. 코스피 문단은 market='코스피' 객체 안의 performance와 sectorSignals만 사용하고, 코스닥 문단은 market='코스닥' 객체 안의 값만 사용하십시오. 다른 시장이나 전체 portfolio의 섹터·종목·비중을 가져오거나 두 시장을 합산하지 마십시오. sectorSignals의 portfolioWeightPct와 activeWeightPp는 해당 시장의 Net Exp를 100%로 계산한 값이므로 그대로 인용하십시오.
 
-sectorSignals.primary에는 실제 상대성과 방향과 일치하는 핵심 원인만 들어 있습니다. Under이면 약세 원인, Over이면 강세 원인이므로 두 번째 문장은 반드시 primary만 사용하십시오. sectorSignals.offset은 상대성과 절대값이 0.50%p 이하인 강보합·약보합권에서만 제공되는 반대 방향의 상쇄 요인입니다. offset이 비어 있으면 반대 방향 요인을 언급하지 마십시오.
+sectorSignals.primary에는 실제 상대성과 방향과 일치하는 핵심 원인이 들어 있습니다. Under이면 약세 원인, Over이면 강세 원인 중심으로 글머리표를 작성하십시오. sectorSignals.offset은 상대성과 절대값이 0.50%p 이하인 강보합·약보합권에서만 제공되는 반대 방향의 상쇄 요인입니다. offset이 비어 있으면 반대 방향 요인을 언급하지 마십시오.
 
 출력 형식은 반드시 다음 구조를 지키십시오. 대괄호 표시는 그대로 출력하십시오.
 [코스피]
-코스피 분석 문단
+당일 성과 요약 한 문장
+BM 대비 핵심 요인
+- 섹터와 해당 섹터의 특징 종목을 함께 설명한 글머리표 2~3개
 
 [코스닥]
-코스닥 분석 문단
+당일 성과 요약 한 문장
+BM 대비 핵심 요인
+- 섹터와 해당 섹터의 특징 종목을 함께 설명한 글머리표 2~3개
 
 시장별 문단 작성 규칙:
-1. 첫 문장은 반드시 '포트폴리오는 코스피보다 [relativeAssessment]입니다([relativeDisplay]).' 또는 '포트폴리오는 코스닥보다 [relativeAssessment]입니다([relativeDisplay]).' 형식으로 짧게 끝내십시오. relativeDisplay는 입력값을 그대로 쓰고 부호나 Over/Under를 바꾸지 마십시오.
-2. 두 번째 문장은 sectorSignals.primary에서 가장 중요한 중분류 섹터 하나를 골라 비중 차이와 섹터 수익률의 관계를 설명하십시오. 섹터 비중은 반드시 '필수-식음료 비중이 BM 대비 +8.66%p 높았으나'처럼 BM 대비라는 표현과 activeWeightPp를 함께 쓰십시오. Under이면 불리한 원인, Over이면 유리한 원인만 선택하십시오.
-3. offset이 비어 있으면 세 번째 문장은 primary와 primaryStocks만 사용해 같은 방향의 원인을 보강하십시오. offset이 있으면 세 번째 문장은 반드시 offset과 offsetStocks만 사용해 반대 방향 요인이 주된 효과를 일부 만회하거나 제한했다고 설명하십시오. 이때도 섹터를 언급하면 반드시 'BM 대비 비중이 +1.93%p 높은 IT-하드웨어'처럼 BM 대비라는 표현과 activeWeightPp를 함께 쓰고, primary나 primaryStocks를 다시 쓰지 마십시오. 예: 약보합이면 '다만 BM 대비 비중이 +1.93%p 높은 IT-하드웨어의 강세와 삼성전기(+3.20%)가 약세를 일부 만회했습니다.' 강보합이면 '다만 BM 대비 비중이 +2.10%p 높은 필수-식음료의 부진과 삼양식품(-2.10%)이 상승 폭을 제한했습니다.'
-4. 시장별 문단은 반드시 정확히 세 문장만 작성하십시오. 상대성과가 BM과 가깝더라도 첫 문장의 강세·약세 표현은 유지하고, 세 번째 문장에서만 반대 요인의 상쇄 효과를 설명하십시오. 네 번째 문장을 추가하지 마십시오.
-5. 한 문장에는 하나의 핵심 내용만 담고, 쉼표로 여러 섹터와 종목을 길게 연결하지 마십시오. 각 문장은 가능하면 70자를 넘기지 마십시오. '불리하게 작용했습니다.'처럼 의미가 완결되는 곳에서 문장을 끝내고 다음 문장을 시작하십시오.
-6. '비중이 높았고 수익률이 상승했다'면 '높은데, 수익률도 강세를 보였다'처럼 자연스럽게 연결하십시오. 비중은 높지만 수익률이 하락했다면 '높았으나, 수익률이 부진했다'를 사용하십시오. 조사와 접속사는 앞뒤 내용에 맞게 선택하십시오.
+1. 첫 문장은 반드시 '당일 포트폴리오 수익률은 +0.00%, BM 수익률은 +0.00%였고, 상대성과는 +0.00%p였습니다.' 형식으로 actualReturnPct, indexReturnPct, relativePp를 모두 포함하십시오.
+2. 글머리표마다 sectorSignals의 중분류 섹터를 먼저 설명한 뒤 해당 섹터의 topStocks 중 특징적인 종목 1~3개를 같은 글머리표 안에서 연결하십시오.
+3. 섹터는 포트폴리오 비중, BM 비중, BM 대비 비중 차이, 당일 섹터 수익률과 초과기여도를 함께 고려하십시오. 반드시 'OO 섹터는 BM 대비 비중이 +5.9%p 높았으며, 당일 수익률이 +2.10%로...'처럼 원인과 결과가 읽히게 쓰십시오.
+4. offset이 비어 있으면 primary의 같은 방향 요인만 설명하십시오. offset이 있으면 마지막 글머리표에서 반대 방향 요인이 약세를 일부 만회하거나 상승 폭을 제한한 점을 설명하십시오.
+5. 종목도 가능하면 BM 대비 비중 차이와 당일 수익률을 함께 제시하여 섹터 설명을 뒷받침하십시오.
+6. 한 글머리표에는 하나의 섹터만 다루고 운용보고서에서 사용하는 짧고 자연스러운 문장으로 작성하십시오.
 
 숫자와 표현 규칙:
 - 양수인 수익률, 상대성과, BM 대비 비중 차이에는 반드시 + 부호를 붙이십시오. 음수에는 - 부호를 사용하십시오.
-- 모든 숫자는 소수점 둘째 자리까지 반올림해 두 자리로 표시하십시오. 비중·수익률은 %, 상대성과와 BM 대비 비중 차이는 %p로 표시하십시오.
+- 포트폴리오 비중, BM 비중과 BM 대비 비중 차이는 소수점 첫째 자리, 수익률·상대성과·초과기여도는 소수점 둘째 자리까지 표시하십시오.
 - 모든 섹터 설명에는 'BM 대비'라는 문구와 해당 섹터의 activeWeightPp를 빠짐없이 포함하십시오. 단순히 '비중이 +8.66%p 높다'라고 쓰지 마십시오.
-- 특징적인 종목은 같은 시장의 primaryStocks 또는 offsetStocks에서만 고르십시오. 시장별 최대 3개만 '종목명(+3.66%)' 형식으로 표시하고, 양수 종목에도 반드시 + 부호를 붙이십시오.
+- 특징적인 종목은 각 섹터의 topStocks에서만 고르십시오. 글머리표별 최대 3개만 사용하고 양수에도 반드시 + 부호를 붙이십시오.
 - 핵심 결론과 가장 중요한 섹터명·종목명은 **굵게** 표시하되 문장 전체를 굵게 표시하지 마십시오.
-- 본문에는 기여도 수치, 내부 JSON 필드명, 분석 방법론, 제목, 기준일을 쓰지 마십시오.
+- 초과기여도와 초과손익은 필요할 때만 자연스럽게 사용하고 내부 JSON 필드명, 분석 방법론, 제목, 기준일은 쓰지 마십시오.
 - 섹터 배분 신호는 약식 지표이므로 정밀 성과귀속이나 확정 원인으로 단정하지 마십시오. 데이터가 없으면 '확인 가능한 배분 요인이 없습니다.'라고만 쓰십시오."""
     request_body = json.dumps(
         {

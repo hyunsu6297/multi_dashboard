@@ -273,12 +273,6 @@ type Bucket = {
   rows?: Position[];
 };
 
-const compactPosition = (row: Position) => ({
-  name: String(row.name || "미분류"),
-  returnPct: rounded(number(row.changeRatePct)),
-  contributionPp: null,
-});
-
 function prepareSummary(data: Record<string, unknown>) {
   const positions = Array.isArray(data.positions) ? data.positions as Position[] : [];
   const indexReturns = data.marketIndexReturns && typeof data.marketIndexReturns === "object"
@@ -383,7 +377,24 @@ function prepareSummary(data: Record<string, unknown>) {
         sectorReturnPct: rounded(sectorReturn),
         portfolioContributionPp: rounded(marketExp ? item.pl / marketExp * 100 : null),
         allocationSignalPp: rounded(allocationSignal),
-        topStocks: ranked.slice(0, 3).map(compactPosition),
+        excessContributionPp: rounded(allocationSignal),
+        excessProfitLossEok: rounded(allocationSignal == null ? null : allocationSignal / 100 * marketExp / 100_000_000),
+        topStocks: ranked.slice(0, 3).map((row) => {
+          const portfolioWeight = marketExp ? number(row.exp) / marketExp * 100 : 0;
+          const benchmarkWeight = number(row.benchmarkWeight) * 100;
+          const activeWeight = portfolioWeight - benchmarkWeight;
+          const returnPct = number(row.changeRatePct);
+          const impactSignal = activeWeight * returnPct / 100;
+          return {
+            name: String(row.name || "미분류"),
+            portfolioWeightPct: rounded(portfolioWeight),
+            benchmarkWeightPct: rounded(benchmarkWeight),
+            activeWeightPp: rounded(activeWeight),
+            returnPct: rounded(returnPct),
+            excessContributionPp: rounded(impactSignal),
+            excessProfitLossEok: rounded(impactSignal / 100 * marketExp / 100_000_000),
+          };
+        }),
       });
     }
     const support = signals.filter((row) => number(row.allocationSignalPp) > 0)
@@ -446,28 +457,18 @@ function prepareSummary(data: Record<string, unknown>) {
   };
 }
 
-const instructions = `기관투자자용 BM 대비 상대성과 분석을 자연스러운 한국어 존댓말로 작성하십시오.
-모든 계산과 선별은 서버에서 끝났습니다. 제공된 숫자만 해석하고 재계산, 외부 추정, 뉴스, 전망, 종목 펀더멘털을 추가하지 마십시오. 섹터는 모두 중분류 기준입니다.
-
-입력의 marketAnalysis는 시장별로 완전히 분리되어 있습니다. 코스피 문단은 market='코스피' 객체 안의 performance와 sectorSignals만 사용하고, 코스닥 문단은 market='코스닥' 객체 안의 값만 사용하십시오. 다른 시장이나 전체 portfolio의 섹터·종목·비중을 가져오거나 두 시장을 합산하지 마십시오.
-sectorSignals.primary는 Under이면 약세 원인, Over이면 강세 원인입니다. 두 번째 문장은 반드시 primary만 사용하십시오. sectorSignals.offset은 상대성과 절대값이 0.50%p 이하인 강보합·약보합권에서만 제공됩니다. offset이 비어 있으면 반대 방향 요인을 언급하지 마십시오.
-
-출력 형식:
-[코스피]
-코스피 분석 문단
-
-[코스닥]
-코스닥 분석 문단
-
-시장별 문단 규칙:
-1. 첫 문장은 반드시 '포트폴리오는 코스피보다 [relativeAssessment]입니다([relativeDisplay]).' 또는 코스닥 형식으로 끝내고 입력값을 그대로 쓰십시오.
-2. 두 번째 문장은 primary의 가장 중요한 중분류 섹터 하나를 골라 비중 차이와 섹터 수익률을 설명하십시오. 반드시 '필수-식음료 비중이 BM 대비 +8.66%p 높았으나'처럼 'BM 대비'와 activeWeightPp를 함께 쓰십시오.
-3. offset이 비어 있으면 primary와 primaryStocks만 사용해 같은 방향 원인을 보강하십시오. offset이 있으면 반드시 offset과 offsetStocks만 사용해 반대 방향 요인이 일부 만회하거나 제한했다고 설명하십시오. 이때도 'BM 대비 비중이 +1.93%p 높은 IT-하드웨어'처럼 'BM 대비'와 activeWeightPp를 포함하십시오.
-4. 각 시장은 정확히 세 문장만 쓰십시오. 한 문장에는 하나의 핵심만 담고 가능하면 70자를 넘기지 마십시오.
-5. 양수에는 + 부호를 붙이고 모든 숫자는 소수점 둘째 자리까지 표시하십시오. 비중·수익률은 %, 상대성과와 비중 차이는 %p입니다.
-6. 특징적인 종목은 같은 시장의 primaryStocks 또는 offsetStocks에서만 최대 3개를 '종목명(+3.66%)' 형식으로 쓰십시오.
-7. 핵심 결론과 중요한 섹터명·종목명은 **굵게** 표시하되 문장 전체는 굵게 하지 마십시오.
-8. 기여도 수치, 내부 필드명, 방법론, 제목, 기준일은 쓰지 마십시오.`;
+const instructions = `기관투자자용 당일 BM 상대성과 분석을 자연스러운 한국어 존댓말로 작성하십시오.
+입력 수치는 계산 엔진에서 산출됐으므로 재계산하거나 외부 뉴스·전망·펀더멘털을 추가하지 마십시오. 분석 범위는 입력의 asOfDate 당일 현재 성과로 한정하며, 과거 기간이나 누적 성과처럼 표현하지 마십시오.
+코스피와 코스닥을 분리하십시오. 각 시장은 첫 문장 하나와 'BM 대비 핵심 요인' 아래의 글머리표 2~3개로 작성하십시오.
+첫 문장은 반드시 '당일 포트폴리오 수익률은 +0.00%, BM 수익률은 +0.00%였고, 상대성과는 +0.00%p였습니다.' 형식으로 actualReturnPct, indexReturnPct, relativePp를 모두 포함하십시오. 코스피와 코스닥 각각 해당 시장의 performance 입력값만 사용하십시오.
+분석의 중심은 절대수익률이 아니라 당일 BM 대비 상대성과입니다. sectorSignals.primary에는 실제 상대성과 방향의 핵심 섹터가, 상대성과 절대값이 0.50%p 이하일 때 sectorSignals.offset에는 반대 방향의 상쇄 요인이 제공됩니다.
+글머리표마다 sectorSignals의 중분류 섹터를 먼저 설명한 뒤, 해당 섹터의 topStocks 중 특징적인 종목 1~3개를 같은 글머리표 안에서 연결하십시오. 서로 다른 시장의 데이터나 sectorSignals 밖의 종목은 사용하지 마십시오.
+각 섹터는 포트폴리오 비중, BM 비중, BM 대비 비중 차이, 당일 섹터 수익률과 초과기여도를 함께 고려하십시오. 반드시 'OO 섹터는 BM 대비 비중이 +5.9%p 높았으며, 당일 수익률이 +2.10%로...'처럼 비중 차이와 등락률이 어떤 초과성과 또는 부진으로 이어졌는지 원인과 결과가 읽히게 쓰십시오.
+종목도 가능하면 BM 대비 비중 차이와 당일 수익률을 함께 제시해 섹터 설명을 뒷받침하십시오. 초과기여도와 초과손익은 필요할 때만 자연스럽게 사용하고 내부 필드명은 노출하지 마십시오.
+relativePp가 +0.50%p를 초과하면 잘한 요인을 중심으로, -0.50%p 미만이면 부진 원인을 중심으로 작성하십시오. +0.50%p 이하의 강보합이면 부진 요인이 상승 폭을 제한한 점을, -0.50%p 이상의 약보합이면 긍정 요인이 약세를 일부 만회한 점을 마지막 글머리표에 설명하십시오.
+비중 관련 수치는 소수점 첫째 자리, 수익률·상대성과·초과기여도는 소수점 둘째 자리까지 표시하고 양수에는 + 부호를 붙이십시오. 운용보고서에서 쓰는 자연스러운 표현을 사용하고, 표본·방법론·데이터 제한 문구는 쓰지 마십시오.
+출력은 반드시 [코스피], 첫 문장, 'BM 대비 핵심 요인', 글머리표 2~3개, [코스닥], 첫 문장, 'BM 대비 핵심 요인', 글머리표 2~3개 순서로 작성하십시오.
+중요한 결론과 핵심 섹터·종목명은 **굵게** 표시하십시오.`;
 
 function outputText(payload: any) {
   if (typeof payload.output_text === "string") return payload.output_text.trim();
