@@ -3743,8 +3743,11 @@ def build_dashboard(
         const rawText = String(part.text || "").trim();
         const firstBulletIndex = rawText.search(/[-•]\\s+/);
         const summaryMatch = rawText.match(/^([\\s\\S]*?(?:다\\.|요\\.|[!?])(?:\\*\\*)?)(?=\\s|$)/);
-        const summaryText = firstBulletIndex > 0 ? rawText.slice(0, firstBulletIndex) : (summaryMatch?.[1] || "");
-        const summary = (summaryText || "기간 누적 성과를 확인할 수 없습니다.").replace(/^[-•]\\s*/, "").trim();
+        const summaryText = summaryMatch?.[1] || (firstBulletIndex > 0 ? rawText.slice(0, firstBulletIndex) : "");
+        const summary = (summaryText || "기간 누적 성과를 확인할 수 없습니다.")
+          .replace(/^[-•]\\s*/, "")
+          .replace(/\\s*(?:\\*\\*)?BM 대비 핵심 요인(?:\\*\\*)?\\s*$/, "")
+          .trim();
         const remainder = firstBulletIndex >= 0
           ? rawText.slice(firstBulletIndex).trim()
           : (summaryMatch ? rawText.slice(summaryMatch[0].length).trim() : "");
