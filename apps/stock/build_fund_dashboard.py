@@ -3766,6 +3766,15 @@ def build_dashboard(
     function periodAnalysisScope(start, end) {{
       return `${{selectedPerformanceFundLabel()}}\u0000${{start}}\u0000${{end}}`;
     }}
+    function periodAnalysisTimestamp(value) {{
+      const date = new Date(String(value || ""));
+      if (Number.isNaN(date.getTime())) return "시각 미확인";
+      const parts = new Intl.DateTimeFormat("ko-KR", {{
+        timeZone:"Asia/Seoul", year:"numeric", month:"2-digit", day:"2-digit",
+        hour:"2-digit", minute:"2-digit", hourCycle:"h23",
+      }}).formatToParts(date).reduce((result, part) => ({{ ...result, [part.type]:part.value }}), {{}});
+      return `${{parts.year}}-${{parts.month}}-${{parts.day}} ${{parts.hour}}시 ${{parts.minute}}분`;
+    }}
     function applySharedPeriodAnalysis(payload, start, end, force = false) {{
       if (!payload?.analysis) return false;
       const currentStart = dashboard.querySelector("[data-period-start]")?.value || "";
@@ -3782,7 +3791,8 @@ def build_dashboard(
       panel.dataset.aiGeneratedAt = generatedAt;
       renderPeriodAnalysisCards(output, payload.analysis);
       const rawModel = String(payload.model || "gpt-5.4-mini");
-      if (status) status.textContent = `${{rawModel.startsWith("gpt-5.4-mini") ? "gpt-5.4-mini" : rawModel}} · ${{periodSummary?.snapshotCount || 0}}영업일`;
+      const model = rawModel.startsWith("gpt-5.4-mini") ? "gpt-5.4-mini" : rawModel;
+      if (status) status.textContent = `분석기간 ${{start}} ~ ${{end}} · 최종 실행 ${{periodAnalysisTimestamp(generatedAt)}} · ${{model}} · ${{periodSummary?.snapshotCount || 0}}영업일`;
       return true;
     }}
     async function loadSharedPeriodAnalysis(silent = true) {{
