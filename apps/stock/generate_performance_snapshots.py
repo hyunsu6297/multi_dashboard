@@ -15,6 +15,7 @@ from historical_performance import build_historical_snapshots
 
 DEFAULT_SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co"
 ALL_FUNDS = "전체 펀드"
+REQUIRED_STOCK_KFR_SOURCES = {"fund_prices", "fund_holdings", "fund_trades"}
 
 
 def service_role_key() -> str:
@@ -99,6 +100,30 @@ def daily_analysis(payload: dict[str, Any]) -> dict[str, Any]:
     return {"title": "일별 성과 요약", "analysis": "", "model": "Python 엔진", "markets": markets}
 
 
+def complete_kfr_dates(start_date: str, end_date: str) -> set[str]:
+    source_filter = ",".join(sorted(REQUIRED_STOCK_KFR_SOURCES))
+    query = urllib.parse.urlencode({
+        "select": "source_key,business_date,row_count",
+        "business_date": f"gte.{start_date}",
+        "and": f"(business_date.lte.{end_date})",
+        "source_key": f"in.({source_filter})",
+    }, safe=".,()")
+    rows = supabase_get(f"kfr_source_snapshots?{query}")
+    sources_by_date: dict[str, set[str]] = {}
+    for row in rows:
+        if int(row.get("row_count") or 0) <= 0:
+            continue
+        business_date = str(row.get("business_date") or "")
+        source_key = str(row.get("source_key") or "")
+        if business_date and source_key:
+            sources_by_date.setdefault(business_date, set()).add(source_key)
+    return {
+        business_date
+        for business_date, sources in sources_by_date.items()
+        if REQUIRED_STOCK_KFR_SOURCES.issubset(sources)
+    }
+
+
 def split_fund_records(records: list[dict[str, Any]], environment: str) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     for source in records:
@@ -135,6 +160,11 @@ def snapshot_complete(performance_date: str, environment: str) -> bool:
 
 
 def generate_snapshots(start_date: str, end_date: str, environment: str, *, skip_completed: bool = True) -> list[dict[str, Any]]:
+    eligible_dates = complete_kfr_dates(start_date, end_date)
+    if not eligible_dates:
+        raise RuntimeError(
+            f"No date has complete KFR stock source snapshots for {start_date}..{end_date}."
+        )
     if skip_completed and start_date == end_date and snapshot_complete(start_date, environment):
         print(f"performance snapshot already complete: date={start_date}, environment={environment}")
         return []
@@ -145,6 +175,10 @@ def generate_snapshots(start_date: str, end_date: str, environment: str, *, skip
         end_date,
         ALL_FUNDS,
     )
+    base_records = [
+        row for row in base_records
+        if str(row.get("performance_date") or "") in eligible_dates
+    ]
     records = split_fund_records(base_records, environment)
     if not records:
         raise RuntimeError(f"No completed market-day snapshot could be built for {start_date}..{end_date}.")

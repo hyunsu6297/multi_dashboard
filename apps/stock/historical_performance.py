@@ -74,7 +74,32 @@ def _fetch_index_closes(start_date: str, end_date: str) -> dict[str, dict[str, f
     return result
 
 
-def _index_returns(start_date: str, end_date: str) -> dict[str, dict[str, float]]:
+def _stored_index_returns(
+    supabase_get: Callable[[str], list[dict]], start_date: str, end_date: str
+) -> dict[str, dict[str, float]]:
+    rows = supabase_get(
+        "kiwoom_realtime_quotes?select=code,change_rate,collected_at"
+        "&code=in.(INDEX_KOSPI,INDEX_KOSDAQ)"
+    )
+    markets = {"INDEX_KOSPI": "코스피", "INDEX_KOSDAQ": "코스닥"}
+    result: dict[str, dict[str, float]] = {market: {} for market in MARKETS}
+    for row in rows:
+        market = markets.get(str(row.get("code") or ""))
+        collected_at = str(row.get("collected_at") or "")
+        day = collected_at[:10]
+        rate = row.get("change_rate")
+        if market and start_date <= day <= end_date and rate is not None:
+            result[market][day] = _number(rate)
+    return result
+
+
+def _index_returns(
+    supabase_get: Callable[[str], list[dict]], start_date: str, end_date: str
+) -> dict[str, dict[str, float]]:
+    stored = _stored_index_returns(supabase_get, start_date, end_date)
+    if start_date == end_date and all(start_date in stored[market] for market in MARKETS):
+        return stored
+
     closes = _fetch_index_closes(start_date, end_date)
     result: dict[str, dict[str, float]] = {}
     for market, values in closes.items():
@@ -85,7 +110,7 @@ def _index_returns(start_date: str, end_date: str) -> dict[str, dict[str, float]
             if previous and start_date <= day <= end_date:
                 rates[day] = (close / previous - 1) * 100
             previous = close
-        result[market] = rates
+        result[market] = {**rates, **stored.get(market, {})}
     return result
 
 
@@ -310,7 +335,7 @@ def build_historical_snapshots(
     prices = _stock_prices(
         supabase_get, supabase_upsert, start_date, end_date, required_codes
     )
-    index_rates = _index_returns(start_date, end_date)
+    index_rates = _index_returns(supabase_get, start_date, end_date)
     market_by_code = _market_master(supabase_get)
     benchmark_snapshots = _benchmark_rows(supabase_get, start_date, end_date)
     holding_dates = sorted(set(holdings["스냅샷일"]))
