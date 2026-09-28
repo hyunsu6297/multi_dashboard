@@ -25,7 +25,9 @@ from fetch_kiwoom_quotes import (
     DEFAULT_HOST,
     DEFAULT_TOKEN_REFRESH_MINUTES,
     OUTPUT,
+    QUOTE_UPDATE_CUTOFF,
     QuoteUpdateCutoffReached,
+    SEOUL_TZ,
     collect_codes,
     collect_mezzanine_codes,
     load_credentials,
@@ -218,6 +220,49 @@ def load_cached_quotes(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def daily_close_rows(quotes: dict[str, Any], business_date: str) -> list[dict[str, Any]]:
+    updated_at = datetime.now(timezone.utc).isoformat()
+    rows: list[dict[str, Any]] = []
+    for code, item in quotes.get("stocks", {}).items():
+        if not isinstance(item, dict):
+            continue
+        price = item.get("price")
+        change_rate = item.get("change_rate")
+        try:
+            price_number = abs(float(price))
+            change_rate_number = float(change_rate) / 100
+        except (TypeError, ValueError):
+            continue
+        if price_number <= 0:
+            continue
+        rows.append({
+            "business_date": business_date,
+            "code": str(code),
+            "name": str(item.get("name") or code),
+            "close_price": price_number,
+            "change_rate": change_rate_number,
+            "source": "ka10095",
+            "updated_at": updated_at,
+        })
+    return rows
+
+
+def persist_cached_daily_close(publisher: SupabasePublisher, output: Path) -> str:
+    quotes = load_cached_quotes(output)
+    business_date = str(quotes.get("updated_at") or "")[:10]
+    today = datetime.now(SEOUL_TZ).date().isoformat()
+    if business_date != today:
+        raise RuntimeError(
+            f"Cached Kiwoom quote date is {business_date or 'missing'}, expected {today}"
+        )
+    rows = daily_close_rows(quotes, business_date)
+    if not rows:
+        raise RuntimeError(f"No valid Kiwoom daily close rows are available for {business_date}")
+    publisher.upsert_rows("kiwoom_daily_prices", rows, "business_date,code")
+    print(f"daily stock closes preserved: date={business_date}, rows={len(rows)}")
+    return business_date
+
+
 def publish_dashboard(
     publisher: SupabasePublisher,
     quotes: dict[str, Any],
@@ -381,8 +426,18 @@ def main() -> None:
     start_previous_day_snapshot()
 
     cutoff_logged = False
+    daily_close_saved_date = ""
     while True:
         if not quote_updates_allowed():
+            now = datetime.now(SEOUL_TZ)
+            if (
+                now.time().replace(tzinfo=None) > QUOTE_UPDATE_CUTOFF
+                and daily_close_saved_date != now.date().isoformat()
+            ):
+                try:
+                    daily_close_saved_date = persist_cached_daily_close(publisher, args.output)
+                except Exception as exc:
+                    print(f"daily close preservation failed; will retry: {exc}")
             if not cutoff_logged:
                 print(quote_pause_message())
                 cutoff_logged = True

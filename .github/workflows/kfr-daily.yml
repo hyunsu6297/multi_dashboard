@@ -113,6 +113,7 @@ jobs:
           python automation/kfr/kfr_partner_api_download.py "${args[@]}"
 
       - name: Upload rows to Supabase
+        id: kfr_upload
         if: (github.event_name == 'schedule' && steps.kfr_snapshot.outcome == 'failure') || inputs.refresh_sources == true
         shell: bash
         run: |
@@ -145,14 +146,14 @@ jobs:
 
       - name: Build previous-day stock performance snapshots
         id: stock_performance_snapshots
-        continue-on-error: true
+        if: steps.kfr_snapshot.outcome == 'success' || steps.kfr_upload.outcome == 'success'
         run: >-
           python apps/stock/generate_performance_snapshots.py
           --start "${{ steps.kfr_date.outputs.business_date }}"
           --environment production
 
       - name: Warn when stock performance snapshot is not ready
-        if: steps.stock_performance_snapshots.outcome == 'failure'
+        if: failure() && steps.stock_performance_snapshots.outcome == 'failure'
         run: echo "The previous-day performance snapshot is not ready yet; a later scheduled run will retry the same idempotent upsert."
 
       - name: Update mezzanine delta history
