@@ -244,6 +244,25 @@ def daily_close_rows(quotes: dict[str, Any], business_date: str) -> list[dict[st
             "source": "ka10095",
             "updated_at": updated_at,
         })
+    for index_key, item in quotes.get("indices", {}).items():
+        if index_key not in {"KOSPI", "KOSDAQ"} or not isinstance(item, dict):
+            continue
+        try:
+            close = abs(float(item.get("price")))
+            change_rate = float(item.get("change_rate")) / 100
+        except (TypeError, ValueError):
+            continue
+        if close <= 0:
+            continue
+        rows.append({
+            "business_date": business_date,
+            "code": f"INDEX_{index_key}",
+            "name": str(item.get("name") or index_key),
+            "close_price": close,
+            "change_rate": change_rate,
+            "source": "ka10095",
+            "updated_at": updated_at,
+        })
     return rows
 
 

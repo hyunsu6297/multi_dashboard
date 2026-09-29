@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -77,18 +78,28 @@ def _fetch_index_closes(start_date: str, end_date: str) -> dict[str, dict[str, f
 def _stored_index_returns(
     supabase_get: Callable[[str], list[dict]], start_date: str, end_date: str
 ) -> dict[str, dict[str, float]]:
+    markets = {"INDEX_KOSPI": "코스피", "INDEX_KOSDAQ": "코스닥"}
+    result: dict[str, dict[str, float]] = {market: {} for market in MARKETS}
+    daily_rows = supabase_get(
+        "kiwoom_daily_prices?select=business_date,code,change_rate"
+        f"&business_date=gte.{start_date}&business_date=lte.{end_date}"
+        "&code=in.(INDEX_KOSPI,INDEX_KOSDAQ)"
+    )
+    for row in daily_rows:
+        market = markets.get(str(row.get("code") or ""))
+        day = str(row.get("business_date") or "")
+        if market and day and row.get("change_rate") is not None:
+            result[market][day] = _number(row["change_rate"]) * 100
     rows = supabase_get(
         "kiwoom_realtime_quotes?select=code,change_rate,collected_at"
         "&code=in.(INDEX_KOSPI,INDEX_KOSDAQ)"
     )
-    markets = {"INDEX_KOSPI": "코스피", "INDEX_KOSDAQ": "코스닥"}
-    result: dict[str, dict[str, float]] = {market: {} for market in MARKETS}
     for row in rows:
         market = markets.get(str(row.get("code") or ""))
         collected_at = str(row.get("collected_at") or "")
         day = collected_at[:10]
         rate = row.get("change_rate")
-        if market and start_date <= day <= end_date and rate is not None:
+        if market and start_date <= day <= end_date and rate is not None and day not in result[market]:
             result[market][day] = _number(rate)
     return result
 
@@ -162,9 +173,14 @@ def _fetch_missing_stock_prices(
 ) -> list[dict]:
     appkey, secretkey = load_credentials()
     if not appkey or not secretkey:
-        raise RuntimeError("키움 일봉 조회용 KIWOOM_APPKEY/KIWOOM_SECRETKEY가 설정되지 않았습니다.")
+        print("Kiwoom daily-chart credentials unavailable; using saved daily prices.", file=sys.stderr)
+        return []
     host = os.getenv("KIWOOM_HOST", DEFAULT_HOST)
-    token = os.getenv("KIWOOM_ACCESS_TOKEN") or request_token(host, appkey, secretkey, 20.0)
+    try:
+        token = os.getenv("KIWOOM_ACCESS_TOKEN") or request_token(host, appkey, secretkey, 20.0)
+    except RuntimeError as exc:
+        print(f"Kiwoom daily-chart token unavailable ({exc}); using saved daily prices.", file=sys.stderr)
+        return []
     minimum_date = (date.fromisoformat(start_date) - timedelta(days=10)).isoformat()
     pending: list[dict] = []
     fetched: list[dict] = []
