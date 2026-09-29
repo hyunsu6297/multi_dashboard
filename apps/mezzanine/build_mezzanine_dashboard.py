@@ -111,6 +111,20 @@ def read_master() -> pd.DataFrame:
     return df
 
 
+def exchange_sector_code(row: pd.Series, codes_by_name: dict[str, str]) -> str:
+    """Resolve the exchange target; never substitute the bond issuer for its sector."""
+    explicit = code(row.get("교환코드"))
+    if re.fullmatch(r"\d{6}", explicit):
+        return explicit
+    name = clean(row.get("교환대상명"))
+    resolved = codes_by_name.get(name, "") if name else ""
+    if not resolved:
+        legacy = re.search(r"구\.([^\)]+)", name)
+        if legacy:
+            resolved = codes_by_name.get(clean(legacy.group(1)), "")
+    return resolved
+
+
 def economic_key(row: pd.Series) -> str:
     # KR코드와 달리 콜/풋/전환 이벤트에도 유지되는 경제적 식별자.
     return "|".join([clean(row.get("발행사명")).lower(), clean(row.get("구분")).upper(), clean(row.get("회차"))])
@@ -464,6 +478,16 @@ def build_data() -> dict:
         except (OSError, ValueError):
             pass
     quotes, quote_updated, current_index_returns = load_quotes()
+    industry_large_by_code, industry_mid_by_code = read_industry_map()
+    exchange_codes_by_name: dict[str, str] = {}
+    name_candidates: dict[str, set[str]] = {}
+    for _, row in master.iterrows():
+        target_name, target_code = clean(row.get("교환대상명")), code(row.get("교환코드"))
+        if target_name and re.fullmatch(r"\d{6}", target_code):
+            name_candidates.setdefault(target_name, set()).add(target_code)
+    for name, candidates in name_candidates.items():
+        if len(candidates) == 1:
+            exchange_codes_by_name[name] = next(iter(candidates))
     market_by_code = load_stock_market_map({
         code(row.get("교환코드")) or code(row.get("발행코드"))
         for _, row in master.iterrows()
@@ -493,6 +517,7 @@ def build_data() -> dict:
         iid = id_by_code.get(sec_code, "")
         delta, sample_count, history = delta_by_instrument.get(iid, (0.40, 0, []))
         underlying_code = code(row.get("교환코드") or row.get("발행코드"))
+        sector_code = exchange_sector_code(row, exchange_codes_by_name)
         change = quote_change(quotes, underlying_code)
         current_price = quote_price(quotes, underlying_code)
         delta_by_code[sec_code] = delta
@@ -502,7 +527,9 @@ def build_data() -> dict:
             "underlying": clean(row.get("교환대상명")), "underlyingCode": underlying_code,
             "issuerCode": code(row.get("발행코드")),
             "type": clean(row.get("구분")), "round": clean(row.get("회차")),
-            "sectorLarge": clean(row.get("업종(대)")) or "미분류", "sectorMid": clean(row.get("업종(중)")) or "미분류",
+            "sectorCode": sector_code,
+            "sectorLarge": industry_large_by_code.get(sector_code, "미분류"),
+            "sectorMid": industry_mid_by_code.get(sector_code, "미분류"),
             "coupon": number(row.get("Coupon")), "ytm": number(row.get("YTM")),
             "issueAmount": number(row.get("발행금액")) * 100_000_000,
             "conversionPrice": number(row.get("전환가")), "floor": number(row.get("Floor")),
@@ -555,6 +582,7 @@ def build_data() -> dict:
                 "conversionStart": clean(similar.get("conversionStart")) if similar else "", "putDate": clean(similar.get("putDate")) if similar else "", "deltaExposure": lookthrough * similar_delta, "needsRegistration": True,
                 "creditRating": clean(row.get("신용등급")), "maturityDate": str(row.get("만기일") or "")[:10],
                 "sectorLarge": clean(similar.get("sectorLarge")) if similar else "미분류", "sectorMid": clean(similar.get("sectorMid")) if similar else "미분류", "market": market_by_code.get(similar_underlying_code, "미분류"),
+                "sectorCode": clean(similar.get("sectorCode")) if similar else "",
             })
             continue
         value = number(row.get("평가금"))
@@ -562,6 +590,7 @@ def build_data() -> dict:
         share = number(fund.get("지분율"), 1.0)
         delta = delta_by_code.get(sec_code, 0)
         ucode = code(sec.get("교환코드") or sec.get("발행코드"))
+        sector_code = exchange_sector_code(sec, exchange_codes_by_name)
         if not ucode:
             underlying_name = clean(sec.get("교환대상명"))
             legacy_match = re.search(r"구\.([^\)]+)", underlying_name)
@@ -580,7 +609,7 @@ def build_data() -> dict:
             "code": sec_code, "name": clean(row.get("종목명")), "issuer": clean(sec.get("발행사명")),
             "underlying": clean(sec.get("교환대상명")),
             "issuerCode": code(sec.get("발행코드")),
-            "type": clean(sec.get("구분")), "sector": clean(sec.get("업종(대)")) or "미분류",
+            "type": clean(sec.get("구분")), "sector": industry_large_by_code.get(sector_code, "미분류"),
             "quantity": number(row.get("수량")), "value": value, "cost": cost, "lookthrough": lookthrough,
             "bookPnl": (value - cost) * share, "delta": delta, "underlyingCode": ucode,
             "underlyingChange": change, "estimatedPnl": estimated_pnl,
@@ -592,8 +621,9 @@ def build_data() -> dict:
             "deltaExposure": lookthrough * delta,
             "needsRegistration": False,
             "creditRating": clean(row.get("신용등급")), "maturityDate": str(row.get("만기일") or "")[:10],
-            "sectorLarge": clean(sec.get("업종(대)")) or "미분류",
-            "sectorMid": clean(sec.get("업종(중)")) or "미분류",
+            "sectorCode": sector_code,
+            "sectorLarge": industry_large_by_code.get(sector_code, "미분류"),
+            "sectorMid": industry_mid_by_code.get(sector_code, "미분류"),
             "market": market_by_code.get(ucode) or clean(quotes.get(ucode, {}).get("market")) or "미분류",
         })
 
@@ -642,7 +672,6 @@ def build_data() -> dict:
     kosdaq_series = load_market_series("KOSDAQ")
     benchmark_file = ROOT.parent / "stock" / "benchmark_weights.json"
     benchmark_weights = json.loads(benchmark_file.read_text(encoding="utf-8")) if benchmark_file.exists() else {}
-    industry_large_by_code, industry_mid_by_code = read_industry_map()
     benchmark_sectors = build_benchmark_sector_weights(
         benchmark_weights,
         industry_large_by_code,

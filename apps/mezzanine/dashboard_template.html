@@ -192,6 +192,18 @@ $('#holdSearch').oninput=e=>{state.holdSearch=e.target.value;render()};$('#trade
 let kfrHistorySignature='';
 function normalizedFundKey(value){let text=String(value||'').toLowerCase();for(const token of ['mezzanine','mezz','메자닌','일반사모투자신탁','사모투자신탁','전문투자자','제','호'])text=text.replaceAll(token,'');return text.replace(/[^0-9a-z가-힣]/g,'')}
 async function fetchPaged(queryFactory){let output=[];for(let start=0;;start+=1000){const {data,error}=await queryFactory(start);if(error)throw error;output.push(...(data||[]));if(!data||data.length<1000)break}return output}
+function sectorStockCode(value){let text=String(value??'').trim().replace(/\.0$/,'').replace(/^A(?=\d{6}$)/,'');return /^\d{1,6}$/.test(text)?text.padStart(6,'0'):''}
+function resolveExchangeSectorCode(record,codesByName){let explicit=sectorStockCode(record?.['교환코드']);if(explicit)return explicit;let name=String(record?.['교환대상명']||'').replace(/\s/g,''),legacy=name.match(/구\.([^\)]+)/);return codesByName.get(name)||(legacy?codesByName.get(legacy[1]):'')||''}
+async function hydrateSharedSectors(client,instrumentRows){
+  const items=[...(window.MEZZ_DATA.holdings||[]),...(window.MEZZ_DATA.securities||[])],byCode=new Map(instrumentRows.map(x=>[String(x['KR코드']||'').trim(),x])),nameCandidates=new Map();
+  for(const record of instrumentRows){let name=String(record['교환대상명']||'').replace(/\s/g,''),code=sectorStockCode(record['교환코드']);if(name&&code){if(!nameCandidates.has(name))nameCandidates.set(name,new Set());nameCandidates.get(name).add(code)}}
+  const codesByName=new Map([...nameCandidates].filter(([,codes])=>codes.size===1).map(([name,codes])=>[name,[...codes][0]])),targetByItem=new Map();
+  for(const item of items){let record=byCode.get(String(item.code||'').trim()),target=record?resolveExchangeSectorCode(record,codesByName):sectorStockCode(item.sectorCode);targetByItem.set(item,target)}
+  const targetCodes=[...new Set([...targetByItem.values()].filter(Boolean))],sectorRows=[];
+  for(let offset=0;offset<targetCodes.length;offset+=200){sectorRows.push(...await fetchPaged(start=>client.from('manual_file_rows').select('payload').eq('domain','stock').eq('file_key','sector').in('payload->>코드',targetCodes.slice(offset,offset+200)).order('row_no').range(start,start+999)))}
+  const sectors=new Map();for(const row of sectorRows){let p=row.payload||{},code=sectorStockCode(p['코드']??p.Code);if(code&&!sectors.has(code))sectors.set(code,{large:String(p['업종(대)']??p['대분류']??'').trim()||'미분류',mid:String(p['업종(중)']??p['중분류']??'').trim()||'미분류'})}
+  for(const item of items){let target=targetByItem.get(item),sector=sectors.get(target);item.sectorCode=target;item.sectorLarge=sector?.large||'미분류';item.sectorMid=sector?.mid||'미분류';if('sector' in item)item.sector=item.sectorLarge}
+}
 async function hydrateFundReturnHistory(client){
   const snapshots=await fetchPaged(start=>client.from('kfr_source_snapshots').select('id,business_date,downloaded_at').eq('source_key','fund_prices').order('business_date',{ascending:true}).order('downloaded_at',{ascending:true}).range(start,start+999));
   const latestByDate=new Map();for(const row of snapshots)latestByDate.set(String(row.business_date).slice(0,10),row);
@@ -230,6 +242,7 @@ async function hydrateFromSupabase(){
       h.putDate=String(m['PUT']||h.putDate||'').slice(0,10); h.needsRegistration=false;
       h._conversionPrice=Number(m['전환가']||0);
     }
+    await hydrateSharedSectors(client,instrumentRows);
     await hydrateFundReturnHistory(client);
     for(const h of window.MEZZ_DATA.holdings)h.market='미분류';
     const codes=[...new Set(window.MEZZ_DATA.holdings.map(x=>x.underlyingCode).filter(x=>/^\d{6}$/.test(x)))];
