@@ -417,6 +417,7 @@ def refresh_domestic_once(
 
 
 def main() -> None:
+    raise SystemExit("Global Kiwoom publishing is retired. Run run_global_bloomberg_web_receiver.cmd instead.")
     parser = argparse.ArgumentParser(description="Global dashboard Kiwoom Supabase receiver")
     parser.add_argument("--cycle-seconds", type=float, default=20.0, help="Alias for --domestic-cycle-seconds.")
     parser.add_argument("--domestic-cycle-seconds", type=float, default=None)

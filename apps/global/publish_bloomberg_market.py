@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timezone
 
 from bloomberg_local_server import fetch_reference
-from publish_kiwoom_market import (
+from global_market_supabase import (
     DEFAULT_SUPABASE_URL, SupabaseRest, complete_request,
     load_market_snapshot, normalize_security_list, publish_market_snapshot,
     publish_quotes, required_env,

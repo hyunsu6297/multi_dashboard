@@ -473,4 +473,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Legacy entry point: keep it Bloomberg-only even when launched directly.
+    from bloomberg_local_server import main as bloomberg_main
+    raise SystemExit(bloomberg_main())
