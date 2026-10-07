@@ -1,19 +1,26 @@
 from __future__ import annotations
 
 import gzip
+import base64
+import binascii
+import hashlib
 import json
 import math
 import os
 import re
 import sys
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+from calendar import monthrange
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+from period_ai_history import find_matching_history, get_history, list_history, save_history
 
 
 HOST = "127.0.0.1"
@@ -26,6 +33,7 @@ LOCAL_KFR_DIR = REPOSITORY_ROOT / "data" / "kfr"
 DEFAULT_SUPABASE_URL = "https://esqakvzvchcunhzjlyry.supabase.co"
 SNAPSHOT_ENVIRONMENT = "local_test"
 SNAPSHOT_CALCULATION_VERSION = "v1"
+PERIOD_ANALYSIS_LOCK = threading.Lock()
 
 FUND_RETURN_CODE_BY_NAME = {
     "밸류알레그로": "KRZ502611211",
@@ -597,32 +605,112 @@ def load_performance_snapshots(fund_scope: str, start_date: str, end_date: str) 
     key = service_role_key()
     if not key:
         raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.")
-    query = urllib.parse.urlencode(
-        {
-            "select": "performance_date,holdings_snapshot_date,fund_scope,captured_at,calculation_version,payload",
-            "environment": f"eq.{SNAPSHOT_ENVIRONMENT}",
-            "fund_scope": f"eq.{fund_scope}",
-            "performance_date": f"gte.{start_date}",
-            "and": f"(performance_date.lte.{end_date})",
-            "order": "performance_date.asc",
-        },
-        safe=".,()",
-    )
-    url = f"{os.environ.get('SUPABASE_URL', DEFAULT_SUPABASE_URL).rstrip('/')}/rest/v1/stock_performance_snapshots?{query}"
-    request = urllib.request.Request(
-        url,
-        method="GET",
-        headers={"apikey": key, "Authorization": f"Bearer {key}"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            rows = json.loads(response.read().decode("utf-8") or "[]")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Supabase 스냅샷 조회 실패 HTTP {exc.code}: {detail[:1000]}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Supabase 스냅샷 조회 연결 실패: {exc.reason}") from exc
-    return rows if isinstance(rows, list) else []
+    by_date: dict[str, dict] = {}
+    chunk_start = date.fromisoformat(start_date)
+    final_date = date.fromisoformat(end_date)
+    while chunk_start <= final_date:
+        chunk_end = min(chunk_start + timedelta(days=13), final_date)
+        query = urllib.parse.urlencode(
+            {
+                "select": "performance_date,holdings_snapshot_date,fund_scope,captured_at,calculation_version,environment,payload",
+                "environment": "in.(production,local_test)",
+                "fund_scope": f"eq.{fund_scope}",
+                "performance_date": f"gte.{chunk_start.isoformat()}",
+                "and": f"(performance_date.lte.{chunk_end.isoformat()})",
+                "order": "performance_date.asc",
+            },
+            safe=".,()",
+        )
+        url = f"{os.environ.get('SUPABASE_URL', DEFAULT_SUPABASE_URL).rstrip('/')}/rest/v1/stock_performance_snapshots?{query}"
+        request = urllib.request.Request(
+            url,
+            method="GET",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                rows = json.loads(response.read().decode("utf-8") or "[]")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Supabase 스냅샷 조회 실패 HTTP {exc.code} ({chunk_start}~{chunk_end}): {detail[:1000]}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Supabase 스냅샷 조회 연결 실패 ({chunk_start}~{chunk_end}): {exc.reason}") from exc
+        if not isinstance(rows, list):
+            raise RuntimeError(f"Supabase 스냅샷 조회 응답이 올바르지 않습니다 ({chunk_start}~{chunk_end}).")
+        for row in rows:
+            day = str(row.get("performance_date") or "")
+            if day and (day not in by_date or row.get("environment") == "production"):
+                by_date[day] = row
+        chunk_start = chunk_end + timedelta(days=1)
+    return [by_date[day] for day in sorted(by_date)]
+
+
+def load_period_benchmark_snapshots(start_date: str, end_date: str) -> list[dict]:
+    lookback = (date.fromisoformat(start_date) - timedelta(days=10)).isoformat()
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        page = supabase_get(
+            "stock_benchmark_snapshots?select=market,business_date,weights"
+            f"&business_date=gte.{lookback}&business_date=lte.{end_date}"
+            f"&order=business_date.asc,market.asc&limit=100&offset={offset}"
+        )
+        rows.extend(page)
+        if len(page) < 100:
+            return rows
+        offset += 100
+
+
+def benchmark_weights_for_day(rows: list[dict], market: str, day: str) -> dict[str, float]:
+    candidates = [row for row in rows if row.get("market") == market]
+    if not candidates:
+        return {}
+    eligible = [row for row in candidates if str(row.get("business_date") or "") < day]
+    if not eligible:
+        return {}
+    chosen = eligible[-1]
+    weights = chosen.get("weights") if isinstance(chosen.get("weights"), dict) else {}
+    return {
+        str(code): number(value.get("weight") if isinstance(value, dict) else value)
+        for code, value in weights.items()
+    }
+
+
+def period_security_effect(
+    positions: list[dict], market_exp: float, benchmark_weights: dict[str, float] | None,
+) -> dict:
+    item = positions[0]
+    code = str(item.get("code") or item.get("name") or "")
+    benchmark_code = str(item.get("benchmarkCode") or code)
+    exp = sum(number(position.get("exp")) for position in positions)
+    pl = sum(number(position.get("pl")) for position in positions)
+    if code != benchmark_code:
+        benchmark_weight = 0.0
+    elif benchmark_weights is not None:
+        benchmark_weight = number(benchmark_weights.get(code))
+    else:
+        benchmark_weight = next(
+            (number(position.get("benchmarkWeight")) for position in positions
+             if position.get("benchmarkWeight") is not None),
+            0.0,
+        )
+    quoted = next((position for position in positions if position.get("priceAvailable")), item)
+    security_return = number(quoted.get("changeRatePct"))
+    effect_pp = pl / market_exp * 100 - benchmark_weight * security_return if market_exp else 0.0
+    return {
+        "code": code,
+        "name": str(item.get("name") or code),
+        "market": str(item.get("market") or ""),
+        "benchmarkCode": benchmark_code,
+        "sectorLarge": str(item.get("sectorLarge") or "미분류"),
+        "sectorMid": str(item.get("sectorMid") or "미분류"),
+        "exp": exp,
+        "pl": pl,
+        "returnPct": security_return,
+        "benchmarkWeight": benchmark_weight,
+        "effectPp": effect_pp,
+        "effectPl": market_exp * effect_pp / 100,
+    }
 
 
 def compounded_return(rates: list[float]) -> float | None:
@@ -640,9 +728,20 @@ def simple_sum_return(rates: list[float]) -> float | None:
     return sum(rates)
 
 
-def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fund_scope: str) -> dict:
+def prepare_period_summary(
+    rows: list[dict], start_date: str, end_date: str, fund_scope: str,
+    benchmark_snapshots: list[dict] | None = None,
+    include_monthly_analysis: bool = True,
+) -> dict:
     market_names = ("코스피", "코스닥")
     market_rates = {market: {"actual": [], "benchmark": []} for market in market_names}
+    market_attribution = {
+        market: {"heldStockEffectPp": 0.0, "benchmarkResidualPp": 0.0}
+        for market in market_names
+    }
+    daily_benchmark_weights: dict[str, dict[str, dict[str, float]]] = {}
+    daily_market_scales: dict[str, dict[str, float]] = {}
+    daily_market_exposures: dict[str, dict[str, float]] = {}
     fund_rates: dict[tuple[str, str], list[float]] = defaultdict(list)
     fund_benchmark_rates: dict[tuple[str, str], list[float]] = defaultdict(list)
     market_days = {market: 0 for market in market_names}
@@ -651,7 +750,6 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
         lambda: {
             "portfolioWeightSum": 0.0,
             "benchmarkWeightSum": 0.0,
-            "returnPctSum": 0.0,
             "contributionPp": 0.0,
             "profitLoss": 0.0,
             "excessContributionPp": 0.0,
@@ -662,6 +760,8 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
     stocks: dict[tuple[str, str], dict] = defaultdict(
         lambda: {
             "name": "",
+            "market": "",
+            "benchmarkCode": "",
             "sectorLarge": "미분류",
             "sectorMid": "미분류",
             "weightSum": 0.0,
@@ -686,10 +786,30 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
         index_returns = payload.get("marketIndexReturns") if isinstance(payload.get("marketIndexReturns"), dict) else {}
         benchmark_sectors = payload.get("benchmarkSectors") if isinstance(payload.get("benchmarkSectors"), dict) else {}
         daily_markets = []
+        market_positions_by_name = {
+            market: [item for item in positions if str(item.get("market") or "") == market]
+            for market in market_names
+        }
+        market_exposures = {
+            market: sum(number(item.get("exp")) for item in market_positions_by_name[market])
+            for market in market_names
+        }
+        daily_market_exposures[snapshot_date] = market_exposures
+        all_exp = sum(number(item.get("exp")) for item in positions)
+        daily_market_scales[snapshot_date] = {
+            market: market_exposures[market] / all_exp if all_exp else 0.0
+            for market in market_names
+        }
+        daily_benchmark_weights[snapshot_date] = {
+            market: benchmark_weights_for_day(benchmark_snapshots, market, snapshot_date)
+            if benchmark_snapshots is not None else {}
+            for market in market_names
+        }
+        market_code_effects: dict[str, list[dict]] = {market: [] for market in market_names}
 
         for market in market_names:
-            market_positions = [item for item in positions if str(item.get("market") or "") == market]
-            market_exp = sum(number(item.get("exp")) for item in market_positions)
+            market_positions = market_positions_by_name[market]
+            market_exp = market_exposures[market]
             market_pl = sum(number(item.get("pl")) for item in market_positions)
             if not market_exp:
                 continue
@@ -698,6 +818,23 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
             benchmark_rate = index_returns.get(market)
             if benchmark_rate is not None:
                 market_rates[market]["benchmark"].append(number(benchmark_rate))
+                grouped: dict[str, list[dict]] = defaultdict(list)
+                for item in market_positions:
+                    grouped[str(item.get("code") or item.get("name") or "")].append(item)
+                benchmark_weights = (
+                    daily_benchmark_weights[snapshot_date][market]
+                    if benchmark_snapshots is not None else None
+                )
+                effects = [
+                    period_security_effect(items, market_exp, benchmark_weights)
+                    for items in grouped.values()
+                ]
+                market_code_effects[market] = effects
+                held_effect = sum(item["effectPp"] for item in effects)
+                market_attribution[market]["heldStockEffectPp"] += held_effect
+                market_attribution[market]["benchmarkResidualPp"] += (
+                    market_pl / market_exp * 100 - number(benchmark_rate) - held_effect
+                )
             actual_rate = market_pl / market_exp * 100
             relative = actual_rate - number(benchmark_rate) if benchmark_rate is not None else None
             daily_markets.append({
@@ -721,6 +858,10 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
                     if benchmark_rate is not None:
                         fund_benchmark_rates[(market, fund_name)].append(number(benchmark_rate))
 
+        market_effect_by_code = {
+            market: {effect["code"]: effect for effect in market_code_effects[market]}
+            for market in market_names
+        }
         for scope in (*market_names, "ALL"):
             scope_positions = positions if scope == "ALL" else [
                 item for item in positions if str(item.get("market") or "") == scope
@@ -774,39 +915,21 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
                     for component_market in market_names:
                         if scope in market_names and component_market != scope:
                             continue
-                        market_scope_positions = [
-                            item for item in scope_positions
-                            if str(item.get("market") or "") == component_market
-                        ]
-                        market_scope_exp = sum(number(item.get("exp")) for item in market_scope_positions)
-                        market_sector_items = [
-                            item for item in items
-                            if str(item.get("market") or "") == component_market
-                        ]
-                        market_sector_exp = sum(number(item.get("exp")) for item in market_sector_items)
-                        market_sector_pl = sum(number(item.get("pl")) for item in market_sector_items)
-                        benchmark_rate = index_returns.get(component_market)
-                        market_benchmark = benchmark_sectors.get(component_market)
-                        level_benchmark = market_benchmark.get(level) if isinstance(market_benchmark, dict) else {}
-                        benchmark_item = level_benchmark.get(sector) if isinstance(level_benchmark, dict) else None
-                        benchmark_weight = number(
-                            benchmark_item.get("weight") if isinstance(benchmark_item, dict) else benchmark_item
+                        scope_scale = market_exposures[component_market] / scope_exp if scope == "ALL" else 1.0
+                        for effect in market_code_effects[component_market]:
+                            if effect[field] == sector:
+                                sector_excess_contribution += effect["effectPp"] * scope_scale
+                                sector_excess_pl += effect["effectPl"]
+                    if scope == "ALL":
+                        other_pl = sum(
+                            number(item.get("pl")) for item in items
+                            if str(item.get("market") or "") not in market_names
                         )
-                        if not market_scope_exp or benchmark_rate is None:
-                            continue
-                        portfolio_weight = market_sector_exp / market_scope_exp
-                        sector_return = market_sector_pl / market_sector_exp * 100 if market_sector_exp else 0.0
-                        active_effect_pp = (
-                            (portfolio_weight - benchmark_weight)
-                            * (sector_return - number(benchmark_rate))
-                        )
-                        scope_scale = market_scope_exp / scope_exp if scope == "ALL" else 1.0
-                        sector_excess_contribution += active_effect_pp * scope_scale
-                        sector_excess_pl += market_scope_exp * active_effect_pp / 100
+                        sector_excess_contribution += other_pl / scope_exp * 100
+                        sector_excess_pl += other_pl
                     aggregate = sectors[(scope, level, sector)]
                     aggregate["portfolioWeightSum"] += sector_exp / scope_exp * 100
                     aggregate["benchmarkWeightSum"] += number(benchmark_weights.get(sector)) * 100
-                    aggregate["returnPctSum"] += sector_pl / sector_exp * 100 if sector_exp else 0.0
                     aggregate["contributionPp"] += sector_pl / scope_exp * 100
                     aggregate["profitLoss"] += sector_pl
                     aggregate["excessContributionPp"] += sector_excess_contribution
@@ -820,32 +943,22 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
                 code_exp = sum(number(position.get("exp")) for position in code_positions)
                 code_pl = sum(number(position.get("pl")) for position in code_positions)
                 item_market = str(item.get("market") or "")
-                market_scope_exp = sum(
-                    number(position.get("exp")) for position in scope_positions
-                    if str(position.get("market") or "") == item_market
-                )
+                market_scope_exp = market_exposures.get(item_market, 0.0)
                 portfolio_weight = code_exp / market_scope_exp if market_scope_exp else 0.0
                 benchmark_code = str(item.get("benchmarkCode") or code)
-                benchmark_weight = (
-                    next(
-                        (number(position.get("benchmarkWeight")) for position in code_positions
-                         if position.get("benchmarkWeight") is not None),
-                        0.0,
-                    )
-                    if code == benchmark_code
-                    else 0.0
-                )
-                security_return = code_pl / code_exp * 100 if code_exp else 0.0
-                benchmark_rate = index_returns.get(item_market)
-                active_effect_pp = (
-                    (portfolio_weight - benchmark_weight)
-                    * (security_return - number(benchmark_rate))
-                    if benchmark_rate is not None and market_scope_exp
-                    else 0.0
-                )
+                effect = market_effect_by_code.get(item_market, {}).get(code)
+                benchmark_weight = number(effect.get("benchmarkWeight")) if effect else 0.0
+                security_return = number(effect.get("returnPct")) if effect else number(item.get("changeRatePct"))
+                active_effect_pp = number(effect.get("effectPp")) if effect else 0.0
+                active_effect_pl = number(effect.get("effectPl")) if effect else 0.0
+                if scope == "ALL" and item_market not in market_names:
+                    active_effect_pp = code_pl / scope_exp * 100
+                    active_effect_pl = code_pl
                 scope_scale = market_scope_exp / scope_exp if scope == "ALL" and scope_exp else 1.0
                 aggregate = stocks[(scope, code)]
                 aggregate["name"] = str(item.get("name") or code)
+                aggregate["market"] = item_market
+                aggregate["benchmarkCode"] = benchmark_code
                 aggregate["sectorLarge"] = str(item.get("sectorLarge") or "미분류")
                 aggregate["sectorMid"] = str(item.get("sectorMid") or "미분류")
                 aggregate["weightSum"] += code_exp / scope_exp * 100
@@ -855,8 +968,8 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
                 ) * scope_scale * 100
                 aggregate["contributionPp"] += code_pl / scope_exp * 100
                 aggregate["profitLoss"] += code_pl
-                aggregate["excessContributionPp"] += active_effect_pp * scope_scale
-                aggregate["excessProfitLoss"] += market_scope_exp * active_effect_pp / 100
+                aggregate["excessContributionPp"] += active_effect_pp * scope_scale if effect else active_effect_pp
+                aggregate["excessProfitLoss"] += active_effect_pl
                 aggregate["returnsByDate"][snapshot_date] = security_return
 
         if snapshot_date and daily_markets:
@@ -866,6 +979,10 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
     for market in market_names:
         actual = simple_sum_return(market_rates[market]["actual"])
         benchmark = compounded_return(market_rates[market]["benchmark"])
+        benchmark_arithmetic = simple_sum_return(market_rates[market]["benchmark"])
+        held_effect = market_attribution[market]["heldStockEffectPp"]
+        benchmark_residual = market_attribution[market]["benchmarkResidualPp"]
+        compounding_adjustment = benchmark_arithmetic - benchmark if benchmark is not None and benchmark_arithmetic is not None else None
         market_rows.append(
             {
                 "market": market,
@@ -873,6 +990,9 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
                 "actualReturnPct": rounded(actual),
                 "benchmarkReturnPct": rounded(benchmark),
                 "relativePp": rounded(actual - benchmark if actual is not None and benchmark is not None else None),
+                "heldStockEffectPp": rounded(held_effect) if actual is not None else None,
+                "benchmarkResidualPp": rounded(benchmark_residual) if actual is not None else None,
+                "compoundingAdjustmentPp": rounded(compounding_adjustment),
             }
         )
 
@@ -888,7 +1008,6 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
                 "portfolioWeightPct": rounded(portfolio_weight),
                 "benchmarkWeightPct": rounded(benchmark_weight),
                 "activeWeightPp": rounded(portfolio_weight - benchmark_weight),
-                "periodReturnPct": rounded(item["returnPctSum"]),
                 "contributionPp": rounded(item["contributionPp"]),
                 "profitLoss": rounded(item["profitLoss"]),
                 "excessContributionPp": rounded(item["excessContributionPp"]),
@@ -897,6 +1016,22 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
         )
     for level_rows in sector_rows_by_level.values():
         level_rows.sort(key=lambda item: abs(number(item.get("excessContributionPp"))), reverse=True)
+
+    if benchmark_snapshots is not None:
+        for (scope, code), item in stocks.items():
+            market = item["market"]
+            if market not in market_names or code != item["benchmarkCode"]:
+                item["benchmarkWeightSum"] = 0.0
+                item["activeWeightSum"] = item["weightSum"]
+                continue
+            benchmark_sum = 0.0
+            for day in snapshot_dates:
+                if not daily_market_exposures[day][market]:
+                    continue
+                scale = daily_market_scales[day][market] if scope == "ALL" else 1.0
+                benchmark_sum += daily_benchmark_weights[day][market].get(code, 0.0) * scale * 100
+            item["benchmarkWeightSum"] = benchmark_sum
+            item["activeWeightSum"] = item["weightSum"] - benchmark_sum
 
     stock_rows_by_market: dict[str, list[dict]] = {"코스피": [], "코스닥": [], "ALL": []}
     for (market, code), item in stocks.items():
@@ -939,11 +1074,12 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
         })
     fund_rows.sort(key=lambda item: (str(item.get("market") or ""), -number(item.get("relativePp"))))
 
-    return {
+    result = {
         "startDate": start_date,
         "endDate": end_date,
         "selectedFund": fund_scope,
-        "environment": SNAPSHOT_ENVIRONMENT,
+        "environment": "production" if rows and all(row.get("environment") == "production" for row in rows) else SNAPSHOT_ENVIRONMENT,
+        "benchmarkWeightCoverage": "full_period" if benchmark_snapshots is not None else "held_days_only",
         "snapshotCount": len(rows),
         "snapshotDates": snapshot_dates,
         "marketRows": market_rows,
@@ -961,6 +1097,82 @@ def prepare_period_summary(rows: list[dict], start_date: str, end_date: str, fun
         "dailyAnalyses": daily_analyses,
         "savedDailyAnalysis": daily_analyses[0] if len(daily_analyses) == 1 else None,
     }
+    if include_monthly_analysis and rows:
+        start = date.fromisoformat(start_date)
+        next_month_year = start.year + (start.month == 12)
+        next_month_number = start.month % 12 + 1
+        next_month = date(
+            next_month_year, next_month_number,
+            min(start.day, monthrange(next_month_year, next_month_number)[1]),
+        )
+        if date.fromisoformat(end_date) > next_month:
+            monthly_rows: dict[str, list[dict]] = defaultdict(list)
+            for row in rows:
+                day = str(row.get("performance_date") or "")
+                if day:
+                    monthly_rows[day[:7]].append(row)
+            result["monthlyAnalysis"] = []
+            for month, month_rows in sorted(monthly_rows.items()):
+                first_day = str(month_rows[0]["performance_date"])
+                last_day = str(month_rows[-1]["performance_date"])
+                monthly_summary = prepare_period_summary(
+                    month_rows, first_day, last_day, fund_scope,
+                    benchmark_snapshots, include_monthly_analysis=False,
+                )
+                result["monthlyAnalysis"].append({
+                    "month": month,
+                    "startDate": first_day,
+                    "endDate": last_day,
+                    "days": len(month_rows),
+                    "marketAnalysis": compact_period_markets(monthly_summary, 5, 3),
+                })
+    if include_monthly_analysis:
+        result["analysisFingerprint"] = period_analysis_fingerprint(result)
+    return result
+
+
+def compact_period_markets(summary: dict, sector_limit: int = 8, stock_limit: int = 5) -> list[dict]:
+    market_analysis = []
+    mid_sector_rows = summary.get("sectorRowsByLevel", {}).get("mid") or summary.get("sectorRows", [])
+    stock_rows_by_market = summary.get("stockRowsByMarket", {})
+    for market in ("코스피", "코스닥"):
+        market_row = next(
+            (row for row in summary.get("marketRows", []) if row.get("market") == market),
+            {"market": market},
+        )
+        market_sectors = [row for row in mid_sector_rows if row.get("market") == market][:sector_limit]
+        market_stocks = stock_rows_by_market.get(market) or [
+            row for row in summary.get("stockRows", []) if row.get("market") == market
+        ]
+        sector_details = []
+        for row in market_sectors:
+            sector_name = str(row.get("sector") or "미분류")
+            characteristic_stocks = [
+                stock for stock in market_stocks
+                if str(stock.get("sectorMid") or "미분류") == sector_name
+            ][:stock_limit]
+            sector_details.append({
+                "sector": sector_name,
+                "portfolioWeightPct": round(number(row.get("portfolioWeightPct")), 1),
+                "benchmarkWeightPct": round(number(row.get("benchmarkWeightPct")), 1),
+                "activeWeightPp": round(number(row.get("activeWeightPp")), 1),
+                "excessContributionPp": round(number(row.get("excessContributionPp")), 2),
+                "excessProfitLossEok": round(number(row.get("excessProfitLoss")) / 100_000_000, 1),
+                "characteristicStocks": [
+                    {
+                        "name": stock.get("name"),
+                        "portfolioWeightPct": round(number(stock.get("averageWeightPct")), 1),
+                        "benchmarkWeightPct": round(number(stock.get("averageBenchmarkWeightPct")), 1),
+                        "activeWeightPp": round(number(stock.get("activeWeightPp")), 1),
+                        "periodReturnPct": round(number(stock.get("periodReturnPct")), 2),
+                        "excessContributionPp": round(number(stock.get("excessContributionPp")), 2),
+                        "excessProfitLossEok": round(number(stock.get("excessProfitLoss")) / 100_000_000, 1),
+                    }
+                    for stock in characteristic_stocks
+                ],
+            })
+        market_analysis.append({"market": market, "performance": market_row, "sectors": sector_details})
+    return market_analysis
 
 
 def load_or_build_period_snapshots(fund_scope: str, start_date: str, end_date: str) -> list[dict]:
@@ -1382,80 +1594,79 @@ BM 대비 핵심 요인
     return {"analysis": analysis, "model": payload.get("model", MODEL), "usage": payload.get("usage", {})}
 
 
-def analyze_period_performance(summary: dict) -> dict:
-    key = api_key()
-    if not key:
-        raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다. OpenAI_API키_설정.cmd를 먼저 실행해 주세요.")
-    market_analysis = []
-    mid_sector_rows = summary.get("sectorRowsByLevel", {}).get("mid") or summary.get("sectorRows", [])
-    stock_rows_by_market = summary.get("stockRowsByMarket", {})
-    for market in ("코스피", "코스닥"):
-        market_row = next(
-            (row for row in summary.get("marketRows", []) if row.get("market") == market),
-            {"market": market},
-        )
-        market_sectors = [row for row in mid_sector_rows if row.get("market") == market][:8]
-        market_stocks = stock_rows_by_market.get(market) or [
-            row for row in summary.get("stockRows", []) if row.get("market") == market
-        ]
-        sector_details = []
-        for row in market_sectors:
-            sector_name = str(row.get("sector") or "미분류")
-            characteristic_stocks = [
-                stock for stock in market_stocks
-                if str(stock.get("sectorMid") or "미분류") == sector_name
-            ][:5]
-            sector_details.append({
-                "sector": sector_name,
-                "portfolioWeightPct": round(number(row.get("portfolioWeightPct")), 1),
-                "benchmarkWeightPct": round(number(row.get("benchmarkWeightPct")), 1),
-                "activeWeightPp": round(number(row.get("activeWeightPp")), 1),
-                "periodReturnPct": round(number(row.get("periodReturnPct")), 2),
-                "excessContributionPp": round(number(row.get("excessContributionPp")), 2),
-                "excessProfitLossEok": round(number(row.get("excessProfitLoss")) / 100_000_000, 1),
-                "characteristicStocks": [
-                    {
-                        "name": stock.get("name"),
-                        "portfolioWeightPct": round(number(stock.get("averageWeightPct")), 1),
-                        "benchmarkWeightPct": round(number(stock.get("averageBenchmarkWeightPct")), 1),
-                        "activeWeightPp": round(number(stock.get("activeWeightPp")), 1),
-                        "periodReturnPct": round(number(stock.get("periodReturnPct")), 2),
-                        "excessContributionPp": round(number(stock.get("excessContributionPp")), 2),
-                        "excessProfitLossEok": round(number(stock.get("excessProfitLoss")) / 100_000_000, 1),
-                    }
-                    for stock in characteristic_stocks
-                ],
-            })
-        market_analysis.append({"market": market, "performance": market_row, "sectors": sector_details})
+def period_analysis_input(summary: dict) -> dict:
+    monthly_analysis = summary.get("monthlyAnalysis") or []
     compact = {
         "startDate": summary.get("startDate"),
         "endDate": summary.get("endDate"),
         "selectedFund": summary.get("selectedFund"),
         "snapshotCount": summary.get("snapshotCount"),
-        "marketAnalysis": market_analysis,
+        "marketAnalysis": compact_period_markets(summary) if not monthly_analysis else [
+            {"market": row.get("market"), "performance": row}
+            for row in summary.get("marketRows", [])
+        ],
     }
+    if monthly_analysis:
+        compact["monthlyAnalysis"] = monthly_analysis
+    return compact
+
+
+def period_analysis_fingerprint(summary: dict) -> str:
+    source = json.dumps(
+        {
+            "model": MODEL,
+            "instructions": period_analysis_instructions(bool(summary.get("monthlyAnalysis"))),
+            "input": period_analysis_input(summary),
+        },
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def period_analysis_instructions(monthly_analysis: bool) -> str:
     instructions = """기관투자자용 기간별 BM 상대성과 분석을 자연스러운 한국어 존댓말로 작성하십시오.
 입력 수치는 Python에서 계산됐으므로 재계산하거나 외부 뉴스·전망·펀더멘털을 추가하지 마십시오.
 코스피와 코스닥을 분리하십시오. 각 시장의 첫 줄은 기간 누적 포트폴리오 수익률, BM 수익률, 상대성과만 한 문장으로 간결하게 작성하십시오. 펀드별 성과나 펀드명은 언급하지 마십시오.
 분석의 중심은 포트폴리오 절대성과가 아니라 BM 대비 상대성과입니다. relativePp가 +0.50%p를 초과하면 초과성과에 기여한 요인을 중심으로 설명하고, -0.50%p 미만이면 부진 원인을 중심으로 설명하십시오.
 relativePp가 0%p 이상 +0.50%p 이하이면 잘한 요인을 먼저 설명한 뒤 어떤 부진 요인이 초과성과를 제한했는지 덧붙이십시오. relativePp가 -0.50%p 이상 0%p 미만이면 부진 원인을 먼저 설명한 뒤 어떤 긍정적 요인이 약세를 일부 만회했는지 덧붙이십시오.
-첫 줄 다음에는 해당 시장의 BM 대비 상대성과를 가장 잘 설명하는 섹터를 2~3개 골라 섹터마다 글머리표 하나로 작성하십시오.
-각 글머리표에서는 섹터를 먼저 설명하고, 바로 이어서 characteristicStocks 중 같은 섹터의 특징적인 종목을 1~3개 설명하십시오. 섹터와 그 종목은 반드시 하나의 글머리표 안에서 처리하고 종목만 별도 글머리표로 분리하지 마십시오. 확인 가능한 종목이 없으면 종목을 억지로 언급하지 마십시오.
-사람이 초과성과의 원인을 바로 이해할 수 있도록 각 섹터와 종목에 대해 'BM 대비 비중 차이 → 해당 기간 수익률 → 초과기여도와 초과손익'의 인과관계를 자연스럽게 연결하십시오. 단순히 초과기여도와 초과손익만 나열하지 마십시오.
+섹터 요인을 설명할 때는 섹터를 먼저 언급하고, 바로 이어서 characteristicStocks 중 같은 섹터의 특징적인 종목을 1~3개 설명하십시오. 섹터와 그 종목은 반드시 하나의 글머리표 안에서 처리하고 종목만 별도 글머리표로 분리하지 마십시오. 확인 가능한 종목이 없으면 종목을 억지로 언급하지 마십시오.
+사람이 초과성과의 원인을 바로 이해할 수 있도록 각 섹터의 BM 대비 비중 차이와 보유 종목별 등락률을 연결해 설명하십시오. 섹터 자체의 기간수익률은 제공되지 않았으므로 계산하거나 추측하지 마십시오.
 비중 차이를 쓸 때는 반드시 'OO 섹터는 BM 대비 비중이 +5.9%p 높았고' 또는 'OO 섹터는 BM 대비 비중이 -3.2%p 낮았고'처럼 대상과 BM 기준을 명시하십시오. 종목도 비중 차이가 원인 설명에 중요하면 같은 방식으로 명시하십시오.
-periodReturnPct는 해당 섹터 또는 종목의 조회 기간 수익률입니다. 수익률의 방향과 BM 대비 비중 차이가 결합되어 왜 초과성과 또는 초과손실이 생겼는지 설명하십시오. 과대비중 종목이 상승한 경우와 과소비중 종목이 하락한 경우는 긍정 요인이고, 과대비중 종목이 하락한 경우와 과소비중 종목이 상승한 경우는 부정 요인이라는 원칙을 지키십시오.
-excessContributionPp, excessProfitLossEok 같은 내부 필드명은 결과 문장에 절대 노출하지 말고 각각 '초과기여도', '초과손익'으로 자연스럽게 표현하십시오.
+종목의 periodReturnPct는 그 종목을 보유한 거래일들의 등락률을 연결한 참고값입니다. 초과성과의 방향은 기간수익률만으로 추측하지 말고 계산된 excessContributionPp를 따르십시오. 과소비중 종목이 상승하면 상대성과에 부담이 될 수 있습니다.
+excessContributionPp는 보유 종목의 실제 포트 기여에서 그 종목의 BM 비중과 동일한 가격 등락률로 계산한 기여를 뺀 값입니다. 섹터 값은 해당 섹터의 보유 종목 효과 합계입니다. benchmarkResidualPp는 미보유 BM 종목의 효과와 지수 구성·산식 차이가 섞인 잔차이므로 원인을 단정하지 마십시오. BM 복리 조정도 시장 요약에 별도로 표시되므로 섹터 효과 합계가 전체 상대성과와 같다고 주장하지 마십시오.
+excessContributionPp, excessProfitLossEok 같은 내부 필드명은 결과 문장에 절대 노출하지 말고 각각 'BM 대비 효과', 'BM 대비 손익'으로 자연스럽게 표현하십시오.
 운용보고서에서 자연스럽게 쓰는 표현을 사용하고 문장을 짧고 명확하게 작성하십시오. '훼손을 남겼다', '성과를 남겼다', '기여도가 약했습니다', '기여도는 -0.30%p였습니다'처럼 어색하거나 수치만 나열하는 표현은 쓰지 마십시오. 양의 초과기여도는 'BM 대비 초과성과에 기여했습니다' 또는 '초과성과에 보탬이 됐습니다', 음의 초과기여도는 'BM 대비 성과에 부정적으로 작용했습니다' 또는 '상대성과에 부담이 됐습니다'처럼 완결된 의미로 표현하십시오.
 포트폴리오 비중, BM 비중, BM 대비 비중 차이 등 비중 관련 수치는 소수점 첫째 자리까지 표시하십시오. 수익률, 상대성과와 기여도는 소수점 둘째 자리까지 표시하십시오. 양수에는 + 부호를 붙이십시오.
 표본 수, 분석 기간이 짧다는 경고, 데이터 커버리지 제한 문구는 쓰지 마십시오.
-출력은 반드시 [코스피], 요약 한 문장, 섹터별 글머리표 2~3개, [코스닥], 요약 한 문장, 섹터별 글머리표 2~3개 순서로 작성하십시오. 각 글머리표는 '- '로 시작하고 글머리표 사이는 빈 줄로 구분하십시오.
 중요한 결론과 핵심 섹터·종목명은 **굵게** 표시하십시오."""
+    if monthly_analysis:
+        instructions += """
+입력의 marketAnalysis는 전체기간 요약이며 monthlyAnalysis는 해당 월에 저장된 거래일만으로 별도 계산한 월별 수치입니다. 월별 숫자를 전체기간 값에서 추정하지 마십시오.
+출력은 [코스피], 전체기간 수익률·BM·상대성과 한 문장, 월별 글머리표들, [코스닥], 전체기간 요약 한 문장, 월별 글머리표들 순서로 작성하십시오.
+각 시장에서 monthlyAnalysis의 모든 월을 빠짐없이 시간순으로 다루고, 월마다 '- **YYYY년 M월** ...'로 시작하는 글머리표 하나를 쓰십시오. 해당 월의 포트 수익률·BM 수익률·상대성과를 먼저 밝힌 뒤 BM 대비 성과가 왜 좋거나 나빴는지 3~5문장으로 충분히 설명하십시오.
+월별 설명은 해당 월의 sectors 중 BM 대비 효과 절댓값이 큰 섹터 1~2개를 중심으로 하고, 각각의 특징적인 종목 1~2개와 BM 대비 평균 비중 차이·보유기간 등락률·계산된 BM 대비 효과를 연결하십시오. 반대 방향으로 일부 상쇄한 요인도 중요하면 덧붙이십시오. 각 섹터와 그 종목은 같은 월의 글머리표 안에서 설명하십시오.
+조회기간의 첫 달과 마지막 달은 일부 거래일만 포함될 수 있으므로 monthlyAnalysis의 startDate~endDate 범위에서만 말하십시오. 월별 BM은 월 안에서 복리 계산되며 전체기간 BM도 복리 계산됩니다. 포트는 일별 수익률을 단리 합산하므로 월별 상대성과를 더해 전체기간 상대성과와 반드시 같다고 주장하지 마십시오.
+월별 글머리표는 서로 빈 줄로 구분하고 월 제목 외에는 글머리표를 추가하지 마십시오."""
+    else:
+        instructions += """
+첫 줄 다음에는 해당 시장의 BM 대비 상대성과를 가장 잘 설명하는 섹터를 2~3개 골라 섹터마다 글머리표 하나로 작성하십시오.
+출력은 반드시 [코스피], 요약 한 문장, 섹터별 글머리표 2~3개, [코스닥], 요약 한 문장, 섹터별 글머리표 2~3개 순서로 작성하십시오. 각 글머리표는 '- '로 시작하고 글머리표 사이는 빈 줄로 구분하십시오."""
+    return instructions
+
+
+def analyze_period_performance(summary: dict) -> dict:
+    key = api_key()
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다. OpenAI_API키_설정.cmd를 먼저 실행해 주세요.")
+    compact = period_analysis_input(summary)
+    monthly_analysis = summary.get("monthlyAnalysis") or []
+    instructions = period_analysis_instructions(bool(monthly_analysis))
     request_body = json.dumps(
         {
             "model": MODEL,
             "reasoning": {"effort": "low"},
             "store": False,
-            "max_output_tokens": 1800,
+            "max_output_tokens": min(10000, 1400 + 650 * len(monthly_analysis)) if monthly_analysis else 1800,
             "instructions": instructions,
             "input": json.dumps(compact, ensure_ascii=False, separators=(",", ":")),
             "text": {"verbosity": "low"},
@@ -1486,7 +1697,82 @@ excessContributionPp, excessProfitLossEok 같은 내부 필드명은 결과 문�
     analysis = extract_output_text(payload)
     if not analysis:
         raise RuntimeError("OpenAI API 응답에 기간 분석 문장이 없습니다.")
-    return {"analysis": analysis, "model": payload.get("model", MODEL), "usage": payload.get("usage", {})}
+    return {
+        "analysis": analysis,
+        "model": payload.get("model", MODEL),
+        "usage": payload.get("usage", {}),
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def get_or_create_period_analysis(summary: dict) -> dict:
+    fund_scope = str(summary.get("selectedFund") or "")
+    start_date = str(summary.get("startDate") or "")
+    end_date = str(summary.get("endDate") or "")
+    fingerprint = str(summary.get("analysisFingerprint") or "")
+    with PERIOD_ANALYSIS_LOCK:
+        cached = find_matching_history(fund_scope, start_date, end_date, fingerprint)
+        if cached:
+            return {**cached, "reused": True}
+        result = analyze_period_performance(summary)
+        saved = save_history(
+            fund_scope, start_date, end_date, fingerprint,
+            result["generatedAt"], str(result["model"]),
+            int(summary.get("snapshotCount") or 0), result["analysis"],
+        )
+        return {**saved, "reused": False}
+
+
+def shared_period_history_entry(row: dict, include_analysis: bool = False) -> dict | None:
+    selected_fund = str(row.get("selected_fund") or "")
+    parts = selected_fund.split(":", 3)
+    if len(parts) != 4 or parts[0] != "기간" or not all(parts[1:]):
+        return None
+    encoded_key = base64.urlsafe_b64encode(selected_fund.encode("utf-8")).decode("ascii").rstrip("=")
+    entry = {
+        "id": f"web:{encoded_key}",
+        "source": "web",
+        "fundScope": parts[3],
+        "startDate": parts[1],
+        "endDate": parts[2],
+        "generatedAt": row.get("generated_at"),
+        "model": row.get("model"),
+        "snapshotCount": None,
+    }
+    if include_analysis:
+        entry["analysis"] = row.get("analysis")
+    return entry
+
+
+def list_shared_period_history() -> list[dict]:
+    query = urllib.parse.urlencode({
+        "select": "selected_fund,generated_at,model",
+        "selected_fund": "like.기간:*",
+        "order": "generated_at.desc",
+        "limit": "200",
+    })
+    entries = [shared_period_history_entry(row) for row in supabase_get(f"stock_performance_ai_results?{query}")]
+    return [entry for entry in entries if entry]
+
+
+def get_shared_period_history(encoded_id: str) -> dict | None:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", encoded_id):
+        raise ValueError("분석 이력 번호가 올바르지 않습니다.")
+    try:
+        selected_fund = base64.urlsafe_b64decode(encoded_id + "=" * (-len(encoded_id) % 4)).decode("utf-8")
+    except (binascii.Error, ValueError, UnicodeDecodeError) as exc:
+        raise ValueError("분석 이력 번호가 올바르지 않습니다.") from exc
+    parts = selected_fund.split(":", 3)
+    if len(parts) != 4 or parts[0] != "기간" or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", parts[2]):
+        raise ValueError("분석 이력 번호가 올바르지 않습니다.")
+    query = urllib.parse.urlencode({
+        "select": "selected_fund,analysis,model,generated_at",
+        "selected_fund": f"eq.{selected_fund}",
+        "as_of_date": f"eq.{parts[2]}",
+        "limit": "1",
+    })
+    rows = supabase_get(f"stock_performance_ai_results?{query}")
+    return shared_period_history_entry(rows[0], True) if rows else None
 
 
 def fund_analysis_value(value: object, suffix: str = "", signed: bool = False) -> str:
@@ -1634,6 +1920,41 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/health":
             self.send_json(HTTPStatus.OK, {"ok": True, "apiKeyConfigured": bool(api_key()), "model": MODEL})
             return
+        if parsed.path == "/api/period-analysis-history":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                history_id = str(query.get("id", [""])[0])
+                if history_id:
+                    if history_id.startswith("web:"):
+                        entry = get_shared_period_history(history_id[4:])
+                    elif history_id.isdecimal():
+                        entry = get_history(int(history_id))
+                    else:
+                        raise ValueError("분석 이력 번호가 올바르지 않습니다.")
+                    self.send_json(HTTPStatus.OK if entry else HTTPStatus.NOT_FOUND, entry or {"error": "분석 이력을 찾지 못했습니다."})
+                elif str(query.get("latest", [""])[0]) == "1":
+                    entry = find_matching_history(
+                        str(query.get("fundScope", [""])[0]),
+                        str(query.get("start", [""])[0]),
+                        str(query.get("end", [""])[0]),
+                        str(query.get("fingerprint", [""])[0]),
+                    )
+                    self.send_json(HTTPStatus.OK, entry or {})
+                else:
+                    local_items = list_history()
+                    try:
+                        web_items = list_shared_period_history()
+                        notice = ""
+                    except RuntimeError:
+                        web_items = []
+                        notice = "웹 저장 이력을 불러오지 못했습니다."
+                    items = sorted(local_items + web_items, key=lambda row: str(row.get("generatedAt") or ""), reverse=True)
+                    self.send_json(HTTPStatus.OK, {"items": items, "notice": notice})
+            except ValueError as exc:
+                self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            except Exception as exc:
+                self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"분석 이력 조회 오류: {exc}"})
+            return
         if parsed.path == "/api/fund-return-series":
             try:
                 query = urllib.parse.parse_qs(parsed.query)
@@ -1653,7 +1974,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 start_date = str(query.get("start", [""])[0])
                 end_date = str(query.get("end", [""])[0])
                 rows = load_or_build_period_snapshots(fund_scope, start_date, end_date)
-                self.send_json(HTTPStatus.OK, prepare_period_summary(rows, start_date, end_date, fund_scope))
+                benchmark_rows = load_period_benchmark_snapshots(start_date, end_date) if rows else []
+                self.send_json(HTTPStatus.OK, prepare_period_summary(
+                    rows, start_date, end_date, fund_scope,
+                    benchmark_rows if benchmark_rows else None,
+                ))
             except ValueError as exc:
                 self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             except RuntimeError as exc:
@@ -1683,10 +2008,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 start_date = str(data.get("start") or "")
                 end_date = str(data.get("end") or "")
                 rows = load_or_build_period_snapshots(fund_scope, start_date, end_date)
-                summary = prepare_period_summary(rows, start_date, end_date, fund_scope)
+                benchmark_rows = load_period_benchmark_snapshots(start_date, end_date) if rows else []
+                summary = prepare_period_summary(
+                    rows, start_date, end_date, fund_scope,
+                    benchmark_rows if benchmark_rows else None,
+                )
                 if not rows:
                     raise ValueError("선택한 기간에 저장된 마감 스냅샷이 없습니다.")
-                result = analyze_period_performance(summary)
+                result = get_or_create_period_analysis(summary)
                 self.send_json(HTTPStatus.OK, {**result, "summary": summary})
             else:
                 self.send_json(HTTPStatus.OK, analyze_performance(data))

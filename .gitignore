@@ -12,6 +12,7 @@ __pycache__/
 apps/stock/*.xlsx
 apps/stock/*.json
 apps/stock/*.html
+apps/stock/data/period_ai_history.sqlite3*
 apps/bond/*.xlsx
 apps/bond/*.html
 

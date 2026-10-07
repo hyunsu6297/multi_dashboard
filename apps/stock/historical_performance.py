@@ -8,6 +8,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable
 
+import pandas as pd
+
 import build_fund_dashboard as dashboard
 from fetch_kiwoom_quotes import (
     DEFAULT_HOST,
@@ -24,6 +26,8 @@ from fetch_kiwoom_quotes import (
 
 
 MARKETS = {"코스피": "001", "코스닥": "101"}
+INDEX_PROXY_MARKETS = {"069500": "코스피", "229200": "코스닥"}
+ETF_NAME_PREFIXES = ("KODEX ", "TIGER ", "SOL ", "ACE ", "PLUS ", "RISE ", "HANARO ", "KBSTAR ")
 DERIVATIVE_CODE_MAP = load_derivative_code_map()
 STOCK_FUTURE_PROXY_MAP = load_stock_future_proxy_map()
 
@@ -131,6 +135,7 @@ def _stock_prices(
     start_date: str,
     end_date: str,
     required_codes: dict[str, str],
+    required_by_date: dict[str, set[str]],
 ) -> dict[str, dict[str, dict]]:
     by_date: dict[str, dict[str, dict]] = defaultdict(dict)
     offset = 0
@@ -151,11 +156,15 @@ def _stock_prices(
         offset += 1000
     missing_codes = {
         code: name for code, name in required_codes.items()
-        if code and (not by_date or any(code not in by_date.get(day, {}) for day in by_date))
+        if code and any(
+            code in codes and code not in by_date.get(day, {})
+            for day, codes in required_by_date.items()
+        )
     }
     if missing_codes:
+        print(f"Kiwoom daily-chart backfill: {len(missing_codes)} codes, request delay >=1s", flush=True)
         fetched = _fetch_missing_stock_prices(
-            missing_codes, start_date, end_date, supabase_upsert
+            missing_codes, start_date, end_date, supabase_upsert, by_date, required_by_date
         )
         for row in fetched:
             day = str(row.get("business_date") or "")
@@ -170,6 +179,8 @@ def _fetch_missing_stock_prices(
     start_date: str,
     end_date: str,
     supabase_upsert: Callable[[str, list[dict], str], list[dict]],
+    existing_by_date: dict[str, dict[str, dict]],
+    required_by_date: dict[str, set[str]],
 ) -> list[dict]:
     appkey, secretkey = load_credentials()
     if not appkey or not secretkey:
@@ -181,29 +192,40 @@ def _fetch_missing_stock_prices(
     except RuntimeError as exc:
         print(f"Kiwoom daily-chart token unavailable ({exc}); using saved daily prices.", file=sys.stderr)
         return []
-    minimum_date = (date.fromisoformat(start_date) - timedelta(days=10)).isoformat()
     pending: list[dict] = []
     fetched: list[dict] = []
-    for code, name in missing_codes.items():
+    request_delay = max(1.0, _number(os.getenv("KIWOOM_HISTORY_REQUEST_DELAY_SECONDS"), 1.0))
+    for request_number, (code, name) in enumerate(missing_codes.items(), 1):
+        if request_number == 1 or request_number % 25 == 0:
+            print(f"Kiwoom daily-chart progress: {request_number}/{len(missing_codes)}", flush=True)
         rest_code = kiwoom_rest_code(code, DERIVATIVE_CODE_MAP, name)
         if not rest_code and is_derivative_code(code):
             rest_code = derivative_proxy_code(code, name, STOCK_FUTURE_PROXY_MAP)
         if not rest_code:
             continue
-        try:
-            response = post_json(
-                host,
-                "/api/dostk/chart",
-                {"stk_cd": rest_code, "base_dt": end_date.replace("-", ""), "upd_stkpc_tp": "1"},
-                headers={
-                    "authorization": f"Bearer {token}",
-                    "api-id": "ka10081",
-                    "cont-yn": "N",
-                    "next-key": "0",
-                },
-                timeout=30.0,
-            )
-        except RuntimeError:
+        response = None
+        for attempt in range(3):
+            try:
+                response = post_json(
+                    host,
+                    "/api/dostk/chart",
+                    {"stk_cd": rest_code, "base_dt": end_date.replace("-", ""), "upd_stkpc_tp": "1"},
+                    headers={
+                        "authorization": f"Bearer {token}",
+                        "api-id": "ka10081",
+                        "cont-yn": "N",
+                        "next-key": "0",
+                    },
+                    timeout=30.0,
+                )
+                if str(response.get("return_code", "0")) != "0":
+                    raise RuntimeError(str(response.get("return_msg") or response.get("return_code")))
+                break
+            except RuntimeError as exc:
+                print(f"Kiwoom daily chart {code}: attempt {attempt + 1}/3 failed: {exc}", file=sys.stderr)
+                time.sleep(request_delay * (2 ** attempt))
+        time.sleep(request_delay)
+        if response is None or str(response.get("return_code", "0")) != "0":
             continue
         raw_rows = response.get("stk_dt_pole_chart_qry", [])
         closes = []
@@ -217,7 +239,9 @@ def _fetch_missing_stock_prices(
         previous = None
         for day, close in sorted(closes):
             change_rate = close / previous - 1 if previous else None
-            if minimum_date <= day <= end_date and change_rate is not None:
+            if (start_date <= day <= end_date and change_rate is not None
+                    and code in required_by_date.get(day, set())
+                    and code not in existing_by_date.get(day, {})):
                 record = {
                     "business_date": day,
                     "code": code,
@@ -233,7 +257,6 @@ def _fetch_missing_stock_prices(
         if len(pending) >= 500:
             supabase_upsert("kiwoom_daily_prices", pending, "business_date,code")
             pending = []
-        time.sleep(0.12)
     if pending:
         supabase_upsert("kiwoom_daily_prices", pending, "business_date,code")
     return fetched
@@ -265,6 +288,20 @@ def _market_master(supabase_get: Callable[[str], list[dict]]) -> dict[str, str]:
             code = dashboard.normalize_code(row.get("code"))
             if code:
                 result[code] = str(row.get("market") or "미분류")
+        if len(rows) < 1000:
+            break
+        offset += 1000
+    offset = 0
+    while True:
+        rows = supabase_get(
+            "kiwoom_realtime_quotes?select=code,market&order=code.asc"
+            f"&limit=1000&offset={offset}"
+        )
+        for row in rows:
+            code = dashboard.normalize_code(row.get("code"))
+            market = str(row.get("market") or "")
+            if code and market in MARKETS and result.get(code) not in MARKETS:
+                result[code] = market
         if len(rows) < 1000:
             break
         offset += 1000
@@ -325,19 +362,59 @@ def build_historical_snapshots(
     _validate_period(start_date, end_date)
     lookback = (date.fromisoformat(start_date) - timedelta(days=10)).isoformat()
     client = dashboard.supabase_client()
-    fund_rows = dashboard.fetch_stock_fund_info_rows(client, end_date)
-    funds = dashboard.normalize_fund_info_frame(fund_rows)
-    funds, _ = dashboard.apply_fund_master(funds)
+    fund_versions = dashboard.fetch_stock_fund_info_versions(client)
+    prior_snapshots = dashboard.fetch_kfr_snapshots(
+        client, "fund_holdings", start_date=lookback, end_date=start_date, include_excel=True
+    )
+    prior_dates = [str(row["business_date"]) for row in prior_snapshots if str(row["business_date"]) < start_date]
+    holdings_start = max(prior_dates) if prior_dates else start_date
     holdings_raw = dashboard.fetch_kfr_rows(
-        client, "fund_holdings", start_date=lookback, end_date=end_date
+        client, "fund_holdings", start_date=holdings_start, end_date=end_date, include_excel=True
     )
     if holdings_raw.empty:
         return []
 
     large_by_code, mid_by_code = dashboard.read_industry_map()
-    holdings = dashboard.prepare_holdings_frame(
-        holdings_raw, funds, large_by_code, mid_by_code
-    )
+    prepared = []
+    ratio_source_dates: dict[str, str] = {}
+    master_sheets: dict[str, str] = {}
+    holdings_by_date = {
+        str(day): frame.copy() for day, frame in holdings_raw.groupby("스냅샷일")
+    }
+    for holding_date, day_raw in holdings_by_date.items():
+        sheet = dashboard.choose_effective_sheet(list(fund_versions), str(holding_date))
+        if not sheet:
+            raise RuntimeError(f"No fund master for holdings date {holding_date}")
+        master_sheets[holding_date] = sheet
+        funds = dashboard.fund_info_from_version_records(fund_versions[sheet])
+        fund_codes = set(funds["펀드코드"])
+        selected = day_raw[day_raw["협회펀드코드"].map(dashboard.normalize_code).isin(fund_codes)]
+        if holding_date == "2026-06-30" and not selected.empty and selected["지분율"].isna().all():
+            source_date = "2026-07-01"
+            source = holdings_by_date.get(source_date)
+            if source is None:
+                raise RuntimeError("June 30 share ratios require the July 1 KFR holdings snapshot")
+            source_ratios = source[["협회펀드코드", "지분율"]].copy()
+            source_ratios["협회펀드코드"] = source_ratios["협회펀드코드"].map(dashboard.normalize_code)
+            source_ratios["지분율"] = pd.to_numeric(source_ratios["지분율"], errors="coerce")
+            ratios = source_ratios.dropna().groupby("협회펀드코드")["지분율"].agg(["first", "nunique"])
+            selected_codes = set(selected["협회펀드코드"].map(dashboard.normalize_code))
+            if any(code not in ratios.index or ratios.loc[code, "nunique"] != 1 for code in selected_codes):
+                raise RuntimeError("June 30 fund share ratios could not be verified from July 1")
+            day_raw = day_raw.copy()
+            day_raw["지분율"] = day_raw["협회펀드코드"].map(dashboard.normalize_code).map(ratios["first"])
+            ratio_source_dates[holding_date] = source_date
+            selected = day_raw[day_raw["협회펀드코드"].map(dashboard.normalize_code).isin(fund_codes)]
+        if not selected.empty and selected["지분율"].isna().any():
+            raise RuntimeError(f"Missing share ratios for active funds on {holding_date}")
+        day_prepared = dashboard.prepare_holdings_frame(
+            day_raw, funds, large_by_code, mid_by_code
+        )
+        if not day_prepared.empty:
+            prepared.append(day_prepared)
+    if not prepared:
+        return []
+    holdings = pd.concat(prepared, ignore_index=True)
     holdings["스냅샷일"] = holdings["스냅샷일"].astype(str)
     holdings = holdings[dashboard.is_equity_related(holdings, "자산군")].copy()
     if fund_scope not in {"전체 펀드", "전체 펀드 통합", "ALL"}:
@@ -348,13 +425,35 @@ def build_historical_snapshots(
         for _, row in holdings.iterrows()
         if dashboard.normalize_code(row.get("종목코드정규"))
     }
+    market_by_code = _market_master(supabase_get)
+    tradable_codes = {
+        code: name for code, name in required_codes.items()
+        if (market_by_code.get(code) in MARKETS
+            or market_by_code.get(_performance_reference_code(code, name)) in MARKETS
+            or (is_derivative_code(code) and _performance_reference_code(code, name) in INDEX_PROXY_MARKETS)
+            or (re.fullmatch(r"\d{6}", code) and name.startswith(ETF_NAME_PREFIXES)))
+    }
+    holding_dates = sorted(set(holdings["스냅샷일"]))
+    performance_dates = [
+        str(row["business_date"])
+        for row in dashboard.fetch_kfr_snapshots(
+            client, "fund_prices", start_date=start_date, end_date=end_date
+        )
+    ]
+    required_by_date: dict[str, set[str]] = {}
+    for performance_date in performance_dates:
+        prior_dates = [day for day in holding_dates if day < performance_date]
+        if not prior_dates:
+            continue
+        day_holdings = holdings[holdings["스냅샷일"] == prior_dates[-1]]
+        required_by_date[performance_date] = {
+            code for code in day_holdings["종목코드정규"] if code in tradable_codes
+        }
     prices = _stock_prices(
-        supabase_get, supabase_upsert, start_date, end_date, required_codes
+        supabase_get, supabase_upsert, start_date, end_date, tradable_codes, required_by_date
     )
     index_rates = _index_returns(supabase_get, start_date, end_date)
-    market_by_code = _market_master(supabase_get)
     benchmark_snapshots = _benchmark_rows(supabase_get, start_date, end_date)
-    holding_dates = sorted(set(holdings["스냅샷일"]))
     snapshots: list[dict] = []
 
     for performance_date in sorted(prices):
@@ -374,6 +473,8 @@ def build_historical_snapshots(
             name = str(row.get("종목명") or (price or {}).get("name") or code)
             reference_code = _performance_reference_code(code, name)
             market = market_by_code.get(code) or market_by_code.get(reference_code, "미분류")
+            if is_derivative_code(code) and reference_code in INDEX_PROXY_MARKETS:
+                market = INDEX_PROXY_MARKETS[reference_code]
             exposure = _number(row.get("우리평가금")) * _number(row.get("포지션부호"), 1.0)
             has_price = bool(price and price.get("change_rate") is not None)
             change_pct = _number(price.get("change_rate")) * 100 if has_price else 0.0
@@ -439,6 +540,8 @@ def build_historical_snapshots(
                 "excludedPositions": max(0, len(day_holdings) - len(positions)),
                 "sameDayTradesIncluded": False,
                 "directStocksIncluded": False,
+                "fundMasterSheet": master_sheets.get(holdings_date),
+                "estimatedShareRatioFrom": ratio_source_dates.get(holdings_date),
             },
         }
         payload["dailyAnalysis"]["analysis"] = _daily_summary_text(payload)

@@ -343,13 +343,14 @@ def fetch_kfr_snapshots(
     start_date: str | None = None,
     end_date: str | None = None,
     latest_only: bool = False,
+    include_excel: bool = False,
 ) -> list[dict[str, object]]:
     filters = {
         "select": "id,business_date,row_count,file_name,downloaded_at,source_format",
         "source_key": f"eq.{source_key}",
         "order": "business_date.desc,downloaded_at.desc" if latest_only else "business_date.asc,downloaded_at.asc",
     }
-    if source_key != "fund_trades":
+    if source_key != "fund_trades" and not include_excel:
         filters["source_format"] = "eq.kfr_partner_api_json"
     if start_date and end_date:
         filters["and"] = f"(business_date.gte.{start_date},business_date.lte.{end_date})"
@@ -376,6 +377,7 @@ def fetch_kfr_rows(
     start_date: str | None = None,
     end_date: str | None = None,
     latest_only: bool = False,
+    include_excel: bool = False,
 ) -> pd.DataFrame:
     snapshots = fetch_kfr_snapshots(
         client,
@@ -383,6 +385,7 @@ def fetch_kfr_rows(
         start_date=start_date,
         end_date=end_date,
         latest_only=latest_only,
+        include_excel=include_excel,
     )
     rows: list[dict[str, object]] = []
     for snapshot in snapshots:
@@ -2291,7 +2294,7 @@ def make_view(
       </section>
       <section class="tab-panel" data-panel="period">
         <div class="section-title performance-heading"><div class="performance-heading-actions"><div class="period-presets" role="group" aria-label="기간 프리셋"><button type="button" class="column-help-button" data-period-preset="week">1주</button><button type="button" class="column-help-button" data-period-preset="month">1개월</button><button type="button" class="column-help-button" data-period-preset="custom">직접선택</button></div><input type="date" class="period-date" data-period-start aria-label="기간분석 시작일" disabled><span class="period-separator">~</span><input type="date" class="period-date" data-period-end aria-label="기간분석 종료일" disabled><button type="button" class="column-help-button" data-period-load>조회</button><span class="period-query-status" data-period-status>기간을 선택해 주세요.</span></div></div>
-        <article class="panel period-ai-panel" data-period-ai-panel><div class="panel-title"><div class="period-ai-heading"><h4>AI 성과분석</h4><button type="button" class="column-help-button" data-period-ai>AI 성과분석</button></div><span data-period-ai-status>분석 대기</span></div><div class="period-ai-output" data-period-ai-output><div class="empty">버튼을 누르면 선택 기간을 분석합니다.</div></div></article>
+        <article class="panel period-ai-panel" data-period-ai-panel><div class="panel-title"><div class="period-ai-heading"><h4>AI 성과분석</h4><button type="button" class="column-help-button" data-period-ai>AI 성과분석</button><button type="button" class="column-help-button" data-period-history-open hidden>과거분석이력</button></div><span data-period-ai-status>분석 대기</span></div><div class="period-ai-output" data-period-ai-output><div class="empty">버튼을 누르면 선택 기간을 분석합니다.</div></div></article>
         <div class="period-workspace">
           <div class="period-summary-column">
             <article class="panel period-market-panel"><div class="panel-title"><h4>시장별 누적 성과</h4><span>포트 단리 합산 · BM 복리</span></div><div data-period-markets></div></article>
@@ -2753,7 +2756,7 @@ def build_dashboard(
     .period-ai-bullets {{ display:grid; gap:8px; }}
     .period-ai-bullet {{ position:relative; display:block; padding-left:13px; }}
     .period-ai-bullet::before {{ content:"•"; position:absolute; left:0; top:0; color:var(--hana); font-weight:900; }}
-    .period-ai-heading {{ display:flex; align-items:center; gap:7px; }}
+    .period-ai-heading {{ display:flex; align-items:center; flex-wrap:wrap; gap:7px; }}
     .period-detail-column .panel,.period-stock-column .panel {{ min-height:0; }}
     .period-detail-column .performance-table {{ max-height:none; overflow:visible; }}
     .period-stock-column .performance-table {{ max-height:700px; }}
@@ -2875,6 +2878,17 @@ def build_dashboard(
     .modal-backdrop.active {{ display:flex; }}
     .column-help-modal {{ width:min(640px,100%); max-height:min(720px,90vh); overflow:auto; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 18px 48px rgba(18,55,45,.22); }}
     .holding-fund-modal {{ width:min(820px,100%); max-height:min(720px,90vh); overflow:auto; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 18px 48px rgba(18,55,45,.22); }}
+    .period-history-modal {{ width:min(1180px,100%); height:min(800px,90vh); display:flex; flex-direction:column; min-height:0; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 18px 48px rgba(18,55,45,.22); }}
+    .period-history-content {{ display:grid; grid-template-columns:minmax(270px,320px) minmax(0,1fr); min-height:0; flex:1; }}
+    .period-history-list {{ overflow:auto; border-right:1px solid var(--line); }}
+    .period-history-item {{ display:grid; gap:3px; width:100%; padding:10px 14px; border:0; border-bottom:1px solid var(--line); background:#fff; color:var(--ink); text-align:left; cursor:pointer; }}
+    .period-history-item:hover,.period-history-item.active {{ background:#eaf5f1; }}
+    .period-history-item span {{ font-size:12px; font-weight:800; color:var(--hana); }}
+    .period-history-item time,.period-history-item small {{ font-size:11px; color:var(--muted); }}
+    .period-history-item b,.period-history-detail-meta b {{ margin-right:6px; color:var(--ink); font-weight:800; }}
+    .period-history-detail {{ min-width:0; overflow:auto; padding:14px; }}
+    .period-history-detail-meta {{ display:grid; gap:3px; margin-bottom:10px; color:var(--muted); font-size:11px; }}
+    .period-history-detail .period-ai-output {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }}
     .modal-head {{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--line); }}
     .modal-head h3 {{ margin:0; font-size:18px; color:var(--navy); }}
     .modal-close {{ width:30px; height:30px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); font-size:18px; font-weight:900; line-height:1; cursor:pointer; }}
@@ -3080,7 +3094,7 @@ def build_dashboard(
     .trade-dynamic-bar em {{ font-style:normal; font-size:10.5px; font-weight:900; text-align:right; }}
     @media (max-width:1280px) {{ .hold-grid {{ grid-template-columns:1fr 1fr; }} .trade-grid {{ grid-template-columns:1fr 1fr; }} .trade-recent {{ grid-column:1 / -1; grid-row:auto; }} .net-buy-panel,.net-sell-panel,.long-panel,.short-panel,.chart-panel {{ grid-column:auto; grid-row:auto; }} }}
     @media (max-width:1180px) {{ .period-workspace {{ grid-template-columns:1fr 1fr; }} .period-ai-panel {{ grid-column:1 / -1; }} }}
-    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.topbar-left {{ flex-wrap:wrap }}.brand {{ font-size:20px }}.quick-nav {{ order:3; width:100%; overflow:auto; padding-bottom:2px; }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.summary-grid,.sector-row,.hold-grid,.detail-grid,.trade-grid,.timeseries-grid,.performance-grid,.fund-history-layout,.period-workspace,.performance-kpis,.performance-ai-output,.period-ai-output,.fund-analysis-output,.pie-wrap {{ grid-template-columns:1fr; }} .period-detail-column {{ grid-column:auto; grid-template-columns:1fr; }} .fund-analysis-section:nth-child(odd) {{ border-right:0; }} .performance-stock-panel,.period-stock-panel {{ grid-column:auto;grid-row:auto; }} .fund-history-commentary {{ min-height:0; }} .trade-recent,.ts-trend-panel,.ts-daily-panel {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
+    @media (max-width:980px) {{ .topbar {{ height:auto;min-height:52px;padding:8px 10px;align-items:flex-start;gap:6px;flex-wrap:wrap }}.topbar-left {{ flex-wrap:wrap }}.brand {{ font-size:20px }}.quick-nav {{ order:3; width:100%; overflow:auto; padding-bottom:2px; }}.layout {{ grid-template-columns:1fr; }} aside {{ position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);padding:8px }} .fund-list {{ max-height:220px; }} .fund-group-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)) }} main {{ padding:8px }}.kpis,.summary-grid,.sector-row,.hold-grid,.detail-grid,.trade-grid,.timeseries-grid,.performance-grid,.fund-history-layout,.period-workspace,.performance-kpis,.performance-ai-output,.period-ai-output,.fund-analysis-output,.pie-wrap {{ grid-template-columns:1fr; }} .period-history-content {{ grid-template-columns:1fr; grid-template-rows:minmax(120px,190px) minmax(0,1fr); }} .period-history-list {{ border-right:0; border-bottom:1px solid var(--line); }} .period-history-detail .period-ai-output {{ grid-template-columns:1fr; }} .period-detail-column {{ grid-column:auto; grid-template-columns:1fr; }} .fund-analysis-section:nth-child(odd) {{ border-right:0; }} .performance-stock-panel,.period-stock-panel {{ grid-column:auto;grid-row:auto; }} .fund-history-commentary {{ min-height:0; }} .trade-recent,.ts-trend-panel,.ts-daily-panel {{ grid-column:auto; }}.metric-groups {{ grid-template-columns:1fr }}.summary-strip {{ align-items:flex-start;flex-wrap:wrap }}.trade-range {{ width:100%;margin-left:0 }}.trade-date {{ width:calc(50% - 12px) }}.panel {{ padding:8px }} }}
     @media (max-width:980px) {{
       .performance-stock-panel {{ display:block; }}
       .performance-stock-panel [data-performance-stocks] {{ display:block; }}
@@ -3142,6 +3156,12 @@ def build_dashboard(
         <button type="button" class="modal-close" data-close-holding-fund aria-label="닫기">×</button>
       </div>
       <div id="holdingFundBody"></div>
+    </section>
+  </div>
+  <div id="periodHistoryModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="periodHistoryTitle">
+    <section class="period-history-modal">
+      <div class="modal-head"><h3 id="periodHistoryTitle">과거분석이력</h3><button type="button" class="modal-close" data-period-history-close aria-label="닫기">×</button></div>
+      <div class="period-history-content"><div class="period-history-list" data-period-history-list></div><div class="period-history-detail"><div class="period-history-detail-meta" data-period-history-meta></div><div class="period-ai-output" data-period-history-output><div class="empty">이력을 선택해 주세요.</div></div></div></div>
     </section>
   </div>
   <script src="xlsx.full.min.js"></script>
@@ -3252,8 +3272,6 @@ def build_dashboard(
     let performanceAiRequestInFlight = false;
     let periodPreset = "week";
     let periodSummary = null;
-    let periodRecentDailyAnalyses = [];
-    let periodRecentDailyKey = "";
     let periodDetailSummary = null;
     let periodSelectedDate = "";
     let periodDetailRequestKey = "";
@@ -3262,6 +3280,7 @@ def build_dashboard(
     let periodStockMarket = "코스피";
     let periodSectorFilter = "";
     let periodAnalysisRequestKey = "";
+    const localPeriodHistory = ["127.0.0.1", "localhost"].includes(window.location.hostname);
     const sortableTableState = new Map();
     let stockSupabaseClient = null;
     function normalizeQuoteCode(value) {{
@@ -3761,6 +3780,72 @@ def build_dashboard(
         return `<section class="period-ai-market-row"><div class="period-ai-market-heading"><h5>${{escHtml(part.market)}}</h5><p>${{performanceAnalysisHtml(summary, false)}}</p></div><section class="period-ai-market-analysis"><h6>BM 대비 핵심 요인</h6><div class="period-ai-bullets">${{bulletHtml}}</div></section></section>`;
       }}).join("");
     }}
+    function closePeriodHistory() {{
+      document.getElementById("periodHistoryModal")?.classList.remove("active");
+    }}
+    async function showPeriodHistoryEntry(id) {{
+      const modal = document.getElementById("periodHistoryModal");
+      const output = modal?.querySelector("[data-period-history-output]");
+      const meta = modal?.querySelector("[data-period-history-meta]");
+      if (!modal || !output || !meta) return;
+      modal.dataset.selectedId = String(id);
+      modal.querySelectorAll("[data-period-history-id]").forEach((button) => button.classList.toggle("active", button.dataset.periodHistoryId === String(id)));
+      output.innerHTML = '<div class="empty">분석 결과를 불러오는 중입니다.</div>';
+      try {{
+        let entry;
+        if (localPeriodHistory) {{
+          const response = await fetch(`/api/period-analysis-history?id=${{encodeURIComponent(id)}}`, {{ cache:"no-store" }});
+          entry = await response.json();
+          if (!response.ok) throw new Error(entry.error || `HTTP ${{response.status}}`);
+        }} else {{
+          const client = await getStockSupabaseClient();
+          const invoked = await client.functions.invoke("stock-performance-analysis", {{ body:{{ action:"period-history-detail", id }} }});
+          if (invoked.error) throw invoked.error;
+          entry = invoked.data;
+        }}
+        if (modal.dataset.selectedId !== String(id)) return;
+        const days = entry.snapshotCount == null ? "" : ` · ${{entry.snapshotCount}}영업일`;
+        meta.innerHTML = `<div><b>분석기간</b>${{escHtml(entry.startDate)}} ~ ${{escHtml(entry.endDate)}}</div><div><b>조회일자</b>${{escHtml(periodAnalysisTimestamp(entry.generatedAt))}}</div><div><b>범위</b>${{escHtml(entry.fundScope)}} · ${{entry.source === "web" ? "웹 저장" : "로컬 저장"}}${{days}}</div>`;
+        renderPeriodAnalysisCards(output, entry.analysis);
+      }} catch (error) {{
+        if (modal.dataset.selectedId === String(id)) output.textContent = `분석 이력을 불러오지 못했습니다. ${{error.message || error}}`;
+      }}
+    }}
+    async function openPeriodHistory() {{
+      const modal = document.getElementById("periodHistoryModal");
+      const list = modal?.querySelector("[data-period-history-list]");
+      const output = modal?.querySelector("[data-period-history-output]");
+      const meta = modal?.querySelector("[data-period-history-meta]");
+      if (!modal || !list || !output || !meta) return;
+      modal.classList.add("active");
+      modal.querySelector("[data-period-history-close]")?.focus();
+      list.innerHTML = '<div class="empty">이력을 불러오는 중입니다.</div>';
+      output.innerHTML = '<div class="empty">이력을 선택해 주세요.</div>';
+      meta.textContent = "";
+      try {{
+        let data;
+        if (localPeriodHistory) {{
+          const response = await fetch("/api/period-analysis-history", {{ cache:"no-store" }});
+          data = await response.json();
+          if (!response.ok) throw new Error(data.error || `HTTP ${{response.status}}`);
+        }} else {{
+          const client = await getStockSupabaseClient();
+          const invoked = await client.functions.invoke("stock-performance-analysis", {{ body:{{ action:"period-history-list" }} }});
+          if (invoked.error) throw invoked.error;
+          data = invoked.data;
+        }}
+        if (!modal.classList.contains("active")) return;
+        const items = Array.isArray(data.items) ? data.items : [];
+        list.innerHTML = items.length ? items.map((entry) => {{
+          const days = entry.snapshotCount == null ? "" : ` · ${{Number(entry.snapshotCount)}}영업일`;
+          const source = entry.source === "web" ? "웹 저장" : "로컬 저장";
+          return `<button type="button" class="period-history-item" data-period-history-id="${{escHtml(entry.id)}}"><span><b>분석기간</b>${{escHtml(entry.startDate)}} ~ ${{escHtml(entry.endDate)}}</span><time><b>조회일자</b>${{escHtml(periodAnalysisTimestamp(entry.generatedAt))}}</time><small><b>범위</b>${{escHtml(entry.fundScope)}} · ${{source}}${{days}}</small></button>`;
+        }}).join("") : '<div class="empty">저장된 분석 이력이 없습니다.</div>';
+        if (items.length) showPeriodHistoryEntry(items[0].id);
+      }} catch (error) {{
+        list.textContent = `분석 이력을 불러오지 못했습니다. ${{error.message || error}}`;
+      }}
+    }}
     function periodAnalysisScope(start, end) {{
       return `${{selectedPerformanceFundLabel()}}\u0000${{start}}\u0000${{end}}`;
     }}
@@ -3779,6 +3864,7 @@ def build_dashboard(
       const currentEnd = dashboard.querySelector("[data-period-end]")?.value || "";
       const scope = periodAnalysisScope(start, end);
       if (currentStart !== start || currentEnd !== end || periodAnalysisScope(currentStart, currentEnd) !== scope) return false;
+      if (localPeriodHistory && payload.analysisFingerprint && payload.analysisFingerprint !== periodSummary?.analysisFingerprint) return false;
       const panel = dashboard.querySelector("[data-period-ai-panel]");
       const output = dashboard.querySelector("[data-period-ai-output]");
       const status = dashboard.querySelector("[data-period-ai-status]");
@@ -3787,6 +3873,7 @@ def build_dashboard(
       if (!force && panel.dataset.aiScope === scope && panel.dataset.aiGeneratedAt === generatedAt) return false;
       panel.dataset.aiScope = scope;
       panel.dataset.aiGeneratedAt = generatedAt;
+      panel.dataset.aiFingerprint = String(payload.analysisFingerprint || "");
       renderPeriodAnalysisCards(output, payload.analysis);
       const rawModel = String(payload.model || "gpt-5.4-mini");
       const model = rawModel.startsWith("gpt-5.4-mini") ? "gpt-5.4-mini" : rawModel;
@@ -3794,13 +3881,21 @@ def build_dashboard(
       return true;
     }}
     async function loadSharedPeriodAnalysis(silent = true) {{
-      if (["127.0.0.1", "localhost"].includes(window.location.hostname)) return;
       if (activeTab !== "period" || periodAnalysisRequestKey) return;
       const start = dashboard.querySelector("[data-period-start]")?.value || "";
       const end = dashboard.querySelector("[data-period-end]")?.value || "";
       if (!start || !end) return;
       const status = dashboard.querySelector("[data-period-ai-status]");
       try {{
+        if (localPeriodHistory) {{
+          if (!periodSummary?.analysisFingerprint) return;
+          const params = new URLSearchParams({{ latest:"1", start, end, fundScope:selectedPerformanceFundLabel(), fingerprint:periodSummary.analysisFingerprint }});
+          const response = await fetch(`/api/period-analysis-history?${{params}}`, {{ cache:"no-store" }});
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || `HTTP ${{response.status}}`);
+          if (result.analysis) applySharedPeriodAnalysis(result, start, end);
+          return;
+        }}
         const client = await getStockSupabaseClient();
         const invoked = await client.functions.invoke("stock-performance-analysis", {{
           body:{{ action:"period-latest", start, end, fundScope:selectedPerformanceFundLabel() }},
@@ -3838,25 +3933,24 @@ def build_dashboard(
       const sectorSource = summary?.sectorRowsByLevel?.[periodSectorLevel] || summary?.sectorRows || [];
       const scopedSectorRows = sectorSource.filter((row) => String(row.market || "") === periodSectorMarket);
       const sectorRows = scopedSectorRows.map((row) => {{ const excessContribution = row.excessContributionPp ?? row.contributionPp; const excessProfit = row.excessProfitLoss ?? row.profitLoss; return `<tr class="period-sector-row${{periodSectorFilter === String(row.sector || "") ? " active" : ""}}" data-period-sector-filter="${{escHtml(row.sector)}}"><td class="name-cell"><button type="button" class="performance-filter-button">${{escHtml(row.sector)}}</button></td><td>${{fmtRate1Js(row.portfolioWeightPct)}}</td><td>${{fmtRate1Js(row.benchmarkWeightPct)}}</td><td class="${{signedClass(row.activeWeightPp)}}">${{fmtPp1Js(row.activeWeightPp)}}</td><td class="${{signedClass(excessContribution)}}">${{fmtPpJs(excessContribution == null ? null : excessContribution / 100)}}</td><td class="${{signedClass(excessProfit)}}">${{fmtEok1(excessProfit)}}</td></tr>`; }}).join("");
-      const sectorTotals = scopedSectorRows.reduce((totals, row) => ({{ portfolio:totals.portfolio + Number(row.portfolioWeightPct || 0), benchmark:totals.benchmark + Number(row.benchmarkWeightPct || 0), active:totals.active + Number(row.activeWeightPp || 0), contribution:totals.contribution + Number(row.excessContributionPp ?? row.contributionPp ?? 0), profitLoss:totals.profitLoss + Number(row.excessProfitLoss ?? row.profitLoss ?? 0) }}), {{ portfolio:0, benchmark:0, active:0, contribution:0, profitLoss:0 }});
-      const sectorTotalRow = `<tr class="total-row"><td class="name-cell total-label">합계</td><td>${{fmtRate1Js(sectorTotals.portfolio)}}</td><td>${{fmtRate1Js(sectorTotals.benchmark)}}</td><td class="${{signedClass(sectorTotals.active)}}">${{fmtPp1Js(sectorTotals.active)}}</td><td class="${{signedClass(sectorTotals.contribution)}}">${{fmtPpJs(sectorTotals.contribution / 100)}}</td><td class="${{signedClass(sectorTotals.profitLoss)}}">${{fmtEok1(sectorTotals.profitLoss)}}</td></tr>`;
-      const sectorHeaders = isDaily ? ["섹터", "비중", "BM비중", "BM 대비", "초과기여도", "초과손익(억)"] : ["섹터", "평균 비중", "평균 BM", "BM 대비", "초과기여도", "초과손익(억)"];
+      const sectorHeaders = isDaily ? ["섹터", "비중", "BM비중", "BM 대비", "BM대비 효과", "BM대비손익"] : ["섹터", "평균 비중", "평균 BM", "BM 대비", "BM대비 효과", "BM대비손익"];
       if (sectorHost) {{
-        sectorHost.innerHTML = count ? `<div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="period-sector"><thead><tr>${{sectorHeaders.map((label, index) => `<th data-sort-index="${{index}}">${{label}}</th>`).join("")}}</tr></thead><tbody>${{sectorRows}}${{sectorTotalRow}}</tbody></table></div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
+        sectorHost.innerHTML = count ? `<div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="period-sector"><thead><tr>${{sectorHeaders.map((label, index) => `<th data-sort-index="${{index}}">${{label}}</th>`).join("")}}</tr></thead><tbody>${{sectorRows}}</tbody></table></div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
         if (!sortableTableState.has("period-sector")) sortableTableState.set("period-sector", {{ index:4, direction:"desc" }});
         bindSortableTables(sectorHost);
       }}
       let stockSource = summary?.stockRowsByMarket?.[periodStockMarket] || (summary?.stockRows || []).filter((row) => periodStockMarket === "ALL" || String(row.market || "") === periodStockMarket);
       if (periodSectorFilter) stockSource = stockSource.filter((row) => String(row[periodSectorLevel === "large" ? "sectorLarge" : "sectorMid"] || "미분류") === periodSectorFilter);
-      const stockHeaders = isDaily ? ["종목명", "섹터", "비중", "BM비중", "BM 대비", "수익률", "초과기여도", "BM대비손익"] : ["종목명", "섹터", "평균 비중", "평균 BM", "BM 대비", "수익률", "초과기여도", "BM대비손익"];
+      const benchmarkHeader = summary?.benchmarkWeightCoverage === "full_period" ? "평균 BM" : "보유일 BM";
+      const stockHeaders = isDaily ? ["종목명", "섹터", "비중", "BM비중", "BM 대비", "수익률", "BM대비 효과", "BM대비손익"] : ["종목명", "섹터", "평균 비중", benchmarkHeader, "BM 대비", "수익률", "BM대비 효과", "BM대비손익"];
       const stockRowHtml = (rows) => rows.map((row) => {{ const excessContribution = row.excessContributionPp ?? row.contributionPp; const excessProfit = row.excessProfitLoss ?? row.profitLoss; const stockName = String(row.name || ""); const sectorName = String(row[periodSectorLevel === "large" ? "sectorLarge" : "sectorMid"] || "미분류"); return `<tr><td class="name-cell" title="${{escHtml(stockName)}}">${{escHtml(stockName)}}</td><td class="name-cell" title="${{escHtml(sectorName)}}">${{escHtml(sectorName)}}</td><td>${{fmtRateJs(row.averageWeightPct)}}</td><td>${{fmtRateJs(row.averageBenchmarkWeightPct)}}</td><td class="${{signedClass(row.activeWeightPp)}}">${{fmtPp1Js(row.activeWeightPp)}}</td><td class="${{signedClass(row.periodReturnPct)}}">${{fmtRateJs(row.periodReturnPct)}}</td><td class="${{signedClass(excessContribution)}}">${{fmtPpJs(excessContribution == null ? null : excessContribution / 100)}}</td><td class="${{signedClass(excessProfit)}}">${{fmtEok1(excessProfit)}}</td></tr>`; }}).join("");
       const stockTable = (rows, label, key) => `<section class="period-stock-group"><h5>${{label}}</h5><div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="${{key}}"><thead><tr>${{stockHeaders.map((header, index) => `<th data-sort-index="${{index}}">${{header}}</th>`).join("")}}</tr></thead><tbody>${{stockRowHtml(rows)}}</tbody></table></div></section>`;
       const topStocks = [...stockSource].sort((a, b) => Number(b.excessContributionPp ?? b.contributionPp ?? 0) - Number(a.excessContributionPp ?? a.contributionPp ?? 0)).slice(0, 10);
       const bottomStocks = [...stockSource].sort((a, b) => Number(a.excessContributionPp ?? a.contributionPp ?? 0) - Number(b.excessContributionPp ?? b.contributionPp ?? 0)).slice(0, 10);
       if (stockHost) {{
         stockHost.innerHTML = count ? `<div class="period-stock-groups">${{stockTable(topStocks, "BM대비 성과 양호 TOP10", "period-stock-top")}}${{stockTable(bottomStocks, "BM대비 성과 부진 TOP10", "period-stock-bottom")}}</div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
-        if (!sortableTableState.has("period-stock-top")) sortableTableState.set("period-stock-top", {{ index:4, direction:"desc" }});
-        if (!sortableTableState.has("period-stock-bottom")) sortableTableState.set("period-stock-bottom", {{ index:4, direction:"asc" }});
+        if (!sortableTableState.has("period-stock-top")) sortableTableState.set("period-stock-top", {{ index:6, direction:"desc" }});
+        if (!sortableTableState.has("period-stock-bottom")) sortableTableState.set("period-stock-bottom", {{ index:6, direction:"asc" }});
         bindSortableTables(stockHost);
       }}
     }}
@@ -3873,7 +3967,7 @@ def build_dashboard(
       const aiStatus = dashboard.querySelector("[data-period-ai-status]");
       const count = Number(summary?.snapshotCount || 0);
       if (status) status.textContent = count ? `${{count}}영업일 저장 · ${{summary.selectedFund || ""}}` : "선택한 기간에 저장된 스냅샷이 없습니다.";
-      renderDailyPeriodAnalyses(dailyHost, periodRecentDailyAnalyses.length ? periodRecentDailyAnalyses : (summary?.dailyAnalyses || []));
+      renderDailyPeriodAnalyses(dailyHost, summary?.dailyAnalyses || []);
       const marketRows = (summary?.marketRows || []).map((row) => `<tr><td>${{escHtml(row.market)}}</td><td>${{row.days || 0}}</td><td class="${{signedClass(row.actualReturnPct)}}">${{fmtRateJs(row.actualReturnPct)}}</td><td class="${{signedClass(row.benchmarkReturnPct)}}">${{fmtRateJs(row.benchmarkReturnPct)}}</td><td class="${{signedClass(row.relativePp)}}">${{fmtPpJs(row.relativePp == null ? null : row.relativePp / 100)}}</td></tr>`).join("");
       if (marketHost) marketHost.innerHTML = count ? `<div class="table-wrap performance-table"><table><thead><tr><th>시장</th><th>영업일</th><th>포트 수익률</th><th>BM 수익률</th><th>상대성과</th></tr></thead><tbody>${{marketRows}}</tbody></table></div>` : '<div class="empty">저장된 데이터가 없습니다.</div>';
       renderPeriodDetailTables(summary);
@@ -3881,6 +3975,7 @@ def build_dashboard(
         aiOutput.innerHTML = count ? '<div class="empty">버튼을 누르면 선택 기간을 분석합니다.</div>' : '<div class="empty">분석할 저장 데이터가 없습니다.</div>';
         aiPanel.dataset.aiScope = "";
         aiPanel.dataset.aiGeneratedAt = "";
+        aiPanel.dataset.aiFingerprint = "";
         if (aiStatus) aiStatus.textContent = "분석 대기";
       }}
     }}
@@ -3902,21 +3997,6 @@ def build_dashboard(
       }}
       return invoked.data || {{}};
     }}
-    async function loadRecentPeriodDailyAnalyses() {{
-      const end = previousPeriodTradingDate();
-      const startDate = new Date(`${{end}}T12:00:00`);
-      startDate.setDate(startDate.getDate() - 45);
-      const start = localKoreaDate(startDate);
-      const key = `${{selectedPerformanceFundLabel()}}\u0000${{start}}\u0000${{end}}`;
-      if (periodRecentDailyKey === key && periodRecentDailyAnalyses.length) return periodRecentDailyAnalyses;
-      const recent = await fetchPeriodSummaryRange(start, end);
-      periodRecentDailyAnalyses = [...(recent?.dailyAnalyses || [])]
-        .filter((item) => Array.isArray(item?.markets) && item.markets.length)
-        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-        .slice(0, 20);
-      periodRecentDailyKey = key;
-      return periodRecentDailyAnalyses;
-    }}
     async function selectPeriodDate(date) {{
       if (!periodSummary || !date) return;
       const dailyHost = dashboard.querySelector("[data-period-daily]");
@@ -3924,7 +4004,7 @@ def build_dashboard(
         periodSelectedDate = "";
         periodDetailSummary = null;
         periodDetailRequestKey = "";
-        renderDailyPeriodAnalyses(dailyHost, periodRecentDailyAnalyses.length ? periodRecentDailyAnalyses : (periodSummary.dailyAnalyses || []));
+        renderDailyPeriodAnalyses(dailyHost, periodSummary.dailyAnalyses || []);
         renderPeriodDetailTables(periodSummary);
         return;
       }}
@@ -3932,7 +4012,7 @@ def build_dashboard(
       periodDetailSummary = null;
       const requestKey = `${{date}}\u0000${{selectedPerformanceFundLabel()}}`;
       periodDetailRequestKey = requestKey;
-      renderDailyPeriodAnalyses(dailyHost, periodRecentDailyAnalyses.length ? periodRecentDailyAnalyses : (periodSummary.dailyAnalyses || []));
+      renderDailyPeriodAnalyses(dailyHost, periodSummary.dailyAnalyses || []);
       const sectorHost = dashboard.querySelector("[data-period-sectors]");
       const stockHost = dashboard.querySelector("[data-period-stocks]");
       if (sectorHost) sectorHost.innerHTML = '<div class="empty">선택 일자의 섹터 스냅샷을 불러오는 중입니다.</div>';
@@ -3947,7 +4027,7 @@ def build_dashboard(
         if (periodDetailRequestKey !== requestKey) return;
         periodSelectedDate = "";
         periodDetailSummary = null;
-        renderDailyPeriodAnalyses(dailyHost, periodRecentDailyAnalyses.length ? periodRecentDailyAnalyses : (periodSummary.dailyAnalyses || []));
+        renderDailyPeriodAnalyses(dailyHost, periodSummary.dailyAnalyses || []);
         renderPeriodDetailTables(periodSummary);
       }}
     }}
@@ -3961,13 +4041,7 @@ def build_dashboard(
       if (!start || !end) return null;
       if (status) status.textContent = "저장된 스냅샷을 불러오는 중입니다.";
       try {{
-        const [result] = await Promise.all([
-          fetchPeriodSummaryRange(start, end),
-          loadRecentPeriodDailyAnalyses().catch((error) => {{
-            console.warn("Recent daily period summary load failed", error);
-            return [];
-          }}),
-        ]);
+        const result = await fetchPeriodSummaryRange(start, end);
         renderPeriodSummary(result);
         loadSharedPeriodAnalysis(true);
         return result;
@@ -3981,6 +4055,8 @@ def build_dashboard(
       const startInput = dashboard.querySelector("[data-period-start]");
       const endInput = dashboard.querySelector("[data-period-end]");
       if (!startInput || !endInput) return;
+      const historyButton = dashboard.querySelector("[data-period-history-open]");
+      if (historyButton) historyButton.hidden = false;
       if (!endInput.value || !startInput.value) {{
         setPeriodPreset(periodPreset, false).then(() => loadPeriodSummary());
         return;
@@ -4003,6 +4079,7 @@ def build_dashboard(
         return;
       }}
       const requestKey = `${{selectedPerformanceFundLabel()}}\u0000${{start}}\u0000${{end}}`;
+      if (localPeriodHistory && panel.dataset.aiScope === requestKey && panel.dataset.aiFingerprint === periodSummary.analysisFingerprint && panel.dataset.aiGeneratedAt) return;
       if (periodAnalysisRequestKey === requestKey) return;
       const originalText = button.textContent;
       periodAnalysisRequestKey = requestKey;
@@ -5940,6 +6017,7 @@ def build_dashboard(
       if (periodPresetButton) setPeriodPreset(periodPresetButton.dataset.periodPreset || "week");
       if (event.target.closest("[data-period-load]")) loadPeriodSummary();
       if (event.target.closest("[data-period-ai]")) requestPeriodAnalysis();
+      if (event.target.closest("[data-period-history-open]")) openPeriodHistory();
       if (event.target.closest("[data-period-date-reset]") && periodSelectedDate) selectPeriodDate(periodSelectedDate);
       const periodDateRow = event.target.closest("[data-period-date]");
       if (periodDateRow) selectPeriodDate(periodDateRow.dataset.periodDate || "");
@@ -6051,9 +6129,15 @@ def build_dashboard(
     document.getElementById("holdingFundModal")?.addEventListener("click", (event) => {{
       if (event.target === document.getElementById("holdingFundModal")) setHoldingFundModal(false);
     }});
+    document.getElementById("periodHistoryModal")?.addEventListener("click", (event) => {{
+      if (event.target.closest("[data-period-history-close]") || event.target === document.getElementById("periodHistoryModal")) closePeriodHistory();
+      const row = event.target.closest("[data-period-history-id]");
+      if (row) showPeriodHistoryEntry(row.dataset.periodHistoryId);
+    }});
     document.addEventListener("keydown", (event) => {{
       if (event.key === "Escape") setColumnHelp(false);
       if (event.key === "Escape") setHoldingFundModal(false);
+      if (event.key === "Escape") closePeriodHistory();
     }});
     document.getElementById("refreshPage")?.addEventListener("click", () => location.reload());
     document.getElementById("multiFundToggle")?.addEventListener("click", () => {{
