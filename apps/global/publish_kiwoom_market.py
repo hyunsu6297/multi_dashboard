@@ -318,6 +318,7 @@ def claim_pending_request(client: SupabaseRest) -> dict[str, Any] | None:
         {
             "select": "*",
             "status": "eq.pending",
+            "priority": "lt.30",
             "order": "priority.desc,requested_at.asc",
             "limit": "1",
         },

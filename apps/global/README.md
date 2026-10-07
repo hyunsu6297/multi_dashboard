@@ -1,31 +1,29 @@
-# 글로벌대시보드
+# 글로벌 수익증권 대시보드
 
-글로벌 펀드의 보유현황과 매매현황을 ETF 분류정보와 결합해 시각화하는 로컬 대시보드입니다.
+웹판은 `build_global_dashboard.py`가 Supabase KFR 원천 보유·매매 데이터와
+`manual_file_rows`의 `global` 도메인 펀드/ETF DB를 읽어 생성합니다.
+주식·채권·메자닌 도메인 자료는 변경하지 않습니다.
 
-## 실행
+## Bloomberg 웹 업데이트
 
-```powershell
-.\run_dashboard.ps1
-```
+1. 이 PC에서 Bloomberg Terminal에 로그인합니다.
+2. 저장소 루트의 `run_global_bloomberg_web_receiver.cmd`를 실행하고 창을 열어 둡니다.
+3. 웹 글로벌대시보드에서 `블룸버그 업데이트` 또는 `미등록 ETF 등록`을 누릅니다.
 
-브라우저에서 `http://127.0.0.1:8766`을 엽니다. Bloomberg 데이터 조회를 위해
-Bloomberg Terminal 로그인 및 Desktop API(`localhost:8194`) 연결이 필요합니다.
+웹 브라우저는 로그인한 Supabase 세션으로 글로벌 요청 대기열에 등록합니다.
+PC 수신기는 바깥 방향 HTTPS 연결로 요청을 가져와 Desktop API(`localhost:8194`)를
+조회하고, 결과를 글로벌 공용 시세/ETF DB에 반영합니다. 외부에서 이 PC로 들어오는
+포트는 필요하지 않습니다. `SUPABASE_SERVICE_ROLE_KEY`는 PC 수신기에서만 사용하고
+웹 코드에는 넣지 않습니다. 웹의 마지막 Bloomberg 업데이트 시각은 공용 시세의
+`updatedAt`을 표시합니다.
 
-## 주요 파일
+ETF/펀드 DB의 변경저장은 Supabase에 반영됩니다. 권한이 없는 사용자는 열람만 할
+수 있습니다. KFR 보유·매매 원천은 일일 자동 빌드에서 갱신되며 웹의 Bloomberg
+버튼은 원천 자료를 다시 조회하지 않습니다.
 
-- `build_global_dashboard.py`: 데이터 결합 및 정적 HTML 생성
-- `index.html`: 생성된 글로벌대시보드
-- `global_dashboard_server.py`: 대시보드 제공 및 Bloomberg Desktop API 중계
-- `EMP보유현황.xlsx`: EMP1~4 원금 및 초기 보유 종목/수량
-- `펀드정보.xlsx`: 글로벌 펀드 기준정보
-- `ETF정보.xlsx`: ETF 분류 기준정보
-- `../../data/kfr/holdings_YYYY-MM-DD.json`: KFR API 보유 원천데이터
-- `../../data/kfr/trades_YYYY-MM-DD.json`: KFR API 매매 원천데이터
-- `EMP유니버스(260522).xlsx`: EMP 참고 유니버스
+## 로컬판
 
-향후 보유현황·매매현황과 펀드·ETF 기준정보는 Supabase 데이터로 전환할 예정입니다.
-
-리밸런싱 화면에서 변경한 보유수량·목표비중과 추가/삭제한 행은 `변경저장` 버튼을
-누르면 현재 브라우저의 로컬 저장소에 저장됩니다. Excel 원본은 초기값으로 유지됩니다.
-ETF DB 탭에서 활용 ETF의 Bloomberg 티커, 분류정보, EMP 라벨을 추가·수정·삭제할
-수 있으며 변경 내용도 브라우저 로컬 저장소에 보관됩니다.
+기존 로컬 서버는 별도이며, 웹 수신기와 동시에 실행할 필요는 없습니다.
+로컬판 브라우저 캐시를 최초 이전할 때만
+`scripts/migrate_global_browser_cache.py`를 사용합니다. 마이그레이션은 기존 글로벌
+DB 행을 백업한 뒤 글로벌 파일 키만 갱신합니다.

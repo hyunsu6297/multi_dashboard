@@ -306,12 +306,33 @@ def restore_global_manual(client: SupabaseRest, global_dir: Path) -> None:
 
     etf_rows = manual_rows("etf_db")
     if etf_rows:
-        write_workbook(global_dir / "ETF정보.xlsx", {"Sheet1": etf_rows}, header_row=1)
+        columns = [
+            ("ISIN", "isin"), ("FULL NAME", "fullName"), ("KOREAN NAME", "koreanName"),
+            ("TICKER", "ticker"), ("NAME", "name"), ("상장", "listing"),
+            ("투자국가", "country"), ("해외투자여부", "underlyingAsset"),
+            ("자산군", "large"), ("대분류", "mid"), ("소분류", "small"),
+            ("EMP", "emp"), ("추종지수", "benchmark"), ("조회출처", "source"),
+        ]
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Sheet1"
+        sheet.append([header for header, _ in columns])
+        for row in etf_rows:
+            payload = row["payload"]
+            sheet.append([payload.get(key, "") for _, key in columns])
+        workbook.save(global_dir / "ETF정보.xlsx")
         print(f"restored global/etf_db: rows={len(etf_rows)}")
 
     fund_rows = manual_rows("fund_info")
     if fund_rows:
-        write_workbook(global_dir / "펀드정보.xlsx", {"Sheet1": fund_rows}, header_row=1)
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Sheet1"
+        sheet.append(["펀드명", "펀드코드", "유형"])
+        for row in fund_rows:
+            payload = row["payload"]
+            sheet.append([payload.get("fund", ""), payload.get("assocCode", ""), payload.get("type", "")])
+        workbook.save(global_dir / "펀드정보.xlsx")
         print(f"restored global/fund_info: rows={len(fund_rows)}")
 
     emp_info_rows = manual_rows("emp_info")
