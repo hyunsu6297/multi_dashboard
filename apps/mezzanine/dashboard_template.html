@@ -32,7 +32,7 @@
 <article class="panel"><div class="panelTitle"><h2>매매현황</h2><div class="panelTools"><input class="dateInput" id="tradeStart" type="date" aria-label="매매 시작일"><span>~</span><input class="dateInput" id="tradeEnd" type="date" aria-label="매매 종료일"><input class="search" id="tradeSearch" placeholder="펀드·종목 검색"></div></div><div class="tablewrap"><table id="tradeTable"></table></div></article>
 </div></div>
 <section class="view performanceView stockStylePerformance" id="performanceView" hidden>
-  <div class="performanceHead"><div><div class="performanceHeadTitle"><h1>성과분석</h1><button class="outlineButton" id="aiPerformanceButton" type="button">AI 성과분석</button></div><span>메자닌 기준가·기초자산·신용등급 기준</span></div></div>
+  <div class="performanceHead"><div><div class="performanceHeadTitle"><h1>성과분석</h1><button class="outlineButton" id="aiPerformanceButton" type="button">AI 성과분석</button><button class="outlineButton" id="performanceExportButton" type="button">엑셀 저장</button></div><span>메자닌 기준가·기초자산·신용등급 기준</span></div></div>
   <article class="perfCard performanceAiPanel" id="aiPerformancePanel" hidden><div class="performanceAiTitle"><h2 id="aiPerformanceTitle">AI 성과분석</h2><span id="aiPerformanceStatus"></span></div><div class="performanceAiOutput" id="aiPerformanceOutput"></div></article>
   <div class="perfTopGrid">
     <div class="perfTopLeft">
@@ -177,8 +177,40 @@ table($('#holdTable'),'hold',[
 table($('#tradeTable'),'trade',[['거래일자','date',x=>x.date],['펀드','fund',x=>x.fund],['종목명','name',x=>x.name],['구분','side',x=>x.side],['금액(펀드)','amount',x=>fmt(x.amount/1e8,1),'num'],['금액(실보유)','lookthroughAmount',x=>fmt(x.lookthroughAmount/1e8,1),'num']],filteredTrade());if(state.view==='performance'){renderPerformance();loadSharedAiPerformance()}}
 function switchView(view){state.view=view;$('#dashboardView').hidden=view!=='dashboard';$('#performanceView').hidden=view!=='performance';$('#mainTab').classList.toggle('active',view==='dashboard');$('#performanceTab').classList.toggle('active',view==='performance');if(view==='performance')renderPerformance();setAiPerformanceAutoRefresh();window.scrollTo({top:0,behavior:'smooth'})}
 function setPerformancePeriod(period){let end=state.perfEnd||DATA.kfrDate||new Date().toISOString().slice(0,10),start=period==='YTD'?end.slice(0,4)+'-01-01':addMonths(end,period==='6M'?-6:period==='1Y'?-12:period==='2Y'?-24:-36);state.chartRange=period;state.perfStart=start;state.perfEnd=end;renderPerformance()}
+let performanceXlsxPromise;
+function loadPerformanceXlsx(){if(window.XLSX)return Promise.resolve(window.XLSX);if(performanceXlsxPromise)return performanceXlsxPromise;performanceXlsxPromise=new Promise((resolve,reject)=>{let script=document.createElement('script');script.src=new URL('../stock/xlsx.full.min.js',location.href).href;script.onload=()=>window.XLSX?resolve(window.XLSX):reject(new Error('엑셀 모듈을 초기화하지 못했습니다.'));script.onerror=()=>reject(new Error('엑셀 모듈을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.'));document.head.appendChild(script)}).catch(error=>{performanceXlsxPromise=null;throw error});return performanceXlsxPromise}
+function exportCell(text){let value=String(text||'').trim().replace(/\s+/g,' ');if(!value||value==='—'||value==='-')return null;let match=value.match(/^([+-]?[\d,]+(?:\.\d+)?)\s*(억|%p|%)?$/);if(!match)return value;let number=Number(match[1].replaceAll(',',''));if(!Number.isFinite(number))return value;let unit=match[2];if(unit==='%')return{t:'n',v:number/100,z:'[Red]0.00%;[Blue]-0.00%;0.00%'};if(unit==='%p')return{t:'n',v:number/100,z:'[Red]0.00%"p";[Blue]-0.00%"p";0.00%"p"'};if(unit==='억')return{t:'n',v:number,z:'[Red]#,##0.00"억";[Blue]-#,##0.00"억";0.00"억"'};return number}
+function addPerformanceSheet(workbook,XLSX,name,title,headers,rows,caption){let prefix=[[title],[`선택: ${aiScopeLabel()} · 조회기간: ${state.perfStart||'전체'} ~ ${state.perfEnd||'전체'} · ${caption||''}`],[],headers],sheet=XLSX.utils.aoa_to_sheet(prefix.concat(rows));sheet['!merges']=[{s:{r:0,c:0},e:{r:0,c:Math.max(0,headers.length-1)}},{s:{r:1,c:0},e:{r:1,c:Math.max(0,headers.length-1)}}];sheet['!cols']=headers.map((header,index)=>({wch:Math.min(42,Math.max(index===0?18:13,String(header).length*2+5,...rows.slice(0,100).map(row=>typeof row[index]==='string'?Math.min(40,row[index].length+2):10)))}));if(rows.length)sheet['!autofilter']={ref:`A4:${XLSX.utils.encode_col(headers.length-1)}${rows.length+4}`};XLSX.utils.book_append_sheet(workbook,sheet,name)}
+function addPerformanceTableSheet(workbook,XLSX,name,title,selector,caption){let table=$(selector),headers=[...table.querySelectorAll('thead th')].map(cell=>cell.textContent.trim()),rows=[...table.querySelectorAll('tbody tr')].map(tr=>[...tr.cells].map(cell=>exportCell(cell.textContent)));addPerformanceSheet(workbook,XLSX,name,title,headers,rows,caption)}
+function addPerformanceReturnSheet(workbook,XLSX){let fundNames=activeFundNames(true),series=fundNames.map(name=>({name,rows:periodRows(allFundSeries(name))}));if(state.benchmark!=='NONE')series.push({name:state.benchmark,rows:marketSeries(state.benchmark)});let dates=[...new Set(series.flatMap(item=>item.rows.map(row=>row.date)))].sort(),bySeries=series.map(item=>new Map(item.rows.map(row=>[row.date,row.periodReturn]))),rows=dates.map(date=>[date,...bySeries.map(map=>map.has(date)?{t:'n',v:Number(map.get(date)),z:'[Red]0.00%;[Blue]-0.00%;0.00%'}:null)]);addPerformanceSheet(workbook,XLSX,'펀드 수익률','펀드·BM 기간수익률',['날짜',...series.map(item=>item.name)],rows,`BM: ${state.benchmark==='NONE'?'숨김':state.benchmark}`)}
+async function exportPerformanceExcel(){
+  let button=$('#performanceExportButton'),original=button.textContent;
+  button.disabled=true;button.textContent='저장 준비 중';
+  try{
+    let XLSX=await loadPerformanceXlsx(),workbook=XLSX.utils.book_new(),scope=aiScopeLabel();
+    let market=state.sectorMarket==='ALL'?'전체':state.sectorMarket==='KOSPI'?'코스피':'코스닥';
+    let level=state.sectorLevel==='large'?'대분류':'중분류';
+    let analysis=$('#aiPerformancePanel').hidden?'아직 생성된 AI 성과분석이 없습니다.':$('#aiPerformanceOutput').innerText.trim();
+    let aiTitle=$('#aiPerformanceTitle').textContent.trim();
+    addPerformanceSheet(workbook,XLSX,'AI 성과분석',aiTitle||'AI 성과분석',['내용'],analysis.split(/\n+/).map(line=>[line.trim()]).filter(row=>row[0]),scope);
+    addPerformanceTableSheet(workbook,XLSX,'시장별 성과','시장별 성과','#marketPerformanceTable','Delta Exp × 지수 등락률');
+    addPerformanceTableSheet(workbook,XLSX,'섹터별 손익','섹터별 손익','#sectorPerformanceTable',`${market} · ${level}`);
+    addPerformanceTableSheet(workbook,XLSX,'전체 종목별 손익','전체 종목별 손익','#instrumentPerformanceTable',$('#instrumentFilterLabel').textContent.trim());
+    addPerformanceTableSheet(workbook,XLSX,'성과지표','성과지표','#performanceMetricTable',`BM: ${state.benchmark==='NONE'?'숨김':state.benchmark}`);
+    addPerformanceReturnSheet(workbook,XLSX);
+    let evaluation=[...document.querySelectorAll('#evaluationExplanation .explanationRow')].map(row=>[row.querySelector('.explanationLabel')?.textContent.trim()||'',row.querySelector('.explanationGrade')?.textContent.trim()||'',row.querySelector('.explanationText')?.textContent.trim()||'']);
+    addPerformanceSheet(workbook,XLSX,'펀드 평가','펀드 평가·해설',['항목','판정','해설'],evaluation,scope);
+    let commentary=[...document.querySelectorAll('#fundAnalysis .analysisSection')].map(section=>[section.querySelector('h3')?.textContent.trim()||'',section.querySelector('p')?.textContent.trim()||'']);
+    addPerformanceSheet(workbook,XLSX,'펀드 분석','펀드 분석',['항목','내용'],commentary,scope);
+    let dateParts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    let today=['year','month','day'].map(type=>dateParts.find(part=>part.type===type).value).join('');
+    XLSX.writeFile(workbook,`메자닌성과분석_${today}.xlsx`);
+  }catch(error){alert(`엑셀 저장에 실패했습니다. ${error.message||error}`)}
+  finally{button.disabled=false;button.textContent=original}
+}
 $('#mainTab').onclick=()=>switchView('dashboard');$('#performanceTab').onclick=()=>switchView('performance');
 $('#aiPerformanceButton').onclick=requestAiPerformance;
+$('#performanceExportButton').onclick=exportPerformanceExcel;
 document.querySelectorAll('[data-benchmark]').forEach(b=>b.onclick=()=>{state.benchmark=b.dataset.benchmark;renderPerformance()});
 document.querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>setPerformancePeriod(b.dataset.period));
 document.querySelectorAll('[data-sector-market]').forEach(b=>b.onclick=()=>{state.sectorMarket=b.dataset.sectorMarket;state.performanceFilter=null;renderPerformance()});
