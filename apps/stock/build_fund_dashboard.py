@@ -3430,6 +3430,16 @@ def build_dashboard(
       const value = Number(marketWeights[code]);
       return Number.isFinite(value) ? value : 0;
     }}
+    function performanceBenchmarkFactors(stocks, marketScope) {{
+      const totalExp = stocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
+      const kospiWeights = quoteSensitiveData.benchmarkWeights?.weights?.["코스피"] || {{}};
+      const kospiTotal = Object.values(kospiWeights).reduce((sum, weight) => sum + Number(weight || 0), 0);
+      return Object.fromEntries(["코스피", "코스닥"].map((market) => {{
+        const marketExp = stocks.filter((row) => row.market === market).reduce((sum, row) => sum + Number(row.exp || 0), 0);
+        const marketFactor = marketScope === "ALL" && totalExp ? marketExp / totalExp : 1;
+        return [market, marketFactor * (market === "코스피" && kospiTotal ? 1 / kospiTotal : 1)];
+      }}));
+    }}
     function fmtPpJs(value) {{
       if (value == null || !Number.isFinite(Number(value))) return "-";
       const number = Number(value) * 100;
@@ -4197,6 +4207,7 @@ def build_dashboard(
       const sectorStocks = performanceSectorMarket === "ALL" ? stocks : stocks.filter((row) => row.market === performanceSectorMarket);
       const sectorExpTotal = sectorStocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
       const sectorActualTotal = sectorStocks.reduce((sum, row) => sum + Number(row.pl || 0), 0);
+      const benchmarkFactors = performanceBenchmarkFactors(stocks, performanceSectorMarket);
       const sectorRows = performanceSectors(sectorStocks, performanceSectorLevel, performanceSectorMarket);
       const sectorHost = panel.querySelector('[data-performance-sector]');
       if (sectorHost) {{
@@ -4208,7 +4219,7 @@ def build_dashboard(
       }}
       const stockHost = panel.querySelector('[data-performance-stocks]');
       const filterLabel = panel.querySelector('[data-performance-filter-label]');
-      let filteredStocks = [...stocks];
+      let filteredStocks = [...sectorStocks];
       if (performanceFilter?.type === "market") filteredStocks = filteredStocks.filter((row) => row.market === performanceFilter.value);
       if (performanceFilter?.type === "sector") {{
         if (performanceFilter.market && performanceFilter.market !== "ALL") filteredStocks = filteredStocks.filter((row) => row.market === performanceFilter.market);
@@ -4216,7 +4227,7 @@ def build_dashboard(
       }}
       filteredStocks.sort((a, b) => Number(b.exp || 0) - Number(a.exp || 0));
       if (filterLabel) {{
-        if (!performanceFilter) filterLabel.textContent = "전체 종목";
+        if (!performanceFilter) filterLabel.textContent = performanceSectorMarket === "ALL" ? "전체 종목" : `${{performanceSectorMarket}} 종목`;
         else if (performanceFilter.type === "market") filterLabel.textContent = `시장: ${{performanceFilter.value}}`;
         else {{
           const marketLabel = performanceFilter.market && performanceFilter.market !== "ALL" ? `${{performanceFilter.market}} · ` : "";
@@ -4224,10 +4235,10 @@ def build_dashboard(
         }}
       }}
       if (stockHost) {{
-        const rowsHtml = filteredStocks.map((row) => {{ const sectorName = performanceSectorLevel === "large" ? row.sectorLarge : row.sectorMid; const rate = quoteRateForCode(row.code); const portfolioWeight = stockExpTotal ? row.exp / stockExpTotal : null; const benchmarkWeight = benchmarkWeightForStock(row); const activeWeight = portfolioWeight == null || benchmarkWeight == null ? null : portfolioWeight - benchmarkWeight; return `<tr><td class="name-cell" title="${{escHtml(row.name)}}">${{escHtml(row.name)}}</td><td>${{row.market}}</td><td class="name-cell" title="${{escHtml(sectorName)}}">${{escHtml(sectorName)}}</td><td class="${{signedClass(row.exp)}}">${{fmtEok1(row.exp)}}</td><td>${{fmtPct1Js(portfolioWeight)}}</td><td>${{fmtPct1Js(benchmarkWeight)}}</td><td class="${{signedClass(activeWeight)}}">${{fmtPpJs(activeWeight)}}</td>${{rateBarPct(rate)}}<td class="${{signedClass(row.pl)}}">${{fmtEok1(row.pl)}}</td><td class="${{signedClass(row.pl)}}">${{fmtPctJs(stockExpTotal ? row.pl / stockExpTotal : null)}}p</td></tr>`; }}).join("");
+        const rowsHtml = filteredStocks.map((row) => {{ const sectorName = performanceSectorLevel === "large" ? row.sectorLarge : row.sectorMid; const rate = quoteRateForCode(row.code); const portfolioWeight = sectorExpTotal ? row.exp / sectorExpTotal : null; const rawBenchmarkWeight = benchmarkWeightForStock(row); const benchmarkWeight = rawBenchmarkWeight == null ? null : rawBenchmarkWeight * Number(benchmarkFactors[row.market] ?? 1); const activeWeight = portfolioWeight == null || benchmarkWeight == null ? null : portfolioWeight - benchmarkWeight; return `<tr><td class="name-cell" title="${{escHtml(row.name)}}">${{escHtml(row.name)}}</td><td>${{row.market}}</td><td class="name-cell" title="${{escHtml(sectorName)}}">${{escHtml(sectorName)}}</td><td class="${{signedClass(row.exp)}}">${{fmtEok1(row.exp)}}</td><td>${{fmtPct1Js(portfolioWeight)}}</td><td>${{fmtPct1Js(benchmarkWeight)}}</td><td class="${{signedClass(activeWeight)}}">${{fmtPpJs(activeWeight)}}</td>${{rateBarPct(rate)}}<td class="${{signedClass(row.pl)}}">${{fmtEok1(row.pl)}}</td><td class="${{signedClass(row.pl)}}">${{fmtPctJs(sectorExpTotal ? row.pl / sectorExpTotal : null)}}p</td></tr>`; }}).join("");
         const filteredExp = filteredStocks.reduce((sum, row) => sum + Number(row.exp || 0), 0);
         const filteredPl = filteredStocks.reduce((sum, row) => sum + Number(row.pl || 0), 0);
-        const totalRow = `<tr class="total-row"><td class="name-cell total-label">합계</td><td></td><td></td><td class="${{signedClass(filteredExp)}}">${{fmtEok1(filteredExp)}}</td><td>${{fmtPct1Js(stockExpTotal ? filteredExp / stockExpTotal : null)}}</td><td></td><td></td><td></td><td class="${{signedClass(filteredPl)}}">${{fmtEok1(filteredPl)}}</td><td class="${{signedClass(filteredPl)}}">${{fmtPctJs(stockExpTotal ? filteredPl / stockExpTotal : null)}}p</td></tr>`;
+        const totalRow = `<tr class="total-row"><td class="name-cell total-label">합계</td><td></td><td></td><td class="${{signedClass(filteredExp)}}">${{fmtEok1(filteredExp)}}</td><td>${{fmtPct1Js(sectorExpTotal ? filteredExp / sectorExpTotal : null)}}</td><td></td><td></td><td></td><td class="${{signedClass(filteredPl)}}">${{fmtEok1(filteredPl)}}</td><td class="${{signedClass(filteredPl)}}">${{fmtPctJs(sectorExpTotal ? filteredPl / sectorExpTotal : null)}}p</td></tr>`;
         stockHost.innerHTML = `<div class="table-wrap performance-table"><table class="sortable-table" data-sort-key="performance-stocks"><thead><tr><th data-sort-index="0">종목명</th><th data-sort-index="1">시장</th><th data-sort-index="2">섹터</th><th data-sort-index="3">주식 Exp</th><th data-sort-index="4">비중</th><th data-sort-index="5">BM비중</th><th data-sort-index="6">BM대비</th><th data-sort-index="7">등락률</th><th data-sort-index="8">현재 손익</th><th data-sort-index="9">기여도</th></tr></thead><tbody>${{rowsHtml}}${{totalRow}}</tbody></table></div>`;
       }}
       const marketPanel = panel.querySelector(".performance-market-panel");
@@ -6067,7 +6078,9 @@ def build_dashboard(
       }}
       const marketFilter = event.target.closest("[data-performance-market-filter]");
       if (marketFilter) {{
-        performanceFilter = {{ type: "market", value: marketFilter.dataset.performanceMarketFilter || "미분류" }};
+        const market = marketFilter.dataset.performanceMarketFilter || "미분류";
+        performanceSectorMarket = market === "코스피" || market === "코스닥" ? market : "ALL";
+        performanceFilter = {{ type: "market", value: market }};
         renderPerformanceAnalysis();
         bindSortableTables();
       }}
