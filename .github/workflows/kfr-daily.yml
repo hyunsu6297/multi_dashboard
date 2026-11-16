@@ -173,9 +173,9 @@ jobs:
 
       - name: Set up Supabase CLI
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: 3.0.0
 
       - name: Deploy performance AI functions
         if: env.SUPABASE_ACCESS_TOKEN != ''

@@ -97,7 +97,10 @@ def process_holding_frame(
     holdings["예탁원코드"] = holdings["예탁원코드"].map(clean_text)
     holdings = holdings[holdings["예탁원코드"].isin(fund_by_k.keys())].copy()
 
-    base_date = holdings["보유일"].max()
+    valid_dates = holdings["보유일"].dropna()
+    if valid_dates.empty:
+        raise ValueError("채권 보유현황에서 유효한 보유일을 찾지 못했습니다.")
+    base_date = valid_dates.max()
     holding_rows = []
     for _, row in holdings.iterrows():
         info = fund_by_k.get(clean_text(row["예탁원코드"]), {})
