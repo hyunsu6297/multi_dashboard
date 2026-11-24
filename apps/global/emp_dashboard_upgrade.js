@@ -28,7 +28,7 @@
     #dashboard .empIntegratedPanel .compactChart,#dashboard .fundIntegratedPanel .shareRows{height:300px}.assetPanel.expanded .compactChart,.assetPanel.expanded .shareRows{height:calc(100vh - 145px)!important;min-height:690px}.assetPanel h2{justify-content:flex-start;align-items:center;gap:8px}.assetPanel h2:before{display:none}.assetTitle{display:flex;align-items:baseline;gap:8px;min-width:0;flex:0 1 auto}.assetTitleText{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.assetMeta{font-size:11px;color:#6c7f7b;font-weight:800}.panelToggle{border:1px solid #b6d1ca;background:#e9f2ef;color:#173a34;border-radius:4px;padding:3px 7px;font-size:11px;font-weight:800;cursor:pointer;flex:0 0 auto;margin-left:auto}
     .shareRow{grid-template-columns:minmax(36px,var(--share-label-width,64px)) 46px minmax(120px,1fr)!important;gap:5px!important}.shareText{display:contents}.shareRow .shareLabel{grid-column:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shareRow .shareValue{grid-column:2;text-align:right}.shareRow .track{grid-column:3}.empMenu>h3{display:none}.empPortfolioFilter{margin:8px 0;background:#fcfffe;border:1.5px solid var(--line);border-radius:5px;padding:6px}.empPortfolioFilter .filterHead{display:flex;align-items:center;gap:4px;margin-bottom:6px}.empPortfolioFilter h3{margin:0;color:var(--ink);font-size:12px;flex:1}.empPortfolioFilter .multiBtn,.empPortfolioFilter .miniAll{border:1px solid #b6d1ca;background:var(--mint);color:var(--ink);border-radius:3px;padding:2px 6px;font-size:10px;line-height:1.2;height:auto;cursor:pointer}.empPortfolioFilter .multiBtn.active{background:var(--deep);color:#fff}.empPortfolioFilter .chips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}.empPortfolioFilter .chip{border:0;background:var(--teal);color:#fff;border-radius:3px;padding:5px 6px;text-align:left;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.empPortfolioFilter .chip.active{background:#092f2a;box-shadow:inset 0 0 0 2px #9ad0c1}
     #emp .empSummary{margin-bottom:8px}.topRefresh{border:1.5px solid var(--line);background:var(--deep);color:#fff;font-weight:900;border-radius:5px;padding:9px 14px;cursor:pointer;white-space:nowrap}
-    .dashboardMetricStrip{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:7px;margin-bottom:8px}.metricCard{background:#fff;border:1.5px solid var(--line);border-radius:7px;padding:7px 9px;min-width:0}.metricCard span{display:block;min-height:22px;color:#6c7f7b;font-size:10px;font-weight:900;line-height:1.1;overflow-wrap:anywhere}.metricCard b{display:block;margin-top:3px;text-align:right;color:#064e43;font-size:14px}.metricCard b.neg{color:#c2413a}.metricCard b.pos{color:#087f5b}
+    .dashboardMetricStrip{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:7px;margin-bottom:8px}.metricCard{background:#fff;border:1.5px solid var(--line);border-radius:7px;padding:7px 9px;min-width:0}.metricCard span{display:block;min-height:22px;color:#6c7f7b;font-size:10px;font-weight:900;line-height:1.1;overflow-wrap:anywhere}.metricCard b{display:block;margin-top:3px;text-align:right;color:#064e43;font-size:14px}.metricCard b.neg{color:#c2413a}.metricCard b.pos{color:#087f5b}
     .bloombergUpdatedAt{align-self:center;color:var(--muted);font-size:10px;font-weight:800;white-space:nowrap}
     .fundPerfPanel{margin:0 0 8px;padding:9px 11px}.fundPerfPanel h2{margin-bottom:3px}.fundPerfNote{font-size:10px;color:var(--muted);margin-bottom:6px}.fundPerfPanel .tablewrap{max-height:190px}.fundPerfTable{table-layout:fixed;min-width:850px;font-size:10.5px}.fundPerfTable th,.fundPerfTable td{text-align:center;padding:6px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fundPerfTable th:first-child,.fundPerfTable td:first-child{width:15%}.fundPerfTable th:nth-child(2),.fundPerfTable td:nth-child(2){width:12%}.fundPerfTable th:nth-child(3),.fundPerfTable td:nth-child(3){width:10%}.fundPerfTable th:nth-child(4),.fundPerfTable td:nth-child(4){width:10%}.fundPerfTable th:nth-child(5),.fundPerfTable td:nth-child(5){width:10%}.fundPerfTable th:nth-child(6),.fundPerfTable td:nth-child(6){width:10%}.fundPerfTable th:nth-child(7),.fundPerfTable td:nth-child(7){width:10%}.fundPerfTable th:nth-child(8),.fundPerfTable td:nth-child(8){width:11%}.fundPerfTable th:nth-child(9),.fundPerfTable td:nth-child(9){width:12%}.fundPerfTable .pos{color:#c2413a}.fundPerfTable .neg{color:#2563eb}
     #dashboard .grid.dashboardOverview{display:grid;grid-template-columns:minmax(0,.98fr) minmax(0,.82fr) minmax(0,1.3fr);gap:10px;align-items:stretch;height:calc(100vh - 158px);min-height:590px}
@@ -779,7 +779,7 @@
     }));
   }
   function dashboardMetricRows() {
-    return selectedFundRows();
+    return fundBase(fundPerformanceRows()).filter(row => !row.isFx && !FundPerformance.isReturnOnlyFund(row.fund));
   }
   function hedgeRatioForFunds() {
     const fxRows = selectedFundFxRows();
@@ -1105,6 +1105,11 @@
     const metricRows = dashboardMetricRows();
     const total = metricRows.reduce((sum, row) => sum + Number(row.lookthrough || 0), 0);
     const equity = metricRows.filter(isEquityAsset).reduce((sum, row) => sum + Number(row.lookthrough || 0), 0);
+    const unlistedEquity = metricRows.filter(row => isEquityAsset(row) &&
+      /^타임\s*Agile\s*[2-5]호$/i.test(String(row.fund || "").trim()) &&
+      (row.marketChange == null || row.marketChange === "" || !Number.isFinite(Number(row.marketChange))))
+      .reduce((sum, row) => sum + Number(row.lookthrough || 0), 0);
+    const listedEquity = equity - unlistedEquity;
     const bond = metricRows.filter(isBondAsset).reduce((sum, row) => sum + Number(row.lookthrough || 0), 0);
     const other = metricRows.filter(row => !isEquityAsset(row) && !isBondAsset(row)).reduce((sum, row) => sum + Number(row.lookthrough || 0), 0);
     const performanceResults = calculateFundPerformance(fundBase(fundPerformanceRows()))
@@ -1121,7 +1126,8 @@
       ["수익증권 투자금", metricAmount(fundBase(DATA.holdings).filter(row => !FundPerformance.isReturnOnlyFund(row.fund))
         .reduce((sum, row) => sum + Number(row.investment || 0), 0))],
       ["\uC804\uCCB4\uC775\uC2A4\uD3EC\uC838", metricAmount(total)],
-      ["\uC8FC\uC2DD\uC775\uC2A4\uD3EC\uC838", metricAmount(equity)],
+      ["상장주식 익스포져", metricAmount(listedEquity)],
+      ["비상장주식 익스포져", metricAmount(unlistedEquity)],
       ["\uCC44\uAD8C\uC775\uC2A4\uD3EC\uC838", metricAmount(bond)],
       ["\uAE30\uD0C0\uC775\uC2A4\uD3EC\uC838", metricAmount(other)],
       ["\uC218\uC775\uC99D\uAD8C \uD658\uD5F7\uC9C0 \uBE44\uC728", hedge == null ? "-" : pct(hedge)],
